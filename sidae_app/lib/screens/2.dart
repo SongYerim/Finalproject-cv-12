@@ -1,0 +1,291 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:sidae_app/screens/3.dart';
+import '../services/api_service.dart';
+import '../models/route_model.dart';
+
+class RouteSearchScreen extends StatefulWidget {
+  final double startLat;
+  final double startLng;
+  final double endLat;
+  final double endLng;
+  final String destinationName;
+
+  const RouteSearchScreen({
+    super.key,
+    required this.startLat,
+    required this.startLng,
+    required this.endLat,
+    required this.endLng,
+    required this.destinationName,
+  });
+
+  @override
+  State<RouteSearchScreen> createState() => _RouteSearchScreenState();
+}
+
+class _RouteSearchScreenState extends State<RouteSearchScreen> {
+  final ApiService _apiService = ApiService();
+  final FlutterTts _flutterTts = FlutterTts();
+
+  bool _loading = true;
+  String _statusText = "경로를 찾는 중입니다...";
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _initTts();
+    _fetchRoute();
+  }
+
+  @override
+  void dispose() {
+    _flutterTts.stop();
+    super.dispose();
+  }
+
+  Future<void> _initTts() async {
+    await _flutterTts.setLanguage("ko-KR");
+    await _flutterTts.setSpeechRate(0.45);
+    await _flutterTts.setPitch(1.0);
+
+    await _flutterTts.setIosAudioCategory(
+      IosTextToSpeechAudioCategory.playAndRecord,
+      [
+        IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+        IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
+      ],
+    );
+  }
+
+  Future<void> _speak(String text) async {
+    await _flutterTts.stop();
+    await _flutterTts.speak(text);
+  }
+
+  Future<void> _fetchRoute() async {
+    setState(() {
+      _loading = true;
+      _errorText = null;
+      _statusText = "경로를 찾는 중입니다...";
+    });
+
+    try {
+      // 3) 경로 탐색 (내 위치 -> 목적지 좌표)
+      final List<RouteSegment> routes = await _apiService.getRoute(
+        widget.startLat,
+        widget.startLng,
+        widget.endLat,
+        widget.endLng,
+      );
+
+      // 서버가 빈 리스트를 반환할 수 있으므로 방어
+      if (routes.isEmpty) {
+        await _speak("경로를 찾을 수 없습니다.");
+        setState(() {
+          _loading = false;
+          _errorText = "경로를 찾을 수 없습니다.";
+          _statusText = "경로 탐색 실패";
+        });
+        return;
+      }
+
+      // 4) 결과 안내
+      // 첫 번째 구간의 안내를 대표로 보여주고, 전체 구간 수를 요약으로 안내합니다.
+      final RouteSegment firstStep = routes[0];
+
+      String summary = "총 ${routes.length}개의 구간이 있습니다. "
+          "첫 번째 안내: ${firstStep.description}.";
+
+      setState(() {
+        _loading = false;
+        _statusText = "경로 탐색 완료!\n$summary";
+      });
+
+      // 접근성/피드백 유지: 진동 + 음성 안내
+      HapticFeedback.heavyImpact();
+      await _speak("경로를 찾았습니다. $summary 지도로 안내를 시작합니다.");
+
+      // 안내가 너무 급하게 넘어가지 않도록 약간의 딜레이
+      await Future.delayed(const Duration(seconds: 1));
+
+      if (!mounted) return;
+
+      // 5) 지도 결과 화면으로 이동
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MapResultScreen(
+            routes: routes,
+            destinationName: widget.destinationName,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _loading = false;
+        _errorText = "경로 탐색 중 오류가 발생했습니다.\n$e";
+        _statusText = "오류 발생";
+      });
+
+      await _speak("오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+    }
+  }
+
+    @override
+  Widget build(BuildContext context) {
+
+    return Scaffold(
+      // AppBar 제거 (이미지처럼 상단에 타이틀 바가 없음)
+      body: SafeArea(
+        child: Center(
+          child: _loading
+              // ✅ 로딩 화면 (첨부 이미지 스타일)
+              ? _buildRouteSearchingView()
+              // ✅ 실패 화면 (기존 기능 유지: 다시 시도/뒤로)
+              : _buildErrorView(),
+        ),
+      ),
+    );
+  }
+
+  // 로딩 화면: "경로 탐색 처리용" 화면 (첨부 이미지 형태)
+  Widget _buildRouteSearchingView() {
+    // 화면 전체 여백/배치용
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        // 위-가운데-아래로 배치
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // 1) 상단 아이콘 3개 (도보/버스/지하철)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Icon(Icons.directions_walk, size: 28, color: Colors.black87),
+              SizedBox(width: 26),
+              Icon(Icons.directions_bus_filled, size: 28, color: Colors.black87),
+              SizedBox(width: 26),
+              Icon(Icons.train, size: 28, color: Colors.black87),
+            ],
+          ),
+
+          const SizedBox(height: 36),
+
+          // 2) 가운데 카드 (연보라 느낌 + 라운드)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+            decoration: BoxDecoration(
+              // 이미지의 "연한 보라색 카드" 느낌
+              color: const Color(0xFFEDEBFF),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 출발: 내 위치 (강조)
+                RichText(
+                  textAlign: TextAlign.center,
+                  text: const TextSpan(
+                    style: TextStyle(color: Colors.black87),
+                    children: [
+                      TextSpan(
+                        text: "출발: ",
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
+                      TextSpan(
+                        text: "내 위치",
+                        style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // 도착: 목적지 (목적지 이름 강조)
+                RichText(
+                  textAlign: TextAlign.center,
+                  text: TextSpan(
+                    style: const TextStyle(color: Colors.black87),
+                    children: [
+                      const TextSpan(
+                        text: "도착: ",
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
+                      TextSpan(
+                        text: widget.destinationName,
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // 안내 문구 (이미지 문구에 맞춤)
+                const Text(
+                  "최단 경로를 찾고있습니다.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 44),
+
+          // 3) 하단 큰 로딩 인디케이터
+          SizedBox(
+            width: 90,
+            height: 90,
+            child: CircularProgressIndicator(
+              // 좀 더 “두꺼운 링” 느낌
+              strokeWidth: 9,
+              // 기본 테마 색을 쓰고 싶으면 Theme.colorScheme.primary로도 가능
+              valueColor: AlwaysStoppedAnimation(Color(0xFF8E7CFF)),
+              backgroundColor: Color(0xFFE0DDF9),
+            ),
+          ),
+
+          // (선택) 상태 텍스트를 디버깅/유지하고 싶으면 아래처럼 숨겨둘 수도 있어요.
+          // const SizedBox(height: 18),
+          // Text(_statusText, textAlign: TextAlign.center),
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------
+  // 실패/에러 화면 (기존 기능 유지, UI는 심플하게)
+  Widget _buildErrorView() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _errorText ?? "알 수 없는 오류",
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _fetchRoute,
+            child: const Text("다시 시도"),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("이전 화면으로"),
+          ),
+        ],
+      ),
+    );
+  }
+}

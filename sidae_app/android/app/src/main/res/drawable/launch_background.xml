@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Modify this file to customize your launch splash screen -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 투명 배경으로 설정하여 Flutter 스플래시 화면만 보이도록 함 -->
+    <item android:drawable="@android:color/transparent" />
+</layer-list>
