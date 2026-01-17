@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io'; // File 읽기용
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // 진동(HapticFeedback)용
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:sidae_app/screens/2.dart'; //  [NEW] 2.dart 화면 import
-import 'package:sidae_app/screens/3.dart'; //  [NEW] 3.dart 화면 import
+import 'package:path_provider/path_provider.dart';
+import 'package:sidae_app/screens/2.dart';
+import 'package:sidae_app/screens/6.dart';
+import 'package:sidae_app/screens/3.dart';
 import '../services/api_service.dart';
 import '../models/route_model.dart';
 
@@ -30,7 +33,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // 2. 상태 변수들
   bool _isSpeechEnabled = false;
   bool _isListening = false;
-  String _statusText = "화면을 눌러 목적지를 말해주세요.";
 
   // 화면 분기용 단계
   SttStep _step = SttStep.ready;
@@ -44,9 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _initTts();     // TTS 설정
-    _requestPermissions(); // 권한 요청
-    _setupSystem();
+    _setupSystem(); // 이 함수 내부에서 권한 요청, TTS 설정, STT 초기화 모두 수행
 
     // 첫 화면 진입 후 안내 TTS
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -64,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _requestPermissions() async {
     await [
       Permission.microphone,
-      Permission.speech,    // [수정] iOS 필수 권한 추가 (이거 없으면 안 됨)
+      Permission.speech,    // iOS 필수 권한
       Permission.location,
     ].request();
   }
@@ -73,8 +73,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _initTts() async {
     await _flutterTts.setLanguage("ko-KR");
     await _flutterTts.setPitch(1.0);
-    await _flutterTts.setSpeechRate(0.5); // 시각장애인 분들은 보통 빠르게 듣지만, 테스트는 보통 속도로
-    // [수정] iOS 오디오 세션 설정 (말하기/듣기 충돌 방지)
+    await _flutterTts.setSpeechRate(0.5);
+    // iOS 오디오 세션 설정 (말하기/듣기 충돌 방지)
     await _flutterTts.setIosAudioCategory(
         IosTextToSpeechAudioCategory.playAndRecord,
         [
@@ -89,28 +89,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  // ✅ TTS: 끝날 때까지 기다리는 speak
-  Future<void> _speakAndWait(String text) async {
-    final completer = Completer<void>();
-
-    // completion / error 콜백 연결
-    _flutterTts.setCompletionHandler(() {
-      if (!completer.isCompleted) completer.complete();
-    });
-    _flutterTts.setErrorHandler((msg) {
-      if (!completer.isCompleted) completer.complete();
-    });
-
-    await _flutterTts.stop();
-    await _flutterTts.speak(text);
-
-    // 기기/OS에 따라 completion 콜백이 안 오는 경우 대비(최대 8초)
-    await completer.future.timeout(
-      const Duration(seconds: 8),
-      onTimeout: () {},
-    );
-  }
-  
 // STT 초기화
   void _initSpeech() async {
     try {
@@ -161,7 +139,6 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _isListening = false;
         _step = SttStep.failed; // 실패 UI
-        _statusText = "음성인식 실패";
       });
 
       // 2) 실패 안내 TTS
@@ -173,7 +150,6 @@ class _HomeScreenState extends State<HomeScreen> {
       // 3) 1-1 화면으로 복귀
       setState(() {
         _step = SttStep.ready;
-        _statusText = "화면을 눌러 목적지를 말해주세요.";
       });
 
       // 4) 다시 안내
@@ -206,7 +182,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _isListening = true;
          // 1-2 화면으로 전환
         _step = SttStep.listening;
-        _statusText = "음성인식 중...";
         _recognizedDestination = "";
       });
       
@@ -224,9 +199,6 @@ class _HomeScreenState extends State<HomeScreen> {
               // 1-3 화면으로 전환 + 결과 저장
                 _step = SttStep.done;
                 _recognizedDestination = destination;
-
-                // 기존 statusText는 유지(혹시 디버그/로그용)
-                _statusText = "목적지: $destination\n경로를 찾는 중입니다...";
               });
 
               if (destination.isNotEmpty) {
@@ -234,9 +206,6 @@ class _HomeScreenState extends State<HomeScreen> {
               } else {
                 _speak("음성 인식 결과가 없습니다. 다시 말씀해주세요.");
               }
-
-              // 원래 구조 유지: 여기서 다음 단계(2.dart/경로 탐색) 호출
-              // _processNavigation(destination);
             }
           },
           localeId: 'ko_KR',
@@ -246,11 +215,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       } catch (e) {
        debugPrint("Listen 에러: $e");
-        // setState(() {
-        //   _isListening = false;
-        //   _step = SttStep.ready; // 실패 시 1번 화면으로 복귀
-        //   _statusText = "화면을 눌러 목적지를 말해주세요.";
-        // });
         // 예외도 동일하게 실패 처리로 통일
         await _handleSttError("listen_exception");
       }
@@ -260,7 +224,6 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _isListening = false;
         _step = SttStep.ready;
-        _statusText = "화면을 눌러 목적지를 말해주세요.";
       });
     }
   }
@@ -268,7 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // 4. 서버 통신 및 경로 처리 로직
   Future<void> _processNavigation(String destination) async {
     try {
-      // [추가된 안전장치] 위치 권한 상태 먼저 확인
+      // 위치 권한 상태 먼저 확인
       LocationPermission permission = await Geolocator.checkPermission();
       
       // 1. 권한이 거부된 상태라면 다시 요청
@@ -278,7 +241,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _speak("위치 권한을 허용해주셔야 길을 찾을 수 있습니다.");
           if (!mounted) return;
           setState(() {
-            _statusText = "위치 권한 거부됨";
             _step = SttStep.ready;
           });
           return; // 여기서 함수 종료 (에러 방지)
@@ -290,7 +252,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _speak("위치 권한이 꺼져 있습니다. 스마트폰 설정에서 권한을 켜주세요.");
         if (!mounted) return;
         setState(() {
-          _statusText = "설정에서 위치 권한을 켜주세요.";
           _step = SttStep.ready;
         });
         
@@ -311,7 +272,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _speak("목적지를 찾을 수 없습니다. 다시 말씀해주세요.");
         if (!mounted) return;
         setState(() {
-          _statusText = "목적지 검색 실패";
           _step = SttStep.ready;
         });
         return;
@@ -351,7 +311,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       _speak("오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
       setState(() {
-        _statusText = "오류 발생: $e";
         _step = SttStep.ready;
       });
     }
@@ -390,10 +349,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // route_data.json 파일을 읽어서 파싱하는 함수
-  Future<void> _loadRouteDataFromFile() async {
+  // route_data.json 파일을 읽어서 파싱하는 함수 (assets에서)
+  Future<void> _loadRouteDataJson() async {
     try {
-      // assets 파일 읽기
+      // assets에서 route_data.json 읽기
       final String jsonString = await rootBundle.loadString('assets/route_data.json');
       
       // JSON 파싱
@@ -412,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen> {
         MaterialPageRoute(
           builder: (_) => MapResultScreen(
             routes: routes,
-            destinationName: "테스트 목적지",
+            destinationName: "테스트 목적지 (route_data.json)",
           ),
         ),
       );
@@ -423,6 +382,70 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       _speak("경로 데이터를 불러오는데 실패했습니다.");
     }
+  }
+
+  // route_data_2.json 파일을 읽어서 파싱하는 함수 (앱 내부 저장소 또는 assets에서)
+  Future<void> _loadRouteData2Json() async {
+    try {
+      String jsonString;
+      
+      // 1. 먼저 앱 내부 저장소에서 route_data_2.json 읽기 시도
+      try {
+        final directory = await getApplicationDocumentsDirectory();
+        final file = File('${directory.path}/route_data_2.json');
+        
+        if (await file.exists()) {
+          jsonString = await file.readAsString(encoding: utf8);
+          debugPrint("[1.dart] 앱 내부 저장소에서 route_data_2.json 로드 성공");
+        } else {
+          // 2. 파일이 없으면 assets에서 route_data_2.json 읽기
+          jsonString = await rootBundle.loadString('assets/route_data_2.json');
+          debugPrint("[1.dart] assets에서 route_data_2.json 로드 성공");
+        }
+      } catch (e) {
+        // 3. 앱 내부 저장소 읽기 실패 시 assets에서 읽기
+        debugPrint("[1.dart] 앱 내부 저장소 읽기 실패, assets에서 시도: $e");
+        jsonString = await rootBundle.loadString('assets/route_data_2.json');
+        debugPrint("[1.dart] assets에서 route_data_2.json 로드 성공");
+      }
+      
+      // JSON 파싱
+      final List<dynamic> jsonData = json.decode(jsonString);
+      
+      // RouteSegment 리스트로 변환 (API 방식과 동일)
+      final List<RouteSegment> routes = jsonData
+          .map((item) => RouteSegment.fromJson(item as Map<String, dynamic>))
+          .toList();
+      
+      if (!mounted) return;
+      
+      // 3.dart로 이동
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MapResultScreen(
+            routes: routes,
+            destinationName: "테스트 목적지 (route_data_2.json)",
+          ),
+        ),
+      );
+      
+      debugPrint("[1.dart] route_data_2.json 로드 완료, ${routes.length}개 구간");
+    } catch (e) {
+      debugPrint("[1.dart] route_data_2.json 로드 실패: $e");
+      if (!mounted) return;
+      _speak("경로 데이터를 불러오는데 실패했습니다.");
+    }
+  }
+
+  // YOLO 테스트 화면 열기
+  void _openYoloTest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const YoloTestScreen(),
+      ),
+    );
   }
 
   //  1) 첫 화면 (목적지를 말해주세요)
@@ -450,7 +473,67 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        // 테스트 버튼 추가
+        // 테스트 버튼 추가: 양옆 배치
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _loadRouteDataJson,
+                      child: const Text(
+                        '테스트: route_data.json',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _loadRouteData2Json,
+                      child: const Text(
+                        '테스트: route_data_2.json',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // YOLO 테스트 버튼 추가
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
           child: SizedBox(
@@ -458,14 +541,14 @@ class _HomeScreenState extends State<HomeScreen> {
             height: 50,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
+                backgroundColor: Colors.purple,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              onPressed: _loadRouteDataFromFile,
+              onPressed: _openYoloTest,
               child: const Text(
-                '테스트: route_data.json 로드',
+                '테스트: YOLO 객체 감지',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,
@@ -619,9 +702,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         }
                         
                         // 로딩 상태 표시 (선택사항)
-                        setState(() {
-                          _statusText = "경로를 찾는 중입니다...";
-                        });
+                        // setState(() {
+                        //   _statusText = "경로를 찾는 중입니다...";
+                        // });
                         
                         try {
                           await _processNavigation(_recognizedDestination);
@@ -632,7 +715,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           _speak("경로 탐색 중 오류가 발생했습니다.");
                           setState(() {
                             _step = SttStep.ready;
-                            _statusText = "오류 발생";
                           });
                         }
                       },
@@ -665,7 +747,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         setState(() {
                           _recognizedDestination = "";
                           _step = SttStep.ready;
-                          _statusText = "화면을 눌러 목적지를 말해주세요.";
                         });
                         _speak("화면을 눌러 목적지를 말씀해주세요.");
                       },
@@ -716,7 +797,7 @@ class _HomeScreenState extends State<HomeScreen> {
               BoxShadow(
                 blurRadius: 18,
                 offset: const Offset(0, 8),
-                color: Colors.black.withOpacity(0.12),
+                color: Colors.black.withValues(alpha: 0.12),
               ),
             ],
           ),

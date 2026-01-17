@@ -21,10 +21,18 @@ dependencies:
   speech_to_text: ^7.0.0
   # 권한 관리 (위치, 마이크 권한 요청용)
   permission_handler: ^11.0.1
+  # 파일 시스템 경로 접근
+  path_provider: ^2.1.0
   # 음성 안내 (TTS) - 안내 멘트 출력용
   flutter_tts: ^3.8.3
   # 네이버 맵
   flutter_naver_map: ^1.3.0
+  # 카메라 (YOLO 테스트용)
+  camera: ^0.11.0
+  # 이미지 처리
+  image: ^4.0.0
+  # TFLite (온디바이스 YOLO 추론)
+  tflite_flutter: ^0.11.0
 
   animated_splash_screen: ^1.3.0
   page_transition: ^2.1.0
@@ -47,3 +55,6 @@ flutter:
     - .env
     - assets/sidae_logo.png # 앱 아이콘
     - assets/route_data.json
+    - assets/route_data_2.json
+    - assets/yolo26n_float16.tflite # YOLO26n FP16 (2026 최신, 경량화)
+    - assets/coco_labels.txt # COCO 라벨

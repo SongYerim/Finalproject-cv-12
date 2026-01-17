@@ -6,9 +6,12 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/services.dart'; // 진동 패키지
 import 'package:flutter_naver_map/flutter_naver_map.dart';
+import 'package:flutter_tts/flutter_tts.dart'; // TTS 추가
 import '../models/route_model.dart';
 import '../services/route_tracker.dart';
+import '../services/crosswalk_detector.dart'; // 횡단보도 감지기
 import '5.dart';
+import '6.dart'; // YOLO 화면
 
 class Screen4 extends StatefulWidget {
   final List<RouteSegment> routes;
@@ -31,6 +34,10 @@ class _Screen4State extends State<Screen4> {
 
   // RouteTracker 사용 (5.dart와 공유)
   final RouteTracker _tracker = RouteTracker.instance;
+  
+  // 횡단보도 감지기
+  CrosswalkDetector? _crosswalkDetector;
+  final FlutterTts _tts = FlutterTts();
 
   double _deviceHeading = 0.0;    // 내 폰이 바라보는 방향
   double _targetBearing = 0.0;    // 목적지 방향
@@ -56,6 +63,43 @@ class _Screen4State extends State<Screen4> {
     _setTargetFromRoutes(); // 1. 목표 좌표 설정
     _initSensor();          // 2. 나침반 시작
     _initLocation();        // 3. GPS 시작
+    _initCrosswalkDetector(); // 4. 횡단보도 감지 초기화
+    _initTts();             // 5. TTS 초기화
+  }
+  
+  // 횡단보도 감지기 초기화
+  void _initCrosswalkDetector() {
+    _crosswalkDetector = CrosswalkDetector(
+      routes: widget.routes,
+      onCrosswalkDetected: (RouteStep crosswalkStep) async {
+        if (!mounted) return;
+        
+        // 횡단보도 감지 시 TTS 안내
+        await _tts.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려달라");
+        // 진동 알림
+        HapticFeedback.vibrate();
+        debugPrint("🚶 횡단보도 감지: ${crosswalkStep.description}");
+        debugPrint("   위치: (${crosswalkStep.lat}, ${crosswalkStep.lng})");
+        
+        // TTS 완료 후 YOLO 화면으로 전환
+        await Future.delayed(const Duration(milliseconds: 500)); // TTS 시작 대기
+        if (!mounted) return;
+        
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const YoloTestScreen(),
+          ),
+        );
+      },
+    );
+  }
+  
+  // TTS 초기화
+  void _initTts() async {
+    await _tts.setLanguage("ko-KR");
+    await _tts.setSpeechRate(0.5);
+    await _tts.setVolume(1.0);
   }
 
   // 경로 데이터 초기화
@@ -123,7 +167,10 @@ class _Screen4State extends State<Screen4> {
       // 3. 경로상 다음 목표 좌표 찾기 및 가야 할 방향 계산
       _updateRouteBearing(position);
 
-      // 4. 경로 점 통과 체크 (5.dart와 동일)
+      // 4. 횡단보도 감지 (새로 추가)
+      _checkCrosswalk(position);
+
+      // 5. 경로 점 통과 체크 (5.dart와 동일)
       _checkAndUpdatePassedPoints(position);
 
       // 목표까지의 거리 계산 (기존 로직 유지)
@@ -205,6 +252,12 @@ class _Screen4State extends State<Screen4> {
       _targetLat = targetPoint.latitude;
       _targetLng = targetPoint.longitude;
     });
+  }
+
+  // 횡단보도 근접 감지
+  void _checkCrosswalk(Position position) {
+    if (_crosswalkDetector == null) return;
+    _crosswalkDetector!.checkCrosswalkProximity(position);
   }
 
   // 현재 위치를 기준으로 지나간 점들을 체크 (5.dart와 동일)

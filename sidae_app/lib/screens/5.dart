@@ -3,10 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'package:flutter_tts/flutter_tts.dart'; // TTS 추가
+import 'package:flutter/services.dart'; // HapticFeedback 추가
 import 'dart:async';
 import 'dart:math' as math;
 import '../models/route_model.dart';
 import '../services/route_tracker.dart';
+import '../services/crosswalk_detector.dart'; // CrosswalkDetector 추가
+import '6.dart'; // YOLO 화면
 
 class RouteTrackingMapScreen extends StatefulWidget {
   final List<RouteSegment> routes;
@@ -30,6 +34,10 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   // RouteTracker 사용
   final RouteTracker _tracker = RouteTracker.instance;
   
+  // 횡단보도 감지기
+  CrosswalkDetector? _crosswalkDetector;
+  final FlutterTts _tts = FlutterTts();
+  
   // 현재 위치
   Position? _currentPosition;
   
@@ -48,7 +56,43 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   void initState() {
     super.initState();
     _initializePathPoints();
+    _initCrosswalkDetector(); // 횡단보도 감지 초기화
+    _initTts(); // TTS 초기화
     _initSensor();
+    // _startLocationTracking()은 지도 초기화 후 호출됨
+  }
+  
+  // 횡단보도 감지기 초기화
+  void _initCrosswalkDetector() {
+    _crosswalkDetector = CrosswalkDetector(
+      routes: widget.routes,
+      onCrosswalkDetected: (RouteStep crosswalkStep) async {
+        if (!mounted) return;
+        
+        // 횡단보도 감지 시 TTS 안내
+        await _tts.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려달라");
+        HapticFeedback.vibrate(); // 진동 알림
+        debugPrint("🚶 횡단보도 감지: ${crosswalkStep.description}");
+        
+        // TTS 완료 후 YOLO 화면으로 전환
+        await Future.delayed(const Duration(milliseconds: 500)); // TTS 시작 대기
+        if (!mounted) return;
+        
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const YoloTestScreen(),
+          ),
+        );
+      },
+    );
+  }
+  
+  // TTS 초기화
+  void _initTts() async {
+    await _tts.setLanguage("ko-KR");
+    await _tts.setSpeechRate(0.5);
+    await _tts.setVolume(1.0);
   }
 
   @override
@@ -172,9 +216,18 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       _calculateTravelingBearing();
       _updateRouteBearing(position);
       
+      // 횡단보도 감지
+      _checkCrosswalk(position);
+      
       _checkAndUpdatePassedPoints(position);
       _updateMapMarkers();
     });
+  }
+  
+  // 횡단보도 근접 감지
+  void _checkCrosswalk(Position position) {
+    if (_crosswalkDetector == null) return;
+    _crosswalkDetector!.checkCrosswalkProximity(position);
   }
 
   // 현재 위치를 기준으로 지나간 점들을 체크
