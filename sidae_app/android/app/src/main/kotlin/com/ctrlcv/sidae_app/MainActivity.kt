@@ -574,101 +574,57 @@ class MainActivity : FlutterActivity() {
         // 출력 텐서: [1, targetSize, targetSize, 3]
         val output = FloatArray(targetSize * targetSize * 3)
         
-        // YUV 샘플링 및 RGB 변환 헬퍼 함수
-        fun getYuvPixel(srcX: Int, srcY: Int): Triple<Int, Int, Int> {
-            val clampedX = srcX.coerceIn(0, srcWidth - 1)
-            val clampedY = srcY.coerceIn(0, srcHeight - 1)
+        // Nearest Neighbor (최근접 이웃) 보간법으로 최적화 및 루프 최적화 (객체 생성 제거)
+        for (dstY in 0 until targetSize) {
+            val baseIdx = dstY * targetSize * 3
             
-            val yIdx = clampedY * yRowStride + clampedX * yPixelStride
-            val uvX = clampedX / 2
-            val uvY = clampedY / 2
-            val uIdx = uvY * uRowStride + uvX * uPixelStride
-            val vIdx = uvY * vRowStride + uvX * vPixelStride
-            
-            if (yIdx < 0 || yIdx >= yArray.size ||
-                uIdx < 0 || uIdx >= uArray.size ||
-                vIdx < 0 || vIdx >= vArray.size) {
-                return Triple(0, 0, 0)
+            // 상하 패딩 영역 처리
+            if (dstY < padY || dstY >= padY + nh) {
+                java.util.Arrays.fill(output, baseIdx, baseIdx + targetSize * 3, padColor)
+                continue
             }
             
-            val y = yArray[yIdx].toInt() and 0xFF
-            val u = uArray[uIdx].toInt() and 0xFF
-            val v = vArray[vIdx].toInt() and 0xFF
-            return Triple(y, u, v)
-        }
-        
-        // YUV → RGB 변환 (BT.601, OpenCV cv2.COLOR_YUV2RGB와 동일)
-        fun yuvToRgb(y: Float, u: Float, v: Float): Triple<Float, Float, Float> {
-            val uShifted = u - 128f
-            val vShifted = v - 128f
-            val r = (y + 1.402f * vShifted).coerceIn(0f, 255f) * inv255
-            val g = (y - 0.344136f * uShifted - 0.714136f * vShifted).coerceIn(0f, 255f) * inv255
-            val b = (y + 1.772f * uShifted).coerceIn(0f, 255f) * inv255
-            return Triple(r, g, b)
-        }
-        
-        // Bilinear Interpolation으로 리사이즈 (Python cv2.INTER_LINEAR와 동일)
-        for (dstY in 0 until targetSize) {
+            val rotYf = (dstY - padY) / scale
+            val rotY0 = rotYf.toInt().coerceIn(0, rotatedHeight - 1)
+            
             for (dstX in 0 until targetSize) {
-                val outIdx = (dstY * targetSize + dstX) * 3
+                val outIdx = baseIdx + (dstX * 3)
                 
-                // 패딩 영역이면 회색
-                if (dstX < padX || dstX >= padX + nw ||
-                    dstY < padY || dstY >= padY + nh) {
+                // 좌우 패딩 영역 처리
+                if (dstX < padX || dstX >= padX + nw) {
                     output[outIdx] = padColor
                     output[outIdx + 1] = padColor
                     output[outIdx + 2] = padColor
                     continue
                 }
                 
-                // 스케일된 좌표 (회전 후 이미지 기준)
+                // Nearest Neighbor 샘플링: 하나의 픽셀만 계산
                 val rotXf = (dstX - padX) / scale
-                val rotYf = (dstY - padY) / scale
-                
-                // Bilinear Interpolation을 위한 4개 픽셀 좌표
                 val rotX0 = rotXf.toInt().coerceIn(0, rotatedWidth - 1)
-                val rotY0 = rotYf.toInt().coerceIn(0, rotatedHeight - 1)
-                val rotX1 = (rotX0 + 1).coerceIn(0, rotatedWidth - 1)
-                val rotY1 = (rotY0 + 1).coerceIn(0, rotatedHeight - 1)
                 
-                // 보간 가중치
-                val xFrac = (rotXf - rotX0).toFloat().coerceIn(0f, 1f)
-                val yFrac = (rotYf - rotY0).toFloat().coerceIn(0f, 1f)
+                // 90도 회전 역변환: srcX = rotY, srcY = srcHeight - 1 - rotX
+                val srcX = rotY0
+                val srcY = rotatedWidth - 1 - rotX0
                 
-                // 90도 회전 역변환하여 원본 소스 좌표 계산
-                // 회전 공식: rotX = srcHeight - 1 - srcY, rotY = srcX
-                // 역변환: srcX = rotY, srcY = srcHeight - 1 - rotX
-                val srcX00 = rotY0
-                val srcY00 = rotatedWidth - 1 - rotX0
-                val srcX01 = rotY1
-                val srcY01 = rotatedWidth - 1 - rotX0
-                val srcX10 = rotY0
-                val srcY10 = rotatedWidth - 1 - rotX1
-                val srcX11 = rotY1
-                val srcY11 = rotatedWidth - 1 - rotX1
+                // YUV 데이터 직접 접근 (getYuvPixel 인라인화)
+                val yIdx = srcY * yRowStride + srcX * yPixelStride
+                val uvX = srcX / 2
+                val uvY = srcY / 2
+                val uIdx = uvY * uRowStride + uvX * uPixelStride
+                val vIdx = uvY * vRowStride + uvX * vPixelStride
                 
-                // 4개 픽셀의 YUV 값
-                val (y00, u00, v00) = getYuvPixel(srcX00, srcY00)
-                val (y01, u01, v01) = getYuvPixel(srcX01, srcY01)
-                val (y10, u10, v10) = getYuvPixel(srcX10, srcY10)
-                val (y11, u11, v11) = getYuvPixel(srcX11, srcY11)
+                // 안전한 인덱스 체크 후 값 추출
+                val yVal = (if (yIdx in yArray.indices) yArray[yIdx].toInt() and 0xFF else 0).toFloat()
+                val uVal = (if (uIdx in uArray.indices) uArray[uIdx].toInt() and 0xFF else 128).toFloat()
+                val vVal = (if (vIdx in vArray.indices) vArray[vIdx].toInt() and 0xFF else 128).toFloat()
                 
-                // YUV 값 Bilinear Interpolation
-                val w00 = (1f - xFrac) * (1f - yFrac)
-                val w01 = (1f - xFrac) * yFrac
-                val w10 = xFrac * (1f - yFrac)
-                val w11 = xFrac * yFrac
+                // YUV -> RGB 변환 인라인화 (Triple 생성 방지 및 직접 대입)
+                val uS = uVal - 128f
+                val vS = vVal - 128f
                 
-                val yInterp = y00 * w00 + y01 * w01 + y10 * w10 + y11 * w11
-                val uInterp = u00 * w00 + u01 * w01 + u10 * w10 + u11 * w11
-                val vInterp = v00 * w00 + v01 * w01 + v10 * w10 + v11 * w11
-                
-                // YUV → RGB 변환
-                val (r, g, b) = yuvToRgb(yInterp, uInterp, vInterp)
-                
-                output[outIdx] = r
-                output[outIdx + 1] = g
-                output[outIdx + 2] = b
+                output[outIdx] =     (yVal + 1.402f * vS).coerceIn(0f, 255f) * inv255
+                output[outIdx + 1] = (yVal - 0.344136f * uS - 0.714136f * vS).coerceIn(0f, 255f) * inv255
+                output[outIdx + 2] = (yVal + 1.772f * uS).coerceIn(0f, 255f) * inv255
             }
         }
         
