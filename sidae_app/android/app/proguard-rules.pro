@@ -1,6 +1,10 @@
 # TensorFlow Lite 관련 규칙
 -keep class org.tensorflow.lite.** { *; }
 -dontwarn org.tensorflow.lite.**
+
+# TensorFlow Lite GPU 관련 규칙 (명시적 추가)
+-keep class org.tensorflow.lite.gpu.** { *; }
+-dontwarn org.tensorflow.lite.gpu.**
 -dontwarn org.tensorflow.lite.gpu.GpuDelegateFactory$Options
 
 # Google Play Core 관련 규칙 (Flutter deferred components)

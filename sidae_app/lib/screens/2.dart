@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:sidae_app/screens/3.dart';
 import '../services/api_service.dart';
+import '../services/tts_service.dart';
 import '../models/route_model.dart';
 
 class RouteSearchScreen extends StatefulWidget {
@@ -27,49 +27,32 @@ class RouteSearchScreen extends StatefulWidget {
 
 class _RouteSearchScreenState extends State<RouteSearchScreen> {
   final ApiService _apiService = ApiService();
-  final FlutterTts _flutterTts = FlutterTts();
+  final TtsService _ttsService = TtsService.instance;
 
   bool _loading = true;
-  String _statusText = "경로를 찾는 중입니다...";
   String? _errorText;
 
   @override
   void initState() {
     super.initState();
-    _initTts();
+    _ttsService.initialize();
     _fetchRoute();
   }
 
   @override
   void dispose() {
-    _flutterTts.stop();
+    _ttsService.stop();
     super.dispose();
   }
 
-  Future<void> _initTts() async {
-    await _flutterTts.setLanguage("ko-KR");
-    await _flutterTts.setSpeechRate(0.45);
-    await _flutterTts.setPitch(1.0);
-
-    await _flutterTts.setIosAudioCategory(
-      IosTextToSpeechAudioCategory.playAndRecord,
-      [
-        IosTextToSpeechAudioCategoryOptions.allowBluetooth,
-        IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
-      ],
-    );
-  }
-
   Future<void> _speak(String text) async {
-    await _flutterTts.stop();
-    await _flutterTts.speak(text);
+    await _ttsService.speak(text);
   }
 
   Future<void> _fetchRoute() async {
     setState(() {
       _loading = true;
       _errorText = null;
-      _statusText = "경로를 찾는 중입니다...";
     });
 
     try {
@@ -87,7 +70,6 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
         setState(() {
           _loading = false;
           _errorText = "경로를 찾을 수 없습니다.";
-          _statusText = "경로 탐색 실패";
         });
         return;
       }
@@ -101,7 +83,6 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
 
       setState(() {
         _loading = false;
-        _statusText = "경로 탐색 완료!\n$summary";
       });
 
       // 접근성/피드백 유지: 진동 + 음성 안내
@@ -129,7 +110,6 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
       setState(() {
         _loading = false;
         _errorText = "경로 탐색 중 오류가 발생했습니다.\n$e";
-        _statusText = "오류 발생";
       });
 
       await _speak("오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
