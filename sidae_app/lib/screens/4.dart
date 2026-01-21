@@ -1,17 +1,17 @@
-// lib/4.dart
 import 'package:flutter/material.dart';
-import 'package:sensors_plus/sensors_plus.dart'; // 센서 패키지
-import 'package:geolocator/geolocator.dart';     // GPS 패키지
+import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:flutter/services.dart'; // 진동 패키지
+import 'package:flutter/services.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
-import 'package:flutter_tts/flutter_tts.dart'; // TTS 추가
 import '../models/route_model.dart';
 import '../services/route_tracker.dart';
-import '../services/crosswalk_detector.dart'; // 횡단보도 감지기
+import '../services/crosswalk_detector.dart';
+import '../services/tts_service.dart';
+import '../services/navigation_service.dart';
+import '../widgets/progress_indicator_widget.dart';
 import '5.dart';
-import '6.dart'; // YOLO 화면
+import '6.dart';
 
 class Screen4 extends StatefulWidget {
   final List<RouteSegment> routes;
@@ -28,230 +28,69 @@ class Screen4 extends StatefulWidget {
 }
 
 class _Screen4State extends State<Screen4> {
-  // --- 센서 및 위치 관련 변수 ---
-  StreamSubscription<MagnetometerEvent>? _magnetometerSubscription;
-  StreamSubscription<Position>? _positionSubscription;
-
-  // RouteTracker 사용 (5.dart와 공유)
   final RouteTracker _tracker = RouteTracker.instance;
-  
-  // 횡단보도 감지기
+  final NavigationService _navService = NavigationService();
+  final TtsService _ttsService = TtsService.instance;
   CrosswalkDetector? _crosswalkDetector;
-  final FlutterTts _tts = FlutterTts();
 
-  double _deviceHeading = 0.0;    // 내 폰이 바라보는 방향
-  double _targetBearing = 0.0;    // 목적지 방향
-  double _distanceToTarget = 0.0; // 남은 거리
-  
-  // 목표 좌표
-  double _targetLat = 37.554722; 
-  double _targetLng = 126.970833; 
-
-  // GPS 기반 방향 계산용 변수
-  List<Position> _recentPositions = []; // 최근 2개 GPS 좌표
-  double _travelingBearing = -1.0; // 진행 방향 (최근 2개 GPS로 계산, -1은 미계산 상태)
-  double _routeBearing = -1.0; // 경로상 가야 할 방향 (-1은 미계산 상태)
-
+  double _distanceToTarget = 0.0;
   DateTime _lastVibrationTime = DateTime.now();
-  
-  // 최소 이동 거리 (미터) - 이 거리 이상 이동해야 방향 계산
-  static const double _minDistanceForBearing = 1.0;
 
   @override
   void initState() {
     super.initState();
-    _setTargetFromRoutes(); // 1. 목표 좌표 설정
-    _initSensor();          // 2. 나침반 시작
-    _initLocation();        // 3. GPS 시작
-    _initCrosswalkDetector(); // 4. 횡단보도 감지 초기화
-    _initTts();             // 5. TTS 초기화
+    _initializePathPoints();
+    _initCrosswalkDetector();
+    _ttsService.initialize();
+    _navService.initSensor();
+    _navService.startLocationTracking(onUpdate: _onPositionUpdate);
   }
-  
-  // 횡단보도 감지기 초기화
+
+  void _initializePathPoints() {
+    List<NLatLng> allPathPoints = [];
+    for (var route in widget.routes) {
+      allPathPoints.addAll(route.pathCoordinates);
+    }
+    if (allPathPoints.isNotEmpty) {
+      _tracker.initialize(allPathPoints);
+    }
+  }
+
   void _initCrosswalkDetector() {
     _crosswalkDetector = CrosswalkDetector(
       routes: widget.routes,
-      onCrosswalkDetected: (RouteStep crosswalkStep) async {
+      onCrosswalkDetected: (CrosswalkInfo crosswalkInfo) async {
         if (!mounted) return;
-        
-        // 횡단보도 감지 시 TTS 안내
-        await _tts.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려달라");
-        // 진동 알림
+        await _ttsService.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려달라");
         HapticFeedback.vibrate();
-        debugPrint("🚶 횡단보도 감지: ${crosswalkStep.description}");
-        debugPrint("   위치: (${crosswalkStep.lat}, ${crosswalkStep.lng})");
-        
-        // TTS 완료 후 YOLO 화면으로 전환
-        await Future.delayed(const Duration(milliseconds: 500)); // TTS 시작 대기
+        await Future.delayed(const Duration(milliseconds: 500));
         if (!mounted) return;
-        
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => const YoloTestScreen(),
+            builder: (context) => YoloTestScreen(
+              exitLat: crosswalkInfo.exitLat,
+              exitLng: crosswalkInfo.exitLng,
+            ),
           ),
         );
       },
     );
   }
-  
-  // TTS 초기화
-  void _initTts() async {
-    await _tts.setLanguage("ko-KR");
-    await _tts.setSpeechRate(0.5);
-    await _tts.setVolume(1.0);
-  }
 
-  // 경로 데이터 초기화
-  void _setTargetFromRoutes() {
-    // RouteTracker 초기화 (5.dart와 공유)
-    List<NLatLng> allPathPoints = [];
-    for (var route in widget.routes) {
-      allPathPoints.addAll(route.pathCoordinates);
-    }
-    
-    if (allPathPoints.isNotEmpty) {
-      _tracker.initialize(allPathPoints);
-      final targetPoint = _tracker.getCurrentTarget();
-      if (targetPoint != null) {
-        _targetLat = targetPoint.latitude;
-        _targetLng = targetPoint.longitude;
-      }
-    }
+  void _onPositionUpdate(Position position) {
+    if (!mounted) return;
+    _checkCrosswalk(position);
+    _checkAndUpdatePassedPoints(position);
+    _distanceToTarget = _navService.getDistanceToTarget(position);
+    _checkDirectionAndVibrate();
+    setState(() {});
   }
 
   @override
   void dispose() {
-    _magnetometerSubscription?.cancel();
-    _positionSubscription?.cancel();
+    _navService.dispose();
     super.dispose();
-  }
-
-  // --- 센서 로직 ---
-  void _initSensor() {
-    _magnetometerSubscription = magnetometerEvents.listen((MagnetometerEvent event) {
-      if (!mounted) return;
-      // 수정: atan2(y, x)로 올바른 나침반 방향 계산
-      double heading = math.atan2(event.y, event.x);
-      heading = heading * (180 / math.pi);
-      // 북쪽 기준으로 보정 (동쪽이 90도가 되도록)
-      heading = 90 - heading;
-      if (heading < 0) heading += 360;
-      if (heading >= 360) heading -= 360;
-
-      setState(() {
-        _deviceHeading = heading;
-      });
-      _checkDirectionAndVibrate();
-    });
-  }
-
-  void _initLocation() {
-    // 0.5초마다 GPS 위치 업데이트
-    _positionSubscription = Stream.periodic(
-      const Duration(milliseconds: 500), // 0.5초 간격
-      (count) => count,
-    ).asyncMap((_) async {
-      return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-    }).listen((Position position) {
-      if (!mounted) return;
-
-      // 1. 최근 GPS 좌표 저장 (최대 2개)
-      _updateRecentPositions(position);
-
-      // 2. 최근 2개 좌표로 진행 방향 계산
-      _calculateTravelingBearing();
-
-      // 3. 경로상 다음 목표 좌표 찾기 및 가야 할 방향 계산
-      _updateRouteBearing(position);
-
-      // 4. 횡단보도 감지 (새로 추가)
-      _checkCrosswalk(position);
-
-      // 5. 경로 점 통과 체크 (5.dart와 동일)
-      _checkAndUpdatePassedPoints(position);
-
-      // 목표까지의 거리 계산 (기존 로직 유지)
-      double distance = Geolocator.distanceBetween(
-        position.latitude,
-        position.longitude,
-        _targetLat,
-        _targetLng,
-      );
-
-      setState(() {
-        _distanceToTarget = distance;
-      });
-    });
-  }
-
-  // 최근 GPS 좌표 저장 (최대 2개)
-  void _updateRecentPositions(Position position) {
-    _recentPositions.add(position);
-    if (_recentPositions.length > 2) {
-      _recentPositions.removeAt(0); // 가장 오래된 좌표 제거
-    }
-  }
-
-  // 최근 2개 GPS 좌표로 진행 방향 계산
-  void _calculateTravelingBearing() {
-    if (_recentPositions.length < 2) return;
-
-    final prev = _recentPositions[0];
-    final curr = _recentPositions[1];
-
-    // 두 좌표 사이의 거리 계산
-    double distance = Geolocator.distanceBetween(
-      prev.latitude,
-      prev.longitude,
-      curr.latitude,
-      curr.longitude,
-    );
-
-    // 최소 이동 거리 이상일 때만 방향 계산 (정지 시 불안정한 값 방지)
-    if (distance < _minDistanceForBearing) return;
-
-    // 이전 위치에서 현재 위치로의 방향 계산
-    double bearing = Geolocator.bearingBetween(
-      prev.latitude,
-      prev.longitude,
-      curr.latitude,
-      curr.longitude,
-    );
-    if (bearing < 0) bearing += 360;
-
-    _travelingBearing = bearing;
-  }
-
-  // 경로상 다음 목표 좌표 찾기 및 가야 할 방향 계산
-  void _updateRouteBearing(Position currentPosition) {
-    if (_tracker.allPathPoints.isEmpty) return;
-
-    // 현재 위치
-    final currentLat = currentPosition.latitude;
-    final currentLng = currentPosition.longitude;
-
-    // RouteTracker의 현재 목표 좌표 사용
-    final targetPoint = _tracker.getCurrentTarget();
-    if (targetPoint == null) return;
-
-    // 현재 목표까지의 방향 계산
-    double bearing = Geolocator.bearingBetween(
-      currentLat,
-      currentLng,
-      targetPoint.latitude,
-      targetPoint.longitude,
-    );
-    if (bearing < 0) bearing += 360;
-
-    setState(() {
-      _routeBearing = bearing;
-      _targetBearing = bearing;
-      _targetLat = targetPoint.latitude;
-      _targetLng = targetPoint.longitude;
-    });
   }
 
   // 횡단보도 근접 감지
@@ -260,62 +99,67 @@ class _Screen4State extends State<Screen4> {
     _crosswalkDetector!.checkCrosswalkProximity(position);
   }
 
-  // 현재 위치를 기준으로 지나간 점들을 체크 (5.dart와 동일)
+  // 현재 위치를 기준으로 지나간 점들을 체크
   void _checkAndUpdatePassedPoints(Position position) {
-    final targetPoint = _tracker.getCurrentTarget();
-    if (targetPoint == null) return;
+    if (_tracker.allPathPoints.isEmpty) return;
 
-    // 현재 목표 점과의 거리 계산
-    double distance = Geolocator.distanceBetween(
-      position.latitude,
-      position.longitude,
-      targetPoint.latitude,
-      targetPoint.longitude,
-    );
-
-    // 15미터 이내에 들어왔으면 "지나감"으로 표시
     const double passThreshold = 15.0;
-    if (distance <= passThreshold) {
-      setState(() {
-        _tracker.markAsPassed(_tracker.currentTargetIndex);
-        _tracker.moveToNextTarget();
-        debugPrint("지점 ${_tracker.currentTargetIndex} 통과! 다음 목표: ${_tracker.currentTargetIndex}");
-      });
 
-      // 뒤처진 점들도 자동으로 지나감 처리
-      _skipNearbyPassedPoints(position);
-    }
-  }
+    // 현재 목표부터 끝까지 모든 점들을 스캔하여 가장 가까운 점 찾기
+    int closestIndex = -1;
+    double closestDistance = double.infinity;
 
-  // 현재 위치 근처의 이미 지나쳤을 수 있는 점들을 자동으로 "지나감" 처리
-  void _skipNearbyPassedPoints(Position position) {
-    const double passThreshold = 15.0;
-    for (int i = 0; i < _tracker.currentTargetIndex && i < _tracker.allPathPoints.length; i++) {
-      if (_tracker.pointsPassed[i]) continue;
-      
+    for (
+      int i = _tracker.currentTargetIndex;
+      i < _tracker.allPathPoints.length;
+      i++
+    ) {
       double distance = Geolocator.distanceBetween(
         position.latitude,
         position.longitude,
         _tracker.allPathPoints[i].latitude,
         _tracker.allPathPoints[i].longitude,
       );
-      
-      if (distance <= passThreshold) {
-        _tracker.markAsPassed(i);
+
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = i;
       }
+    }
+
+    debugPrint(
+      "현재 목표: ${_tracker.currentTargetIndex}, 가장 가까운 점: $closestIndex, 거리: ${closestDistance.toStringAsFixed(1)}m",
+    );
+
+    // 가장 가까운 점이 임계값 이내면 해당 점까지 모두 통과 처리
+    if (closestIndex >= 0 && closestDistance <= passThreshold) {
+      setState(() {
+        // 가장 가까운 점까지의 모든 점을 통과 처리
+        _tracker.markAllPassedUpTo(closestIndex);
+        // 다음 목표를 가장 가까운 점 다음으로 설정
+        if (closestIndex + 1 < _tracker.allPathPoints.length) {
+          _tracker.currentTargetIndex = closestIndex + 1;
+        }
+        debugPrint(
+          "지점 $closestIndex까지 통과! 다음 목표: ${_tracker.currentTargetIndex}",
+        );
+      });
     }
   }
 
   void _checkDirectionAndVibrate() {
-    // GPS 기반 방향이 있으면 사용, 없으면 센서 기반 사용
-    double targetDir = _routeBearing >= 0 ? _routeBearing : _targetBearing;
-    double currentDir = _travelingBearing >= 0 ? _travelingBearing : _deviceHeading;
-    
+    double targetDir = _navService.routeBearing >= 0
+        ? _navService.routeBearing
+        : _navService.targetBearing;
+    double currentDir = _navService.travelingBearing >= 0
+        ? _navService.travelingBearing
+        : _navService.deviceHeading;
+
     double diff = (targetDir - currentDir).abs();
     if (diff > 180) diff = 360 - diff;
 
-    // 15도 이내로 방향이 맞으면 진동
-    if (diff < 15 && DateTime.now().difference(_lastVibrationTime).inSeconds >= 1) {
+    if (diff < 15 &&
+        DateTime.now().difference(_lastVibrationTime).inSeconds >= 1) {
       HapticFeedback.heavyImpact();
       _lastVibrationTime = DateTime.now();
     }
@@ -341,11 +185,7 @@ class _Screen4State extends State<Screen4> {
         const SizedBox(height: 15),
         Transform.rotate(
           angle: angle,
-          child: Icon(
-            Icons.arrow_upward_rounded,
-            size: 100,
-            color: color,
-          ),
+          child: Icon(Icons.arrow_upward_rounded, size: 100, color: color),
         ),
         const SizedBox(height: 10),
         Text(
@@ -362,15 +202,12 @@ class _Screen4State extends State<Screen4> {
 
   @override
   Widget build(BuildContext context) {
-    // _routeBearing이 유효하면 사용, 아니면 기존 _targetBearing 사용
-    double targetDirection = _routeBearing >= 0 ? _routeBearing : _targetBearing;
-    
-    // 진행 방향(_travelingBearing)이 있으면 사용, 없으면 기존 _deviceHeading 사용
-    double currentDirection = _travelingBearing >= 0 ? _travelingBearing : _deviceHeading;
-
-    // 진행률 계산
-    int passedCount = _tracker.pointsPassed.where((passed) => passed).length;
-    double progress = _tracker.getProgress();
+    double targetDirection = _navService.routeBearing >= 0
+        ? _navService.routeBearing
+        : _navService.targetBearing;
+    double currentDirection = _navService.travelingBearing >= 0
+        ? _navService.travelingBearing
+        : _navService.deviceHeading;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -381,47 +218,7 @@ class _Screen4State extends State<Screen4> {
       ),
       body: Column(
         children: [
-          // 진행 상황 표시
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            color: Colors.grey.shade900,
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      "진행 상황",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      "$passedCount / ${_tracker.allPathPoints.length} 지점 통과",
-                      style: const TextStyle(
-                        color: Colors.yellowAccent,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 6,
-                    backgroundColor: Colors.grey.shade700,
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ProgressIndicatorWidget(tracker: _tracker),
           // 상단 절반: 화살표 & 거리 정보 (Arrow Section)
           Expanded(
             flex: 1,
@@ -435,10 +232,14 @@ class _Screen4State extends State<Screen4> {
                 children: [
                   Text(
                     "남은 거리: ${_distanceToTarget.toStringAsFixed(0)}m",
-                    style: const TextStyle(color: Colors.greenAccent, fontSize: 24, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.greenAccent,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 30),
-                  
+
                   // 두 방향 동시 표시
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -459,10 +260,10 @@ class _Screen4State extends State<Screen4> {
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 20),
                   Text(
-                    _travelingBearing >= 0 ? "(GPS 기반)" : "(센서 기반)",
+                    _navService.travelingBearing >= 0 ? "(GPS 기반)" : "(센서 기반)",
                     style: TextStyle(color: Colors.grey.shade400, fontSize: 14),
                   ),
                 ],
@@ -484,9 +285,14 @@ class _Screen4State extends State<Screen4> {
                   // 리스트 헤더
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 15,
+                    ),
                     decoration: BoxDecoration(
-                      border: Border(bottom: BorderSide(color: Colors.grey.shade800)),
+                      border: Border(
+                        bottom: BorderSide(color: Colors.grey.shade800),
+                      ),
                       color: Colors.grey.shade900,
                     ),
                     child: Row(
@@ -494,9 +300,16 @@ class _Screen4State extends State<Screen4> {
                       children: [
                         const Text(
                           "상세 경로 안내",
-                          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                        Icon(Icons.format_list_numbered, color: Colors.grey.shade400),
+                        Icon(
+                          Icons.format_list_numbered,
+                          color: Colors.grey.shade400,
+                        ),
                       ],
                     ),
                   ),
@@ -504,15 +317,22 @@ class _Screen4State extends State<Screen4> {
                   // 실제 리스트 (스크롤 가능)
                   Expanded(
                     child: widget.routes.isEmpty
-                        ? const Center(child: Text("경로 정보가 없습니다.", style: TextStyle(color: Colors.grey)))
+                        ? const Center(
+                            child: Text(
+                              "경로 정보가 없습니다.",
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          )
                         : ListView.separated(
                             padding: const EdgeInsets.all(20),
                             // 첫 번째 경로 세그먼트의 stepDescription 사용
                             itemCount: widget.routes[0].stepDescription.length,
-                            separatorBuilder: (context, index) => Divider(color: Colors.grey.shade800),
+                            separatorBuilder: (context, index) =>
+                                Divider(color: Colors.grey.shade800),
                             itemBuilder: (context, index) {
-                              final stepDesc = widget.routes[0].stepDescription[index];
-                              
+                              final stepDesc =
+                                  widget.routes[0].stepDescription[index];
+
                               return Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -535,7 +355,7 @@ class _Screen4State extends State<Screen4> {
                                     ),
                                   ),
                                   const SizedBox(width: 15),
-                                  
+
                                   // 설명 텍스트
                                   Expanded(
                                     child: Text(
@@ -580,7 +400,10 @@ class _Screen4State extends State<Screen4> {
               backgroundColor: Colors.blueAccent,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              textStyle: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ),

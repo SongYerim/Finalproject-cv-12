@@ -1,17 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io'; // File 읽기용
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // 진동(HapticFeedback)용
+import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:geolocator/geolocator.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sidae_app/screens/2.dart';
-import 'package:sidae_app/screens/6.dart';
 import 'package:sidae_app/screens/3.dart';
+import 'package:sidae_app/screens/6.dart';
 import '../services/api_service.dart';
+import '../services/tts_service.dart';
 import '../models/route_model.dart';
 
 //화면 단계: 1(ready) / 2(listening) / 3(done) / 4(failed)- UI 변환
@@ -26,9 +26,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   // 1. 필요한 도구들 준비
-  final stt.SpeechToText _speech = stt.SpeechToText(); // 음성 인식기
-  final FlutterTts _flutterTts = FlutterTts();         // 음성 합성기 (말하는 AI)
-  final ApiService _apiService = ApiService();         // 서버 통신 담당
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  final ApiService _apiService = ApiService();
+  final TtsService _ttsService = TtsService.instance;
 
   // 2. 상태 변수들
   bool _isSpeechEnabled = false;
@@ -55,9 +55,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _setupSystem() async {
-    await _requestPermissions(); // 1. 권한 요청
-    await _initTts();   // 2. TTS 설정
-    _initSpeech();      // 3. STT 초기화
+    await _requestPermissions();
+    await _ttsService.initialize();
+    _initSpeech();
   }
 
   // 초기 권한 요청 함수
@@ -69,26 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ].request();
   }
 
-  // TTS 초기 설정 (한국어 설정)
-  Future<void> _initTts() async {
-    await _flutterTts.setLanguage("ko-KR");
-    await _flutterTts.setPitch(1.0);
-    await _flutterTts.setSpeechRate(0.5);
-    // iOS 오디오 세션 설정 (말하기/듣기 충돌 방지)
-    await _flutterTts.setIosAudioCategory(
-        IosTextToSpeechAudioCategory.playAndRecord,
-        [
-          IosTextToSpeechAudioCategoryOptions.allowBluetooth,
-          IosTextToSpeechAudioCategoryOptions.defaultToSpeaker
-        ],
-    );
-
-    // ✅ 가능하면 await이 “완료까지” 의미 있도록(버전에 따라 없어도 됨)
-    try {
-      await _flutterTts.awaitSpeakCompletion(true);
-    } catch (_) {}
-  }
-
+  
 // STT 초기화
   void _initSpeech() async {
     try {
@@ -118,10 +99,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 텍스트 읽어주기 함수 (TTS 말하기)
   Future<void> _speak(String text) async {
-    await _flutterTts.stop();
-    await _flutterTts.speak(text);
+    await _ttsService.speak(text);
   }
 
   // STT 에러(특히 timeout) 발생 시: 실패 화면 -> TTS -> ready로 복귀
@@ -130,29 +109,22 @@ class _HomeScreenState extends State<HomeScreen> {
     _handlingSttError = true;
 
     try {
-      // listening 세션 정리
       try { await _speech.stop(); } catch (_) {}
 
       if (!mounted) return;
 
-      // 1) 실패 화면으로 전환
       setState(() {
         _isListening = false;
-        _step = SttStep.failed; // 실패 UI
+        _step = SttStep.failed;
       });
 
-      // 2) 실패 안내 TTS
       await _speak("음성인식에 실패했습니다");
 
-      // 3) 잠깐 실패 화면 보여준 뒤 1-1(ready)로 복귀
-      // await Future.delayed(const Duration(milliseconds: 400));
       if (!mounted) return;
-      // 3) 1-1 화면으로 복귀
       setState(() {
         _step = SttStep.ready;
       });
 
-      // 4) 다시 안내
       await _speak("화면을 눌러 목적지를 말해주세요.");
     } finally {
       _handlingSttError = false;
@@ -175,7 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     
-    await _flutterTts.stop();
+    await _ttsService.stop();
 
     if (!_isListening) {
       setState(() {
@@ -349,104 +321,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // route_data.json 파일을 읽어서 파싱하는 함수 (assets에서)
-  Future<void> _loadRouteDataJson() async {
-    try {
-      // assets에서 route_data.json 읽기
-      final String jsonString = await rootBundle.loadString('assets/route_data.json');
-      
-      // JSON 파싱
-      final List<dynamic> jsonData = json.decode(jsonString);
-      
-      // RouteSegment 리스트로 변환 (API 방식과 동일)
-      final List<RouteSegment> routes = jsonData
-          .map((item) => RouteSegment.fromJson(item as Map<String, dynamic>))
-          .toList();
-      
-      if (!mounted) return;
-      
-      // 3.dart로 이동
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MapResultScreen(
-            routes: routes,
-            destinationName: "테스트 목적지 (route_data.json)",
-          ),
-        ),
-      );
-      
-      debugPrint("[1.dart] route_data.json 로드 완료, ${routes.length}개 구간");
-    } catch (e) {
-      debugPrint("[1.dart] route_data.json 로드 실패: $e");
-      if (!mounted) return;
-      _speak("경로 데이터를 불러오는데 실패했습니다.");
-    }
-  }
-
-  // route_data_2.json 파일을 읽어서 파싱하는 함수 (앱 내부 저장소 또는 assets에서)
-  Future<void> _loadRouteData2Json() async {
-    try {
-      String jsonString;
-      
-      // 1. 먼저 앱 내부 저장소에서 route_data_2.json 읽기 시도
-      try {
-        final directory = await getApplicationDocumentsDirectory();
-        final file = File('${directory.path}/route_data_2.json');
-        
-        if (await file.exists()) {
-          jsonString = await file.readAsString(encoding: utf8);
-          debugPrint("[1.dart] 앱 내부 저장소에서 route_data_2.json 로드 성공");
-        } else {
-          // 2. 파일이 없으면 assets에서 route_data_2.json 읽기
-          jsonString = await rootBundle.loadString('assets/route_data_2.json');
-          debugPrint("[1.dart] assets에서 route_data_2.json 로드 성공");
-        }
-      } catch (e) {
-        // 3. 앱 내부 저장소 읽기 실패 시 assets에서 읽기
-        debugPrint("[1.dart] 앱 내부 저장소 읽기 실패, assets에서 시도: $e");
-        jsonString = await rootBundle.loadString('assets/route_data_2.json');
-        debugPrint("[1.dart] assets에서 route_data_2.json 로드 성공");
-      }
-      
-      // JSON 파싱
-      final List<dynamic> jsonData = json.decode(jsonString);
-      
-      // RouteSegment 리스트로 변환 (API 방식과 동일)
-      final List<RouteSegment> routes = jsonData
-          .map((item) => RouteSegment.fromJson(item as Map<String, dynamic>))
-          .toList();
-      
-      if (!mounted) return;
-      
-      // 3.dart로 이동
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MapResultScreen(
-            routes: routes,
-            destinationName: "테스트 목적지 (route_data_2.json)",
-          ),
-        ),
-      );
-      
-      debugPrint("[1.dart] route_data_2.json 로드 완료, ${routes.length}개 구간");
-    } catch (e) {
-      debugPrint("[1.dart] route_data_2.json 로드 실패: $e");
-      if (!mounted) return;
-      _speak("경로 데이터를 불러오는데 실패했습니다.");
-    }
-  }
-
-  // YOLO 테스트 화면 열기
-  void _openYoloTest() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const YoloTestScreen(),
-      ),
-    );
-  }
 
   //  1) 첫 화면 (목적지를 말해주세요)
   Widget _buildReadyUI() {
@@ -560,6 +434,92 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  // route_data.json 파일을 읽어서 파싱하는 함수 (assets에서)
+  Future<void> _loadRouteDataJson() async {
+    try {
+      final String jsonString = await rootBundle.loadString('assets/route_data.json');
+      final List<dynamic> jsonData = json.decode(jsonString);
+      final List<RouteSegment> routes = jsonData
+          .map((item) => RouteSegment.fromJson(item as Map<String, dynamic>))
+          .toList();
+      
+      if (!mounted) return;
+      
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MapResultScreen(
+            routes: routes,
+            destinationName: "테스트 목적지 (route_data.json)",
+          ),
+        ),
+      );
+      
+      debugPrint("[1.dart] route_data.json 로드 완료, ${routes.length}개 구간");
+    } catch (e) {
+      debugPrint("[1.dart] route_data.json 로드 실패: $e");
+      if (!mounted) return;
+      _speak("경로 데이터를 불러오는데 실패했습니다.");
+    }
+  }
+
+  // route_data_2.json 파일을 읽어서 파싱하는 함수
+  Future<void> _loadRouteData2Json() async {
+    try {
+      String jsonString;
+      
+      try {
+        final directory = await getApplicationDocumentsDirectory();
+        final file = File('${directory.path}/route_data_2.json');
+        
+        if (await file.exists()) {
+          jsonString = await file.readAsString(encoding: utf8);
+          debugPrint("[1.dart] 앱 내부 저장소에서 route_data_2.json 로드 성공");
+        } else {
+          jsonString = await rootBundle.loadString('assets/route_data_2.json');
+          debugPrint("[1.dart] assets에서 route_data_2.json 로드 성공");
+        }
+      } catch (e) {
+        debugPrint("[1.dart] 앱 내부 저장소 읽기 실패, assets에서 시도: $e");
+        jsonString = await rootBundle.loadString('assets/route_data_2.json');
+        debugPrint("[1.dart] assets에서 route_data_2.json 로드 성공");
+      }
+      
+      final List<dynamic> jsonData = json.decode(jsonString);
+      final List<RouteSegment> routes = jsonData
+          .map((item) => RouteSegment.fromJson(item as Map<String, dynamic>))
+          .toList();
+      
+      if (!mounted) return;
+      
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MapResultScreen(
+            routes: routes,
+            destinationName: "테스트 목적지 (route_data_2.json)",
+          ),
+        ),
+      );
+      
+      debugPrint("[1.dart] route_data_2.json 로드 완료, ${routes.length}개 구간");
+    } catch (e) {
+      debugPrint("[1.dart] route_data_2.json 로드 실패: $e");
+      if (!mounted) return;
+      _speak("경로 데이터를 불러오는데 실패했습니다.");
+    }
+  }
+
+  // YOLO 테스트 화면 열기
+  void _openYoloTest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const YoloTestScreen(),
+      ),
     );
   }
 

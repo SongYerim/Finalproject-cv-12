@@ -1,16 +1,16 @@
-// lib/5.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:sensors_plus/sensors_plus.dart';
-import 'package:flutter_tts/flutter_tts.dart'; // TTS 추가
-import 'package:flutter/services.dart'; // HapticFeedback 추가
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import '../models/route_model.dart';
 import '../services/route_tracker.dart';
-import '../services/crosswalk_detector.dart'; // CrosswalkDetector 추가
-import '6.dart'; // YOLO 화면
+import '../services/crosswalk_detector.dart';
+import '../services/tts_service.dart';
+import '../services/navigation_service.dart';
+import '../widgets/progress_indicator_widget.dart';
+import '6.dart';
 
 class RouteTrackingMapScreen extends StatefulWidget {
   final List<RouteSegment> routes;
@@ -28,77 +28,47 @@ class RouteTrackingMapScreen extends StatefulWidget {
 
 class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   NaverMapController? _mapController;
-  StreamSubscription<Position>? _positionSubscription;
-  StreamSubscription<MagnetometerEvent>? _magnetometerSubscription;
-  
-  // RouteTracker 사용
   final RouteTracker _tracker = RouteTracker.instance;
-  
-  // 횡단보도 감지기
+  final NavigationService _navService = NavigationService();
+  final TtsService _ttsService = TtsService.instance;
   CrosswalkDetector? _crosswalkDetector;
-  final FlutterTts _tts = FlutterTts();
-  
-  // 현재 위치
   Position? _currentPosition;
-  
-  // 지나간 것으로 판단하는 반경 (미터)
   static const double _passThreshold = 15.0;
-  
-  // 방향 관련 변수 (4.dart와 동일)
-  double _deviceHeading = 0.0;       // 나침반 방향
-  double _targetBearing = 0.0;       // 목표 방향
-  List<Position> _recentPositions = []; // 최근 2개 GPS 좌표
-  double _travelingBearing = -1.0;   // 진행 방향 (GPS 기반)
-  double _routeBearing = -1.0;       // 경로상 가야할 방향
-  static const double _minDistanceForBearing = 1.0;
 
   @override
   void initState() {
     super.initState();
     _initializePathPoints();
-    _initCrosswalkDetector(); // 횡단보도 감지 초기화
-    _initTts(); // TTS 초기화
-    _initSensor();
-    // _startLocationTracking()은 지도 초기화 후 호출됨
+    _initCrosswalkDetector();
+    _ttsService.initialize();
+    _navService.initSensor();
   }
-  
-  // 횡단보도 감지기 초기화
+
   void _initCrosswalkDetector() {
     _crosswalkDetector = CrosswalkDetector(
       routes: widget.routes,
-      onCrosswalkDetected: (RouteStep crosswalkStep) async {
+      onCrosswalkDetected: (CrosswalkInfo crosswalkInfo) async {
         if (!mounted) return;
-        
-        // 횡단보도 감지 시 TTS 안내
-        await _tts.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려달라");
-        HapticFeedback.vibrate(); // 진동 알림
-        debugPrint("🚶 횡단보도 감지: ${crosswalkStep.description}");
-        
-        // TTS 완료 후 YOLO 화면으로 전환
-        await Future.delayed(const Duration(milliseconds: 500)); // TTS 시작 대기
+        await _ttsService.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려달라");
+        HapticFeedback.vibrate();
+        await Future.delayed(const Duration(milliseconds: 500));
         if (!mounted) return;
-        
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => const YoloTestScreen(),
+            builder: (context) => YoloTestScreen(
+              exitLat: crosswalkInfo.exitLat,
+              exitLng: crosswalkInfo.exitLng,
+            ),
           ),
         );
       },
     );
   }
-  
-  // TTS 초기화
-  void _initTts() async {
-    await _tts.setLanguage("ko-KR");
-    await _tts.setSpeechRate(0.5);
-    await _tts.setVolume(1.0);
-  }
 
   @override
   void dispose() {
-    _positionSubscription?.cancel();
-    _magnetometerSubscription?.cancel();
+    _navService.dispose();
     super.dispose();
   }
 
@@ -108,122 +78,27 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
     for (var route in widget.routes) {
       allPathPoints.addAll(route.pathCoordinates);
     }
-    
+
     // RouteTracker에 경로 초기화
     _tracker.initialize(allPathPoints);
-    
+
     debugPrint("총 경로 점 개수: ${_tracker.allPathPoints.length}");
   }
 
-  // 센서 초기화 (4.dart와 동일)
-  void _initSensor() {
-    _magnetometerSubscription = magnetometerEvents.listen((MagnetometerEvent event) {
-      if (!mounted) return;
-      double heading = math.atan2(event.y, event.x);
-      heading = heading * (180 / math.pi);
-      heading = 90 - heading; // 북쪽 기준으로 보정
-      if (heading < 0) heading += 360;
-      if (heading >= 360) heading -= 360;
-
-      setState(() {
-        _deviceHeading = heading;
-      });
-    });
-  }
-
-  // 최근 GPS 좌표 저장 (4.dart와 동일)
-  void _updateRecentPositions(Position position) {
-    _recentPositions.add(position);
-    if (_recentPositions.length > 2) {
-      _recentPositions.removeAt(0);
-    }
-  }
-
-  // 최근 2개 GPS 좌표로 진행 방향 계산 (4.dart와 동일)
-  void _calculateTravelingBearing() {
-    if (_recentPositions.length < 2) return;
-
-    final prev = _recentPositions[0];
-    final curr = _recentPositions[1];
-
-    double distance = Geolocator.distanceBetween(
-      prev.latitude,
-      prev.longitude,
-      curr.latitude,
-      curr.longitude,
-    );
-
-    if (distance < _minDistanceForBearing) return;
-
-    double bearing = Geolocator.bearingBetween(
-      prev.latitude,
-      prev.longitude,
-      curr.latitude,
-      curr.longitude,
-    );
-    if (bearing < 0) bearing += 360;
-
-    setState(() {
-      _travelingBearing = bearing;
-    });
-  }
-
-  // 경로상 다음 목표 좌표 찾기 및 가야 할 방향 계산 (4.dart와 동일)
-  void _updateRouteBearing(Position currentPosition) {
-    if (_tracker.allPathPoints.isEmpty) return;
-
-    final currentLat = currentPosition.latitude;
-    final currentLng = currentPosition.longitude;
-
-    // 현재 목표 좌표 가져오기
-    final targetPoint = _tracker.getCurrentTarget();
-    if (targetPoint == null) return;
-
-    // 현재 목표까지의 방향 계산
-    double bearing = Geolocator.bearingBetween(
-      currentLat,
-      currentLng,
-      targetPoint.latitude,
-      targetPoint.longitude,
-    );
-    if (bearing < 0) bearing += 360;
-
-    setState(() {
-      _routeBearing = bearing;
-      _targetBearing = bearing;
-    });
-  }
-
-  // GPS 위치 추적 시작
   void _startLocationTracking() {
-    // 0.5초마다 GPS 위치 업데이트
-    _positionSubscription = Stream.periodic(
-      const Duration(milliseconds: 500), // 0.5초 간격
-      (count) => count,
-    ).asyncMap((_) async {
-      return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-    }).listen((Position position) {
-      if (!mounted) return;
-      
-      setState(() {
-        _currentPosition = position;
-      });
-      
-      // 방향 계산 (4.dart와 동일)
-      _updateRecentPositions(position);
-      _calculateTravelingBearing();
-      _updateRouteBearing(position);
-      
-      // 횡단보도 감지
-      _checkCrosswalk(position);
-      
-      _checkAndUpdatePassedPoints(position);
-      _updateMapMarkers();
-    });
+    _navService.startLocationTracking(onUpdate: _onPositionUpdate);
   }
-  
+
+  void _onPositionUpdate(Position position) {
+    if (!mounted) return;
+    setState(() {
+      _currentPosition = position;
+    });
+    _checkCrosswalk(position);
+    _checkAndUpdatePassedPoints(position);
+    _updateMapMarkers();
+  }
+
   // 횡단보도 근접 감지
   void _checkCrosswalk(Position position) {
     if (_crosswalkDetector == null) return;
@@ -232,50 +107,47 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
   // 현재 위치를 기준으로 지나간 점들을 체크
   void _checkAndUpdatePassedPoints(Position position) {
-    final targetPoint = _tracker.getCurrentTarget();
-    if (targetPoint == null) return;
+    if (_tracker.allPathPoints.isEmpty) return;
 
-    // 현재 목표 점과의 거리 계산
-    double distance = Geolocator.distanceBetween(
-      position.latitude,
-      position.longitude,
-      targetPoint.latitude,
-      targetPoint.longitude,
-    );
+    // 현재 목표부터 끝까지 모든 점들을 스캔하여 가장 가까운 점 찾기
+    int closestIndex = -1;
+    double closestDistance = double.infinity;
 
-    debugPrint("현재 목표 인덱스: ${_tracker.currentTargetIndex}, 거리: ${distance.toStringAsFixed(1)}m");
-
-    // 반경 이내에 들어왔으면 "지나감"으로 표시
-    if (distance <= _passThreshold) {
-      setState(() {
-        _tracker.markAsPassed(_tracker.currentTargetIndex);
-        _tracker.moveToNextTarget();
-        debugPrint("지점 ${_tracker.currentTargetIndex} 통과! 다음 목표: ${_tracker.currentTargetIndex}");
-      });
-
-      // 다음 목표 인덱스가 여러 개의 점을 건너뛰어야 하는 경우 처리
-      // (예: GPS가 부정확해서 중간 점을 건너뛴 경우)
-      _skipNearbyPassedPoints(position);
-    }
-  }
-
-  // 현재 위치 근처의 이미 지나쳤을 수 있는 점들을 자동으로 "지나감" 처리
-  void _skipNearbyPassedPoints(Position position) {
-    // 현재 목표 이전의 점들 중 가까운 점들을 찾아서 지나감 처리
-    for (int i = 0; i < _tracker.currentTargetIndex && i < _tracker.allPathPoints.length; i++) {
-      if (_tracker.pointsPassed[i]) continue; // 이미 지나간 점은 건너뛰기
-      
+    for (
+      int i = _tracker.currentTargetIndex;
+      i < _tracker.allPathPoints.length;
+      i++
+    ) {
       double distance = Geolocator.distanceBetween(
         position.latitude,
         position.longitude,
         _tracker.allPathPoints[i].latitude,
         _tracker.allPathPoints[i].longitude,
       );
-      
-      // 뒤쪽 점이라도 매우 가까우면 지나간 것으로 처리
-      if (distance <= _passThreshold) {
-        _tracker.markAsPassed(i);
+
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = i;
       }
+    }
+
+    debugPrint(
+      "현재 목표: ${_tracker.currentTargetIndex}, 가장 가까운 점: $closestIndex, 거리: ${closestDistance.toStringAsFixed(1)}m",
+    );
+
+    // 가장 가까운 점이 임계값 이내면 해당 점까지 모두 통과 처리
+    if (closestIndex >= 0 && closestDistance <= _passThreshold) {
+      setState(() {
+        // 가장 가까운 점까지의 모든 점을 통과 처리
+        _tracker.markAllPassedUpTo(closestIndex);
+        // 다음 목표를 가장 가까운 점 다음으로 설정
+        if (closestIndex + 1 < _tracker.allPathPoints.length) {
+          _tracker.currentTargetIndex = closestIndex + 1;
+        }
+        debugPrint(
+          "지점 $closestIndex까지 통과! 다음 목표: ${_tracker.currentTargetIndex}",
+        );
+      });
     }
   }
 
@@ -285,11 +157,11 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
     // 경로 점들을 원으로 표시
     final Set<NAddableOverlay> overlays = {};
-    
+
     for (int i = 0; i < _tracker.allPathPoints.length; i++) {
       Color circleColor;
       double radius;
-      
+
       if (_tracker.pointsPassed[i]) {
         // 지나간 점: 회색
         circleColor = Colors.grey.withOpacity(0.5);
@@ -312,7 +184,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         outlineColor: Colors.white,
         outlineWidth: 2,
       );
-      
+
       overlays.add(circle);
     }
 
@@ -320,7 +192,10 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
     if (_currentPosition != null) {
       final myLocationMarker = NMarker(
         id: "my_location",
-        position: NLatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+        position: NLatLng(
+          _currentPosition!.latitude,
+          _currentPosition!.longitude,
+        ),
         icon: const NOverlayImage.fromAssetImage('assets/sidae_logo.png'),
         size: const Size(40, 40),
       );
@@ -357,7 +232,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       position: _tracker.allPathPoints.last,
       caption: NOverlayCaption(text: "도착", textSize: 14),
     );
-    
+
     // 출발/도착 위치를 원으로 표시
     final startCircle = NCircleOverlay(
       id: "start_circle",
@@ -367,7 +242,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       outlineColor: Colors.white,
       outlineWidth: 3,
     );
-    
+
     final endCircle = NCircleOverlay(
       id: "end_circle",
       center: _tracker.allPathPoints.last,
@@ -377,7 +252,12 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       outlineWidth: 3,
     );
 
-    _mapController!.addOverlayAll({startMarker, endMarker, startCircle, endCircle});
+    _mapController!.addOverlayAll({
+      startMarker,
+      endMarker,
+      startCircle,
+      endCircle,
+    });
 
     // 카메라를 경로에 맞춤
     final cameraUpdate = NCameraUpdate.fitBounds(
@@ -389,10 +269,6 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 진행률 계산
-    int passedCount = _tracker.pointsPassed.where((passed) => passed).length;
-    double progress = _tracker.getProgress();
-
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -402,47 +278,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       ),
       body: Column(
         children: [
-          // 진행 상황 표시
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            color: Colors.grey.shade900,
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "진행 상황",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      "$passedCount / ${_tracker.allPathPoints.length} 지점 통과",
-                      style: const TextStyle(
-                        color: Colors.yellowAccent,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 8,
-                    backgroundColor: Colors.grey.shade700,
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ProgressIndicatorWidget(tracker: _tracker),
 
           // 지도
           Expanded(
@@ -463,11 +299,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
                   },
                 ),
                 // 왼쪽 위에 방향 정보 표시
-                Positioned(
-                  top: 16,
-                  left: 16,
-                  child: _buildDirectionInfo(),
-                ),
+                Positioned(top: 16, left: 16, child: _buildDirectionInfo()),
               ],
             ),
           ),
@@ -491,14 +323,14 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
     );
   }
 
-  // 방향 정보 위젯
   Widget _buildDirectionInfo() {
-    // 가야할 방향: GPS 기반이 있으면 사용, 없으면 계산된 목표 방향 사용
-    double targetDirection = _routeBearing >= 0 ? _routeBearing : _targetBearing;
-    
-    // 진행 방향: GPS 기반이 있으면 사용, 없으면 센서 기반 사용
-    double currentDirection = _travelingBearing >= 0 ? _travelingBearing : _deviceHeading;
-    
+    double targetDirection = _navService.routeBearing >= 0
+        ? _navService.routeBearing
+        : _navService.targetBearing;
+    double currentDirection = _navService.travelingBearing >= 0
+        ? _navService.travelingBearing
+        : _navService.deviceHeading;
+
     // 각 방향의 절대 각도 (북쪽 기준)
     double targetAngle = targetDirection * (math.pi / 180);
     double currentAngle = currentDirection * (math.pi / 180);
@@ -598,11 +430,8 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            _travelingBearing >= 0 ? "(GPS 기반)" : "(센서 기반)",
-            style: TextStyle(
-              color: Colors.grey.shade400,
-              fontSize: 11,
-            ),
+            _navService.travelingBearing >= 0 ? "(GPS 기반)" : "(센서 기반)",
+            style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
           ),
         ],
       ),
@@ -622,10 +451,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white, fontSize: 12),
-        ),
+        Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
       ],
     );
   }

@@ -1,20 +1,30 @@
 import 'package:geolocator/geolocator.dart';
 import '../models/route_model.dart';
 
+/// 횡단보도 정보 (감지된 횡단보도 + 반대편 좌표)
+class CrosswalkInfo {
+  final RouteStep step;
+  final double exitLat; // 횡단보도 반대편 위도
+  final double exitLng; // 횡단보도 반대편 경도
+
+  CrosswalkInfo({
+    required this.step,
+    required this.exitLat,
+    required this.exitLng,
+  });
+}
+
 /// 횡단보도 감지 서비스
 class CrosswalkDetector {
   static const double proximityThreshold = 20.0; // 20m 이내
-  
+
   List<RouteSegment> routes = [];
-  Function(RouteStep)? onCrosswalkDetected;
-  
+  Function(CrosswalkInfo)? onCrosswalkDetected;
+
   // 이미 감지된 횡단보도 추적 (중복 감지 방지)
   final Set<String> _detectedCrosswalks = {};
 
-  CrosswalkDetector({
-    required this.routes,
-    this.onCrosswalkDetected,
-  });
+  CrosswalkDetector({required this.routes, this.onCrosswalkDetected});
 
   /// GPS 위치 업데이트 시 호출
   void checkCrosswalkProximity(Position position) {
@@ -35,11 +45,27 @@ class CrosswalkDetector {
           // 20m 이내 근접 시
           if (distance <= proximityThreshold) {
             String crosswalkId = '${step.lat}_${step.lng}';
-            
+
             // 이미 감지된 횡단보도가 아니면 콜백 호출
             if (!_detectedCrosswalks.contains(crosswalkId)) {
               _detectedCrosswalks.add(crosswalkId);
-              onCrosswalkDetected?.call(step);
+
+              // 횡단보도 반대편 좌표 계산 (path의 마지막 점 사용)
+              double exitLat = step.lat;
+              double exitLng = step.lng;
+              if (step.path.isNotEmpty) {
+                final lastPoint = step.path.last;
+                exitLat = lastPoint[0];
+                exitLng = lastPoint[1];
+              }
+
+              final crosswalkInfo = CrosswalkInfo(
+                step: step,
+                exitLat: exitLat,
+                exitLng: exitLng,
+              );
+
+              onCrosswalkDetected?.call(crosswalkInfo);
               return; // 한 번에 하나만 처리
             }
           } else {
