@@ -5,6 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/signal_state_service.dart';
 import '../services/tts_service.dart';
+import '../services/navigation_service.dart';
 
 /// YOLO 온디바이스 객체 감지 테스트 화면
 ///
@@ -52,7 +53,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
   SignalConsensus _currentConsensus = SignalConsensus.unknown;
 
   // GPS 추적 및 자동 종료
-  StreamSubscription<Position>? _positionSubscription;
+  final NavigationService _navService = NavigationService();
   bool _hasReachedExit = false;
   Timer? _exitTimer;
   int _exitCountdown = 10; // 10초 카운트다운
@@ -84,47 +85,39 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
 
     // 반대편 좌표가 있으면 GPS 추적 시작
     if (widget.exitLat != null && widget.exitLng != null) {
+      debugPrint(
+        '✅ exitLat/exitLng 전달됨: (${widget.exitLat}, ${widget.exitLng})',
+      );
       _startExitTracking();
+    } else {
+      debugPrint('⚠️ exitLat/exitLng가 null - GPS 추적 비활성화');
     }
   }
 
-  /// 횡단보도 반대편 도달 추적 시작
+  /// 횡단보도 반대편 도달 추적 시작 (NavigationService 사용)
   void _startExitTracking() {
-    try {
-      debugPrint('🚶 횡단보도 반대편 추적 시작: (${widget.exitLat}, ${widget.exitLng})');
+    debugPrint('🚶 횡단보도 반대편 추적 시작: (${widget.exitLat}, ${widget.exitLng})');
 
-      _positionSubscription =
-          Geolocator.getPositionStream(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
-              distanceFilter: 3,
-            ),
-          ).listen(
-            (Position position) {
-              if (!mounted || _hasReachedExit) return;
+    _navService.startLocationTracking(
+      onUpdate: (Position position) {
+        if (!mounted || _hasReachedExit) return;
 
-              // 반대편 좌표와의 거리 계산
-              double distance = Geolocator.distanceBetween(
-                position.latitude,
-                position.longitude,
-                widget.exitLat!,
-                widget.exitLng!,
-              );
+        // 반대편 좌표와의 거리 계산
+        double distance = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          widget.exitLat!,
+          widget.exitLng!,
+        );
 
-              debugPrint('📍 반대편까지 거리: ${distance.toStringAsFixed(1)}m');
+        debugPrint('📍 반대편까지 거리: ${distance.toStringAsFixed(1)}m');
 
-              // 반대편에 도달했으면 타이머 시작
-              if (distance <= _exitThreshold) {
-                _onReachedExit();
-              }
-            },
-            onError: (error) {
-              debugPrint('❌ GPS 추적 에러: $error');
-            },
-          );
-    } catch (e) {
-      debugPrint('❌ GPS 추적 시작 실패: $e');
-    }
+        // 반대편에 도달했으면 타이머 시작
+        if (distance <= _exitThreshold) {
+          _onReachedExit();
+        }
+      },
+    );
   }
 
   /// 횡단보도 반대편 도달 시 호출
@@ -293,8 +286,8 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
     });
     // 신호 상태 서비스 콜백 해제
     _signalStateService.onStateChanged = null;
-    // GPS 추적 중지
-    _positionSubscription?.cancel();
+    // GPS 추적 중지 (NavigationService)
+    _navService.stopLocationTracking();
     // 종료 타이머 취소
     _exitTimer?.cancel();
     // 감지 스트림 중지
