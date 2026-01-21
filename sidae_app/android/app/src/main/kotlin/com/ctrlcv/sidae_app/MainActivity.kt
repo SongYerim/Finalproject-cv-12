@@ -80,6 +80,7 @@ class MainActivity : FlutterActivity() {
     private var previewView: PreviewView? = null
     private var boundingBoxOverlayView: BoundingBoxOverlayView? = null
     private var camera: Camera? = null
+    private val interpreterLock = Object() // Interpreter 동기화용
     private var interpreter: Interpreter? = null
     private var gpuDelegate: GpuDelegate? = null
     private var labels: List<String> = emptyList()
@@ -176,11 +177,13 @@ class MainActivity : FlutterActivity() {
             labels = labelsText.split("\n").filter { it.isNotBlank() }
             Log.d(TAG, "라벨 로드 완료: ${labels.size}개")
             
-            // 기존 리소스 해제
-            gpuDelegate?.close()
-            gpuDelegate = null
-            interpreter?.close()
-            interpreter = null
+            // 기존 리소스 해제 (synchronized로 보호)
+            synchronized(interpreterLock) {
+                gpuDelegate?.close()
+                gpuDelegate = null
+                interpreter?.close()
+                interpreter = null
+            }
             
             // INT8 모델인지 확인 (best_int8.tflite)
             val isInt8Model = modelPath.contains("int8", ignoreCase = true)
@@ -391,6 +394,7 @@ class MainActivity : FlutterActivity() {
     
     private fun stopCamera(result: MethodChannel.Result) {
         try {
+            isProcessing = false  // 플래그 초기화
             cameraProvider?.unbindAll()
             camera = null
             imageAnalysis = null
@@ -466,71 +470,73 @@ class MainActivity : FlutterActivity() {
     }
     
     private fun runInference(image: Image, width: Int, height: Int): List<Map<String, Any>> {
-        val currentInterpreter = this.interpreter ?: return emptyList()
-        
-        try {
-            // 1. 전처리: YUV → RGB → Letterbox → 텐서
-            val inputTensor = preprocessImage(image, width, height, 640)
+        synchronized(interpreterLock) {
+            val currentInterpreter = this.interpreter ?: return emptyList()
             
-            // 2. 추론 - interpreter 상태 체크 (close된 경우 예외 발생 가능)
-            val inputShape: IntArray
-            val outputShape: IntArray
             try {
-                inputShape = currentInterpreter.getInputTensor(0).shape()
-                outputShape = currentInterpreter.getOutputTensor(0).shape()
-            } catch (e: IllegalStateException) {
-                Log.w(TAG, "⚠️ Interpreter가 닫힌 상태: ${e.message}")
-                return emptyList()
-            } catch (e: Exception) {
-                Log.w(TAG, "⚠️ Tensor 접근 실패: ${e.message}")
-                return emptyList()
-            }
-            
-            
-            // 성능 최적화: 전역 버퍼 재사용 (매 프레임 할당 방지)
-            val inputBuf = inputBuffer
-            val outputBuf = outputBuffer
-            
-            if (inputBuf == null || outputBuf == null) {
-                Log.w(TAG, "⚠️ 버퍼가 초기화되지 않음, 임시 버퍼 사용")
-                // 임시 버퍼 사용 (초기화 실패 시)
-                val tempInputBuffer = ByteBuffer.allocateDirect(4 * inputTensor.size)
-                    .order(ByteOrder.nativeOrder())
-                tempInputBuffer.asFloatBuffer().put(inputTensor)
+                // 1. 전처리: YUV → RGB → Letterbox → 텐서
+                val inputTensor = preprocessImage(image, width, height, 640)
                 
-                if (outputShape.size < 2) {
-                    Log.e(TAG, "출력 텐서 shape이 올바르지 않습니다: ${outputShape.contentToString()}")
+                // 2. 추론 - interpreter 상태 체크 (close된 경우 예외 발생 가능)
+                val inputShape: IntArray
+                val outputShape: IntArray
+                try {
+                    inputShape = currentInterpreter.getInputTensor(0).shape()
+                    outputShape = currentInterpreter.getOutputTensor(0).shape()
+                } catch (e: IllegalStateException) {
+                    Log.w(TAG, "⚠️ Interpreter가 닫힌 상태: ${e.message}")
+                    return emptyList()
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ Tensor 접근 실패: ${e.message}")
                     return emptyList()
                 }
                 
-                val outputSize = outputShape.fold(1) { acc, dim -> acc * dim }
-                val tempOutputBuffer = ByteBuffer.allocateDirect(4 * outputSize)
-                    .order(ByteOrder.nativeOrder())
                 
-                currentInterpreter.run(tempInputBuffer, tempOutputBuffer)
-                val detections = postprocessOutput(tempOutputBuffer, outputShape)
+                // 성능 최적화: 전역 버퍼 재사용 (매 프레임 할당 방지)
+                val inputBuf = inputBuffer
+                val outputBuf = outputBuffer
+                
+                if (inputBuf == null || outputBuf == null) {
+                    Log.w(TAG, "⚠️ 버퍼가 초기화되지 않음, 임시 버퍼 사용")
+                    // 임시 버퍼 사용 (초기화 실패 시)
+                    val tempInputBuffer = ByteBuffer.allocateDirect(4 * inputTensor.size)
+                        .order(ByteOrder.nativeOrder())
+                    tempInputBuffer.asFloatBuffer().put(inputTensor)
+                    
+                    if (outputShape.size < 2) {
+                        Log.e(TAG, "출력 텐서 shape이 올바르지 않습니다: ${outputShape.contentToString()}")
+                        return emptyList()
+                    }
+                    
+                    val outputSize = outputShape.fold(1) { acc, dim -> acc * dim }
+                    val tempOutputBuffer = ByteBuffer.allocateDirect(4 * outputSize)
+                        .order(ByteOrder.nativeOrder())
+                    
+                    currentInterpreter.run(tempInputBuffer, tempOutputBuffer)
+                    val detections = postprocessOutput(tempOutputBuffer, outputShape)
+                    return detections
+                }
+                
+                // 전역 버퍼 재사용
+                inputBuf.clear()
+                inputBuf.asFloatBuffer().put(inputTensor)
+                
+                outputBuf.clear()
+                
+                // 추론 실행
+                currentInterpreter.run(inputBuf, outputBuf)
+                
+                // 3. 후처리: NMS 출력 파싱
+                val detections = postprocessOutput(outputBuf, outputShape)
+                
                 return detections
+            } catch (e: IllegalStateException) {
+                Log.w(TAG, "⚠️ 추론 중 Interpreter 상태 오류: ${e.message}")
+                return emptyList()
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 추론 실패: ${e.message}", e)
+                return emptyList()
             }
-            
-            // 전역 버퍼 재사용
-            inputBuf.clear()
-            inputBuf.asFloatBuffer().put(inputTensor)
-            
-            outputBuf.clear()
-            
-            // 추론 실행
-            currentInterpreter.run(inputBuf, outputBuf)
-            
-            // 3. 후처리: NMS 출력 파싱
-            val detections = postprocessOutput(outputBuf, outputShape)
-            
-            return detections
-        } catch (e: IllegalStateException) {
-            Log.w(TAG, "⚠️ 추론 중 Interpreter 상태 오류: ${e.message}")
-            return emptyList()
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ 추론 실패: ${e.message}", e)
-            return emptyList()
         }
     }
     

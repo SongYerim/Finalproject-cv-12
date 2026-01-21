@@ -32,6 +32,7 @@ class _Screen4State extends State<Screen4> {
   final NavigationService _navService = NavigationService();
   final TtsService _ttsService = TtsService.instance;
   CrosswalkDetector? _crosswalkDetector;
+  bool _isNavigatingToCrosswalk = false; // 카메라 중복 실행 방지 플래그
 
   double _distanceToTarget = 0.0;
   DateTime _lastVibrationTime = DateTime.now();
@@ -47,6 +48,9 @@ class _Screen4State extends State<Screen4> {
   }
 
   void _initializePathPoints() {
+    // 이미 초기화되었으면 건너뛰기 (Screen5에서 돌아온 경우)
+    if (_tracker.allPathPoints.isNotEmpty) return;
+
     List<NLatLng> allPathPoints = [];
     for (var route in widget.routes) {
       allPathPoints.addAll(route.pathCoordinates);
@@ -60,8 +64,11 @@ class _Screen4State extends State<Screen4> {
     _crosswalkDetector = CrosswalkDetector(
       routes: widget.routes,
       onCrosswalkDetected: (CrosswalkInfo crosswalkInfo) async {
+        if (_isNavigatingToCrosswalk) return; // 이미 카메라로 이동 중이면 무시
+        _isNavigatingToCrosswalk = true; // 플래그 설정
+
         if (!mounted) return;
-        await _ttsService.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려달라");
+        await _ttsService.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려달주세요.");
         HapticFeedback.vibrate();
         await Future.delayed(const Duration(milliseconds: 500));
         if (!mounted) return;
@@ -73,7 +80,9 @@ class _Screen4State extends State<Screen4> {
               exitLng: crosswalkInfo.exitLng,
             ),
           ),
-        );
+        ).then((_) {
+          if (mounted) _isNavigatingToCrosswalk = false; // 카메라에서 돌아오면 플래그 해제
+        });
       },
     );
   }
@@ -95,6 +104,7 @@ class _Screen4State extends State<Screen4> {
 
   // 횡단보도 근접 감지
   void _checkCrosswalk(Position position) {
+    if (_isNavigatingToCrosswalk) return; // 이미 카메라로 이동 중이면 체크하지 않음
     if (_crosswalkDetector == null) return;
     _crosswalkDetector!.checkCrosswalkProximity(position);
   }
@@ -384,6 +394,7 @@ class _Screen4State extends State<Screen4> {
         child: SafeArea(
           child: ElevatedButton.icon(
             onPressed: () {
+              _navService.stopLocationTracking(); // Screen5로 이동 전 GPS 추적 중지
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -392,7 +403,14 @@ class _Screen4State extends State<Screen4> {
                     destinationName: widget.destinationName,
                   ),
                 ),
-              );
+              ).then((_) {
+                // Screen5에서 돌아오면 GPS 추적 재개
+                if (mounted) {
+                  _navService.startLocationTracking(
+                    onUpdate: _onPositionUpdate,
+                  );
+                }
+              });
             },
             icon: const Icon(Icons.map),
             label: const Text("경로 추적 지도 보기"),

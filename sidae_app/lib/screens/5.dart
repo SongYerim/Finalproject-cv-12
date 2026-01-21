@@ -34,6 +34,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   CrosswalkDetector? _crosswalkDetector;
   Position? _currentPosition;
   static const double _passThreshold = 15.0;
+  bool _isNavigatingToCrosswalk = false; // 화면 이동 중복 방지
 
   @override
   void initState() {
@@ -48,12 +49,16 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
     _crosswalkDetector = CrosswalkDetector(
       routes: widget.routes,
       onCrosswalkDetected: (CrosswalkInfo crosswalkInfo) async {
+        // 이미 화면 이동 중이면 무시 (중복 방지)
+        if (_isNavigatingToCrosswalk) return;
+        _isNavigatingToCrosswalk = true;
+
         if (!mounted) return;
-        await _ttsService.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려달라");
+        await _ttsService.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려주세요.");
         HapticFeedback.vibrate();
         await Future.delayed(const Duration(milliseconds: 500));
         if (!mounted) return;
-        Navigator.push(
+        Navigator.push<void>(
           context,
           MaterialPageRoute(
             builder: (context) => YoloTestScreen(
@@ -61,7 +66,12 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
               exitLng: crosswalkInfo.exitLng,
             ),
           ),
-        );
+        ).then((_) {
+          // 카메라 화면에서 복귀 시 플래그 초기화
+          if (mounted) {
+            _isNavigatingToCrosswalk = false;
+          }
+        });
       },
     );
   }
@@ -74,6 +84,12 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
   // 경로상의 모든 점들을 하나의 리스트로 합치기
   void _initializePathPoints() {
+    // 이미 초기화되었으면 건너뛰기 (Screen4에서 이미 초기화된 경우)
+    if (_tracker.allPathPoints.isNotEmpty) {
+      debugPrint("RouteTracker 이미 초기화됨, 건너뛰기");
+      return;
+    }
+
     List<NLatLng> allPathPoints = [];
     for (var route in widget.routes) {
       allPathPoints.addAll(route.pathCoordinates);
@@ -101,6 +117,8 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
   // 횡단보도 근접 감지
   void _checkCrosswalk(Position position) {
+    // 이미 카메라 화면으로 이동 중이면 추가 횡단보도 감지 무시
+    if (_isNavigatingToCrosswalk) return;
     if (_crosswalkDetector == null) return;
     _crosswalkDetector!.checkCrosswalkProximity(position);
   }

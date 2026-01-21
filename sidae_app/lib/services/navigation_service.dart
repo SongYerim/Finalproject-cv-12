@@ -27,7 +27,9 @@ class NavigationService {
 
   /// 센서 초기화 (나침반)
   void initSensor() {
-    _magnetometerSubscription = magnetometerEvents.listen((MagnetometerEvent event) {
+    _magnetometerSubscription = magnetometerEvents.listen((
+      MagnetometerEvent event,
+    ) {
       double heading = math.atan2(event.y, event.x);
       heading = heading * (180 / math.pi);
       heading = 90 - heading;
@@ -40,24 +42,29 @@ class NavigationService {
   }
 
   /// GPS 위치 추적 시작
-  void startLocationTracking({
-    required Function(Position) onUpdate,
-  }) {
+  void startLocationTracking({required Function(Position) onUpdate}) {
     onPositionUpdate = onUpdate;
 
-    _positionSubscription = Stream.periodic(
-      const Duration(milliseconds: 500),
-      (count) => count,
-    ).asyncMap((_) async {
-      return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-    }).listen((Position position) {
-      _updateRecentPositions(position);
-      _calculateTravelingBearing();
-      _updateRouteBearing(position);
-      onPositionUpdate?.call(position);
-    });
+    _positionSubscription =
+        Stream.periodic(const Duration(milliseconds: 500), (count) => count)
+            .asyncMap((_) async {
+              return await Geolocator.getCurrentPosition(
+                desiredAccuracy: LocationAccuracy.high,
+              );
+            })
+            .listen((Position position) {
+              _updateRecentPositions(position);
+              _calculateTravelingBearing();
+              _updateRouteBearing(position);
+              onPositionUpdate?.call(position);
+            });
+  }
+
+  /// GPS 위치 추적 중지 (센서는 유지)
+  void stopLocationTracking() {
+    _positionSubscription?.cancel();
+    _positionSubscription = null;
+    _recentPositions.clear();
   }
 
   /// 최근 GPS 좌표 저장

@@ -21,8 +21,8 @@ class CrosswalkDetector {
   List<RouteSegment> routes = [];
   Function(CrosswalkInfo)? onCrosswalkDetected;
 
-  // 이미 감지된 횡단보도 추적 (중복 감지 방지)
-  final Set<String> _detectedCrosswalks = {};
+  // 이미 감지된 횡단보도 추적 (중복 감지 방지) - static으로 모든 인스턴스가 공유
+  static final Set<String> _detectedCrosswalks = {};
 
   CrosswalkDetector({required this.routes, this.onCrosswalkDetected});
 
@@ -50,13 +50,24 @@ class CrosswalkDetector {
             if (!_detectedCrosswalks.contains(crosswalkId)) {
               _detectedCrosswalks.add(crosswalkId);
 
-              // 횡단보도 반대편 좌표 계산 (path의 마지막 점 사용)
+              // 횡단보도 반대편 좌표 계산
               double exitLat = step.lat;
               double exitLng = step.lng;
-              if (step.path.isNotEmpty) {
+
+              // 1순위: path의 마지막 점 사용 (횡단보도 반대편)
+              if (step.path.isNotEmpty && step.path.length >= 2) {
                 final lastPoint = step.path.last;
-                exitLat = lastPoint[0];
-                exitLng = lastPoint[1];
+                exitLat = lastPoint[0]; // lat
+                exitLng = lastPoint[1]; // lng
+              }
+              // 2순위 (폴백): 다음 step 좌표 사용
+              else {
+                int stepIndex = segment.steps.indexOf(step);
+                if (stepIndex >= 0 && stepIndex + 1 < segment.steps.length) {
+                  final nextStep = segment.steps[stepIndex + 1];
+                  exitLat = nextStep.lat;
+                  exitLng = nextStep.lng;
+                }
               }
 
               final crosswalkInfo = CrosswalkInfo(
@@ -68,13 +79,9 @@ class CrosswalkDetector {
               onCrosswalkDetected?.call(crosswalkInfo);
               return; // 한 번에 하나만 처리
             }
-          } else {
-            // 멀어지면 다시 감지 가능하도록 (선택사항)
-            String crosswalkId = '${step.lat}_${step.lng}';
-            if (distance > proximityThreshold * 2) {
-              _detectedCrosswalks.remove(crosswalkId);
-            }
           }
+          // 한 번 감지된 횡단보도는 영구적으로 감지 목록에 유지
+          // (횡단보도를 건넌 후 다시 카메라가 열리는 것을 방지)
         }
       }
     }

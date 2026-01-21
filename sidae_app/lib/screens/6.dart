@@ -133,7 +133,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
     _hasReachedExit = true;
 
     debugPrint('✅ 횡단보도 반대편 도달! 10초 후 카메라 종료');
-    TtsService.instance.speak('횡단보도를 건넜습니다. 10초 후 카메라가 종료됩니다.');
+    TtsService.instance.speak('횡단보도를 거의 다 건넜습니다. 10초 후 카메라가 종료됩니다.');
 
     // 10초 카운트다운 타이머 시작
     _exitTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -287,17 +287,18 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
 
   @override
   void dispose() {
+    // 네이티브 카메라 먼저 중지 (비동기지만 fire-and-forget)
+    _cameraChannel.invokeMethod('stopCamera').catchError((e) {
+      debugPrint('❌ 네이티브 카메라 중지 실패: $e');
+    });
     // 신호 상태 서비스 콜백 해제
     _signalStateService.onStateChanged = null;
     // GPS 추적 중지
     _positionSubscription?.cancel();
     // 종료 타이머 취소
     _exitTimer?.cancel();
-    // 네이티브 카메라 중지
+    // 감지 스트림 중지
     _detectionsSubscription?.cancel();
-    _cameraChannel.invokeMethod('stopCamera').catchError((e) {
-      debugPrint('❌ 네이티브 카메라 중지 실패: $e');
-    });
     super.dispose();
   }
 
@@ -452,7 +453,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        '횡단보도를 건넜습니다!',
+                        '횡단보도를 거의 다 건넜습니다!',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 24,
