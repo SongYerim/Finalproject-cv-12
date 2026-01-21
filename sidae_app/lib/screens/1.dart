@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
+// speech_to_text 플러그인 제거 - 네이티브 STT 사용
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
@@ -25,13 +25,21 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // 1. 필요한 도구들 준비
-  final stt.SpeechToText _speech = stt.SpeechToText();
+  // 1. 네이티브 STT를 위한 MethodChannel/EventChannel
+  static const MethodChannel _channel = MethodChannel(
+    'com.ctrlcv.sidae_app/yolo_native',
+  );
+  static const EventChannel _eventChannel = EventChannel(
+    'com.ctrlcv.sidae_app/yolo_detections',
+  );
+
+  StreamSubscription? _sttSubscription;
+
   final ApiService _apiService = ApiService();
   final TtsService _ttsService = TtsService.instance;
 
   // 2. 상태 변수들
-  bool _isSpeechEnabled = false;
+  bool _isSpeechEnabled = true; // 네이티브 STT는 항상 사용 가능으로 가정
   bool _isListening = false;
 
   // 화면 분기용 단계
@@ -40,7 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // STT 최종 결과(목적지)
   String _recognizedDestination = "";
 
-   // STT 에러 처리 중복 방지
+  // STT 에러 처리 중복 방지
   bool _handlingSttError = false;
 
   @override
@@ -64,39 +72,79 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _requestPermissions() async {
     await [
       Permission.microphone,
-      Permission.speech,    // iOS 필수 권한
+      Permission.speech, // iOS 필수 권한
       Permission.location,
     ].request();
   }
 
-  
-// STT 초기화
-  void _initSpeech() async {
+  // 네이티브 STT EventChannel 구독 초기화
+  void _initSpeech() {
     try {
-      final available = await _speech.initialize(
-        onStatus: (s) async {
-          debugPrint('[HomeScreen][STT][status] $s');
+      _sttSubscription = _eventChannel.receiveBroadcastStream().listen(
+        (event) {
+          if (event is Map && event['type'] == 'stt') {
+            final eventType = event['eventType'] as String?;
+            final data = event['data'] as String?;
 
-          // status가 done으로 끝났는데 finalResult가 안 온 경우(무음/timeout 등) 대비
-          if (s == 'done') {
-            await Future.delayed(const Duration(milliseconds: 200));
-            await _handleSttDoneWithoutResult();
+            debugPrint('[HomeScreen][STT] eventType: $eventType, data: $data');
+
+            switch (eventType) {
+              case 'status':
+                if (data == 'ready' || data == 'listening') {
+                  debugPrint('[HomeScreen][STT][status] $data');
+                }
+                break;
+              case 'result':
+                // 최종 결과
+                _handleSttResult(data ?? '');
+                break;
+              case 'partial':
+                // 부분 결과 (필요시 UI 업데이트용)
+                debugPrint('[HomeScreen][STT][partial] $data');
+                break;
+              case 'error':
+                // 에러 처리
+                _handleSttError(data ?? 'unknown_error');
+                break;
+            }
           }
         },
-        onError: (e) async {
-          debugPrint('[HomeScreen][STT][error] ${e.errorMsg}');
-          // timeout/error 시 실패 화면 -> TTS -> ready 복귀
-          await _handleSttError(e.errorMsg);
+        onError: (error) {
+          debugPrint('[HomeScreen][STT][stream error] $error');
         },
       );
 
       if (!mounted) return;
-      setState(() => _isSpeechEnabled = available);
+      setState(() => _isSpeechEnabled = true);
+      debugPrint('[HomeScreen] 네이티브 STT EventChannel 구독 완료');
     } catch (e) {
       debugPrint("STT 초기화 실패: $e");
       if (!mounted) return;
       setState(() => _isSpeechEnabled = false);
     }
+  }
+
+  // STT 최종 결과 처리
+  void _handleSttResult(String text) {
+    if (!mounted) return;
+
+    setState(() {
+      _isListening = false;
+      _step = SttStep.done;
+      _recognizedDestination = text;
+    });
+
+    if (text.isNotEmpty) {
+      _speak("음성인식 완료. 목적지는 $text 입니다. 맞으면 확인을 눌러주세요.");
+    } else {
+      _speak("음성 인식 결과가 없습니다. 다시 말씀해주세요.");
+    }
+  }
+
+  @override
+  void dispose() {
+    _sttSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _speak(String text) async {
@@ -109,7 +157,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _handlingSttError = true;
 
     try {
-      try { await _speech.stop(); } catch (_) {}
+      try {
+        await _channel.invokeMethod('stopListening');
+      } catch (_) {}
 
       if (!mounted) return;
 
@@ -131,68 +181,40 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // status가 done인데 finalResult가 안 온 경우(무음/timeout 등) 대비
-  Future<void> _handleSttDoneWithoutResult() async {
-    if (_step == SttStep.listening && _recognizedDestination.trim().isEmpty) {
-      await _handleSttError("done_without_result");
-    }
-  }
-
-  // 3. 핵심 기능: 음성 인식 시작 -> 위치 확인 -> 서버 전송
+  // 3. 핵심 기능: 네이티브 음성 인식 시작
   void _listen() async {
-    // 음성 인식 초기화
     if (!_isSpeechEnabled) {
       _initSpeech();
       _speak("아직 준비 중입니다. 잠시 후 다시 시도해주세요.");
       return;
     }
-    
+
     await _ttsService.stop();
 
     if (!_isListening) {
       setState(() {
         _isListening = true;
-         // 1-2 화면으로 전환
+        // 1-2 화면으로 전환
         _step = SttStep.listening;
         _recognizedDestination = "";
       });
-      
+
       // 진동 피드백 (기획서 3.5: 중요 액션에 진동)
-      HapticFeedback.mediumImpact(); 
-      try{
-        _speech.listen(
-          onResult: (val) {
-            if (val.finalResult) {
-              _speech.stop();
-
-              String destination = val.recognizedWords;
-              setState(() {
-                _isListening = false;
-              // 1-3 화면으로 전환 + 결과 저장
-                _step = SttStep.done;
-                _recognizedDestination = destination;
-              });
-
-              if (destination.isNotEmpty) {
-                _speak("음성인식 완료. 목적지는 $destination 입니다. 맞으면 확인을 눌러주세요.");
-              } else {
-                _speak("음성 인식 결과가 없습니다. 다시 말씀해주세요.");
-              }
-            }
-          },
-          localeId: 'ko_KR',
-          listenFor: const Duration(seconds: 10), 
-          pauseFor: const Duration(seconds: 3),
-        );
-
+      HapticFeedback.mediumImpact();
+      try {
+        // 네이티브 MethodChannel로 음성인식 시작
+        await _channel.invokeMethod('startListening');
+        debugPrint('[HomeScreen] 네이티브 STT 시작됨');
       } catch (e) {
-       debugPrint("Listen 에러: $e");
+        debugPrint("Listen 에러: $e");
         // 예외도 동일하게 실패 처리로 통일
         await _handleSttError("listen_exception");
       }
     } else {
-       // 이미 듣고 있는 상태면 stop 처리
-      await _speech.stop();
+      // 이미 듣고 있는 상태면 stop 처리
+      try {
+        await _channel.invokeMethod('stopListening');
+      } catch (_) {}
       setState(() {
         _isListening = false;
         _step = SttStep.ready;
@@ -205,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       // 위치 권한 상태 먼저 확인
       LocationPermission permission = await Geolocator.checkPermission();
-      
+
       // 1. 권한이 거부된 상태라면 다시 요청
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -226,20 +248,21 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _step = SttStep.ready;
         });
-        
+
         // (선택) 설정 화면으로 바로 보내주는 코드
-        await Geolocator.openAppSettings(); 
+        await Geolocator.openAppSettings();
         return;
       }
       // 1) 현재 위치(GPS) 가져오기
       Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
-      
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
       debugPrint("내 위치: ${position.latitude}, ${position.longitude}");
 
       // 2) 목적지 검색 (텍스트 -> 좌표)
       final placeData = await _apiService.searchPlace(destination);
-      
+
       if (placeData == null) {
         _speak("목적지를 찾을 수 없습니다. 다시 말씀해주세요.");
         if (!mounted) return;
@@ -258,7 +281,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
 
       debugPrint("[1.dart] RouteSearchScreen으로 이동 시작");
-      debugPrint("[1.dart] startLat: ${position.latitude}, startLng: ${position.longitude}");
+      debugPrint(
+        "[1.dart] startLat: ${position.latitude}, startLng: ${position.longitude}",
+      );
       debugPrint("[1.dart] endLat: $endLat, endLng: $endLng");
       debugPrint("[1.dart] destinationName: $placeName");
 
@@ -274,9 +299,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       );
-      
-      debugPrint("[1.dart] Navigator.push 완료");
 
+      debugPrint("[1.dart] Navigator.push 완료");
     } catch (e) {
       // 에러 핸들링 (print 대신 debugPrint 사용 권장)
       debugPrint("에러 발생: $e");
@@ -301,9 +325,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // ready 화면에서만 시작하도록(2/3화면에서 오작동 방지)
           if (_step == SttStep.ready) _listen();
         },
-        child: SafeArea(
-          child: _buildByStep(),
-        ),
+        child: SafeArea(child: _buildByStep()),
       ),
     );
   }
@@ -320,7 +342,6 @@ class _HomeScreenState extends State<HomeScreen> {
         return _buildFailedUI();
     }
   }
-
 
   //  1) 첫 화면 (목적지를 말해주세요)
   Widget _buildReadyUI() {
@@ -343,7 +364,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: _micPanel(
               panelColor: const Color(0xFFF1EFFE), // 연보라 박스
-              micColor: const Color(0xFF8B86B8),   // 보라 마이크 원
+              micColor: const Color(0xFF8B86B8), // 보라 마이크 원
             ),
           ),
         ),
@@ -440,14 +461,16 @@ class _HomeScreenState extends State<HomeScreen> {
   // route_data.json 파일을 읽어서 파싱하는 함수 (assets에서)
   Future<void> _loadRouteDataJson() async {
     try {
-      final String jsonString = await rootBundle.loadString('assets/route_data.json');
+      final String jsonString = await rootBundle.loadString(
+        'assets/route_data.json',
+      );
       final List<dynamic> jsonData = json.decode(jsonString);
       final List<RouteSegment> routes = jsonData
           .map((item) => RouteSegment.fromJson(item as Map<String, dynamic>))
           .toList();
-      
+
       if (!mounted) return;
-      
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -457,7 +480,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       );
-      
+
       debugPrint("[1.dart] route_data.json 로드 완료, ${routes.length}개 구간");
     } catch (e) {
       debugPrint("[1.dart] route_data.json 로드 실패: $e");
@@ -470,11 +493,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadRouteData2Json() async {
     try {
       String jsonString;
-      
+
       try {
         final directory = await getApplicationDocumentsDirectory();
         final file = File('${directory.path}/route_data_2.json');
-        
+
         if (await file.exists()) {
           jsonString = await file.readAsString(encoding: utf8);
           debugPrint("[1.dart] 앱 내부 저장소에서 route_data_2.json 로드 성공");
@@ -487,14 +510,14 @@ class _HomeScreenState extends State<HomeScreen> {
         jsonString = await rootBundle.loadString('assets/route_data_2.json');
         debugPrint("[1.dart] assets에서 route_data_2.json 로드 성공");
       }
-      
+
       final List<dynamic> jsonData = json.decode(jsonString);
       final List<RouteSegment> routes = jsonData
           .map((item) => RouteSegment.fromJson(item as Map<String, dynamic>))
           .toList();
-      
+
       if (!mounted) return;
-      
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -504,7 +527,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       );
-      
+
       debugPrint("[1.dart] route_data_2.json 로드 완료, ${routes.length}개 구간");
     } catch (e) {
       debugPrint("[1.dart] route_data_2.json 로드 실패: $e");
@@ -517,9 +540,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openYoloTest() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => const YoloTestScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const YoloTestScreen()),
     );
   }
 
@@ -543,7 +564,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: _micPanel(
               panelColor: const Color(0xFFFFEAEA), // 연핑크 박스
-              micColor: const Color(0xFFD9534F),   // 빨간 마이크 원
+              micColor: const Color(0xFFD9534F), // 빨간 마이크 원
             ),
           ),
         ),
@@ -566,7 +587,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             children: [
               TextSpan(text: '음성인식 '),
-              TextSpan(text: '실패', style: TextStyle(color: Colors.red)),
+              TextSpan(
+                text: '실패',
+                style: TextStyle(color: Colors.red),
+              ),
             ],
           ),
         ),
@@ -576,7 +600,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: _micPanel(
               panelColor: const Color(0xFFFFEAEA), // 연핑크
-              micColor: const Color(0xFFD9534F),   // 빨강
+              micColor: const Color(0xFFD9534F), // 빨강
             ),
           ),
         ),
@@ -600,7 +624,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             children: [
               TextSpan(text: '음성인식 '),
-              TextSpan(text: '완료', style: TextStyle(color: Colors.green)),
+              TextSpan(
+                text: '완료',
+                style: TextStyle(color: Colors.green),
+              ),
             ],
           ),
         ),
@@ -654,18 +681,20 @@ class _HomeScreenState extends State<HomeScreen> {
                       onPressed: () async {
                         // 2.dart/경로 탐색로 연결
                         debugPrint("[1.dart] 확인 버튼 클릭됨");
-                        debugPrint("[1.dart] _recognizedDestination: $_recognizedDestination");
-                        
+                        debugPrint(
+                          "[1.dart] _recognizedDestination: $_recognizedDestination",
+                        );
+
                         if (_recognizedDestination.isEmpty) {
                           _speak("목적지가 없습니다. 다시 말씀해주세요.");
                           return;
                         }
-                        
+
                         // 로딩 상태 표시 (선택사항)
                         // setState(() {
                         //   _statusText = "경로를 찾는 중입니다...";
                         // });
-                        
+
                         try {
                           await _processNavigation(_recognizedDestination);
                           debugPrint("[1.dart] _processNavigation 완료");

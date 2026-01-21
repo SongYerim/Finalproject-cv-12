@@ -77,6 +77,9 @@ dependencies {
     
     // androidx.concurrent.futures (await 확장 함수 사용)
     implementation("androidx.concurrent:concurrent-futures-ktx:1.1.0")
+    
+    // Google Play Services Location (네이티브 GPS 추적)
+    implementation("com.google.android.gms:play-services-location:21.0.1")
 }
 
 flutter {

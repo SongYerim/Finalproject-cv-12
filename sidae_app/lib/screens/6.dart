@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:geolocator/geolocator.dart';
 import '../services/signal_state_service.dart';
 import '../services/tts_service.dart';
 
@@ -51,12 +50,10 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
   SignalState _currentSignalState = SignalState.init;
   SignalConsensus _currentConsensus = SignalConsensus.unknown;
 
-  // GPS 추적 및 자동 종료
-  StreamSubscription<Position>? _positionSubscription;
+  // GPS 추적 및 자동 종료 (네이티브에서 처리)
   bool _hasReachedExit = false;
   Timer? _exitTimer;
   int _exitCountdown = 10; // 10초 카운트다운
-  static const double _exitThreshold = 15.0; // 15m 이내면 도달로 판정
 
   @override
   void initState() {
@@ -93,68 +90,20 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
     }
   }
 
-  /// 횡단보도 반대편 도달 추적 시작
+  /// 횡단보도 반대편 도달 추적 시작 (네이티브 GPS 사용)
   Future<void> _startExitTracking() async {
-    debugPrint('🚶 횡단보도 반대편 추적 시작 시도...');
+    debugPrint('🚶 네이티브 GPS 추적 시작 시도...');
     debugPrint('🎯 exit 좌표: (${widget.exitLat}, ${widget.exitLng})');
 
-    // 위치 권한 확인
-    LocationPermission permission = await Geolocator.checkPermission();
-    debugPrint('📍 현재 위치 권한: $permission');
-
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        debugPrint('❌ 위치 권한 거부됨 - GPS 추적 불가');
-        return;
-      }
+    try {
+      await _cameraChannel.invokeMethod('startExitTracking', {
+        'exitLat': widget.exitLat,
+        'exitLng': widget.exitLng,
+      });
+      debugPrint('✅ 네이티브 GPS 추적 시작됨');
+    } catch (e) {
+      debugPrint('❌ 네이티브 GPS 추적 시작 실패: $e');
     }
-
-    if (permission == LocationPermission.deniedForever) {
-      debugPrint('❌ 위치 권한 영구 거부됨 - 설정에서 변경 필요');
-      return;
-    }
-
-    debugPrint('✅ 위치 권한 확인됨: $permission');
-
-    _positionSubscription =
-        Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 0, // 모든 GPS 업데이트 수신 (정지 상태에서도 감지)
-          ),
-        ).listen(
-          (Position position) {
-            if (!mounted || _hasReachedExit) return;
-
-            debugPrint(
-              '📍 GPS 업데이트 수신: (${position.latitude}, ${position.longitude})',
-            );
-
-            // 반대편 좌표와의 거리 계산
-            double distance = Geolocator.distanceBetween(
-              position.latitude,
-              position.longitude,
-              widget.exitLat!,
-              widget.exitLng!,
-            );
-
-            debugPrint(
-              '📏 반대편까지 거리: ${distance.toStringAsFixed(1)}m (임계값: ${_exitThreshold}m)',
-            );
-
-            // 반대편에 도달했으면 타이머 시작
-            if (distance <= _exitThreshold) {
-              debugPrint('✅ 임계값 도달! _onReachedExit() 호출');
-              _onReachedExit();
-            }
-          },
-          onError: (error) {
-            debugPrint('❌ GPS 추적 에러: $error');
-          },
-        );
-
-    debugPrint('✅ GPS 스트림 연결됨: ${_positionSubscription != null}');
   }
 
   /// 횡단보도 반대편 도달 시 호출
@@ -294,6 +243,21 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
 
               _signalStateService.processDetections(signalDetections);
             }
+
+            // 네이티브 GPS 추적 결과 처리
+            if (result['type'] == 'exitDistance') {
+              final distance = (result['distance'] as num).toDouble();
+              final reached = result['reached'] as bool;
+
+              debugPrint(
+                '📍 네이티브 GPS: 거리=${distance.toStringAsFixed(1)}m, 도달=$reached',
+              );
+
+              if (reached && !_hasReachedExit) {
+                debugPrint('✅ 횡단보도 반대편 도달! _onReachedExit() 호출');
+                _onReachedExit();
+              }
+            }
           }
         },
         onError: (error) {
@@ -323,8 +287,10 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
     });
     // 신호 상태 서비스 콜백 해제
     _signalStateService.onStateChanged = null;
-    // GPS 추적 중지
-    _positionSubscription?.cancel();
+    // 네이티브 GPS 추적 중지
+    _cameraChannel.invokeMethod('stopExitTracking').catchError((e) {
+      debugPrint('❌ 네이티브 GPS 추적 중지 실패: $e');
+    });
     // 종료 타이머 취소
     _exitTimer?.cancel();
     // 감지 스트림 중지

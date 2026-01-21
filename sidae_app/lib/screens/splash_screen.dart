@@ -28,7 +28,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
     // 초기화 완료 후 홈 화면으로 이동
     if (!mounted) return;
-    
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (context) => const HomeScreen()),
     );
@@ -36,9 +36,9 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _performInitialization() async {
     await dotenv.load(fileName: ".env");
-    
+
     String mapClientId = dotenv.env['NCP_MAPS_CLIENT_ID'] ?? '';
-    
+
     await FlutterNaverMap().init(
       clientId: mapClientId,
       onAuthFailed: (ex) {
@@ -58,15 +58,14 @@ class _SplashScreenState extends State<SplashScreen> {
             // SIDAE 로고 이미지 - 가로 꽉 차게
             SizedBox(
               width: double.infinity,
-              child: Image.asset(
-                'assets/sidae_logo.png',
-                fit: BoxFit.fitWidth,
-              ),
+              child: Image.asset('assets/sidae_logo.png', fit: BoxFit.fitWidth),
             ),
             const SizedBox(height: 30),
             // 로딩 인디케이터
             const CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A5568)), // 다크 블루 그레이
+              valueColor: AlwaysStoppedAnimation<Color>(
+                Color(0xFF4A5568),
+              ), // 다크 블루 그레이
             ),
           ],
         ),
@@ -74,4 +73,3 @@ class _SplashScreenState extends State<SplashScreen> {
     );
   }
 }
-

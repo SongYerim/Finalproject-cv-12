@@ -1,12 +1,21 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:sensors_plus/sensors_plus.dart';
+import 'package:flutter_naver_map/flutter_naver_map.dart';
 import '../services/route_tracker.dart';
 
-/// GPS 및 센서 기반 네비게이션 서비스
+/// GPS 및 센서 기반 네비게이션 서비스 (하이브리드: 센서=네이티브, GPS=Geolocator)
 class NavigationService {
-  StreamSubscription<MagnetometerEvent>? _magnetometerSubscription;
+  // 네이티브 채널
+  static const MethodChannel _channel = MethodChannel(
+    'com.ctrlcv.sidae_app/yolo_native',
+  );
+  static const EventChannel _eventChannel = EventChannel(
+    'com.ctrlcv.sidae_app/yolo_detections',
+  );
+
+  StreamSubscription? _nativeEventSubscription;
   StreamSubscription<Position>? _positionSubscription;
 
   final RouteTracker _tracker = RouteTracker.instance;
@@ -25,23 +34,39 @@ class NavigationService {
   Function(Position)? onPositionUpdate;
   Function()? onBearingUpdate;
 
-  /// 센서 초기화 (나침반)
+  /// 센서 초기화 (네이티브 Magnetometer 사용)
   void initSensor() {
-    _magnetometerSubscription = magnetometerEvents.listen((
-      MagnetometerEvent event,
-    ) {
-      double heading = math.atan2(event.y, event.x);
-      heading = heading * (180 / math.pi);
-      heading = 90 - heading;
-      if (heading < 0) heading += 360;
-      if (heading >= 360) heading -= 360;
-
-      deviceHeading = heading;
-      onBearingUpdate?.call();
-    });
+    _startNativeNavigation();
+    _startNativeEventListening();
   }
 
-  /// GPS 위치 추적 시작
+  /// 네이티브 Navigation 시작
+  Future<void> _startNativeNavigation() async {
+    try {
+      await _channel.invokeMethod('startNavigation');
+      print('✅ 네이티브 센서 Navigation 시작됨');
+    } catch (e) {
+      print('❌ 네이티브 센서 Navigation 시작 실패: $e');
+    }
+  }
+
+  /// 네이티브 EventChannel 리스닝 시작
+  void _startNativeEventListening() {
+    _nativeEventSubscription = _eventChannel.receiveBroadcastStream().listen(
+      (result) {
+        if (result is Map && result['type'] == 'navigation') {
+          deviceHeading = (result['deviceHeading'] as num?)?.toDouble() ?? 0.0;
+          // routeBearing과 travelingBearing은 Flutter에서 계산 (기존 로직 유지)
+          onBearingUpdate?.call();
+        }
+      },
+      onError: (error) {
+        print('❌ Navigation EventChannel 에러: $error');
+      },
+    );
+  }
+
+  /// GPS 위치 추적 시작 (Geolocator 사용 - 기존 호환성 유지)
   void startLocationTracking({required Function(Position) onUpdate}) {
     onPositionUpdate = onUpdate;
 
@@ -134,11 +159,28 @@ class NavigationService {
     );
   }
 
+  /// 목표 좌표 업데이트 (네이티브)
+  Future<void> updateTarget(NLatLng target) async {
+    try {
+      await _channel.invokeMethod('updateNavigationTarget', {
+        'targetLat': target.latitude,
+        'targetLng': target.longitude,
+      });
+    } catch (e) {
+      print('❌ Navigation 타겟 업데이트 실패: $e');
+    }
+  }
+
   /// 리소스 정리
   void dispose() {
-    _magnetometerSubscription?.cancel();
     _positionSubscription?.cancel();
-    _magnetometerSubscription = null;
+    _nativeEventSubscription?.cancel();
     _positionSubscription = null;
+    _nativeEventSubscription = null;
+
+    // 네이티브 Navigation 중지
+    _channel.invokeMethod('stopNavigation').catchError((e) {
+      print('❌ 네이티브 Navigation 중지 실패: $e');
+    });
   }
 }

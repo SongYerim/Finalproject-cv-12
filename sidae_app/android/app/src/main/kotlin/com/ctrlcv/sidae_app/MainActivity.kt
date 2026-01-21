@@ -56,6 +56,27 @@ import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.min
 
+// GPS 추적을 위한 import
+import android.Manifest
+import android.content.pm.PackageManager
+import android.location.Location
+import android.os.Looper
+import androidx.core.app.ActivityCompat
+import com.google.android.gms.location.*
+
+// 센서 (Magnetometer) 관련 import
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+
+// STT (음성인식) 관련 import
+import android.content.Intent
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+
 // YOLO 박스 데이터 클래스
 data class YoloBox(
     val x1: Float,
@@ -107,6 +128,35 @@ class MainActivity : FlutterActivity() {
     @Volatile private var letterboxPadX = 0f
     @Volatile private var letterboxPadY = 0f
     
+    // GPS 추적 관련 (횡단보도 반대편 도달 감지)
+    private var fusedLocationClient: FusedLocationProviderClient? = null
+    private var locationCallback: LocationCallback? = null
+    private var exitLat: Double? = null
+    private var exitLng: Double? = null
+    private val EXIT_THRESHOLD = 15.0 // 15m 이내면 도달로 판정
+    
+    // ===== Navigation 관련 (센서 + GPS 통합) =====
+    private var sensorManager: SensorManager? = null
+    private var magnetometer: Sensor? = null
+    private var sensorEventListener: SensorEventListener? = null
+    private var navLocationCallback: LocationCallback? = null
+    private var navFusedLocationClient: FusedLocationProviderClient? = null
+    
+    // 방향 관련 변수
+    @Volatile private var deviceHeading = 0.0
+    @Volatile private var routeBearing = -1.0
+    @Volatile private var travelingBearing = -1.0
+    private var recentPositions = mutableListOf<Location>()
+    private val MIN_DISTANCE_FOR_BEARING = 1.0
+    
+    // 경로 타겟 좌표
+    private var targetLat: Double? = null
+    private var targetLng: Double? = null
+    
+    // ===== STT (음성인식) 관련 =====
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var isListening = false
+    private var sttIntent: Intent? = null
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
@@ -134,6 +184,31 @@ class MainActivity : FlutterActivity() {
                 }
                 "getFps" -> {
                     result.success(fps)
+                }
+                "startExitTracking" -> {
+                    val lat = call.argument<Double>("exitLat")
+                    val lng = call.argument<Double>("exitLng")
+                    startExitTracking(lat, lng, result)
+                }
+                "stopExitTracking" -> {
+                    stopExitTracking(result)
+                }
+                "startNavigation" -> {
+                    startNavigation(result)
+                }
+                "stopNavigation" -> {
+                    stopNavigation(result)
+                }
+                "updateNavigationTarget" -> {
+                    val lat = call.argument<Double>("targetLat")
+                    val lng = call.argument<Double>("targetLng")
+                    updateNavigationTarget(lat, lng, result)
+                }
+                "startListening" -> {
+                    startListening(result)
+                }
+                "stopListening" -> {
+                    stopListening(result)
                 }
                 else -> result.notImplemented()
             }
@@ -1144,6 +1219,10 @@ class MainActivity : FlutterActivity() {
         modelFileInputStream?.close()
         modelFileInputStream = null
         cameraExecutor.shutdown()
+        // STT 리소스 해제
+        speechRecognizer?.destroy()
+        speechRecognizer = null
+        isListening = false
     }
     
     fun setPreviewView(view: PreviewView, overlayView: BoundingBoxOverlayView) {
@@ -1190,6 +1269,421 @@ class MainActivity : FlutterActivity() {
         val union = areaA + areaB - intersection
         
         return if (union > 0f) intersection / union else 0f
+    }
+    
+    // ===== GPS 추적 (횡단보도 반대편 도달 감지) =====
+    
+    private fun startExitTracking(lat: Double?, lng: Double?, result: MethodChannel.Result) {
+        if (lat == null || lng == null) {
+            result.error("INVALID_ARGS", "exitLat and exitLng are required", null)
+            return
+        }
+        
+        exitLat = lat
+        exitLng = lng
+        
+        Log.d(TAG, "🚶 네이티브 GPS 추적 시작: ($lat, $lng)")
+        
+        // 위치 권한 확인
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "❌ 위치 권한 없음")
+            result.error("PERMISSION_DENIED", "Location permission not granted", null)
+            return
+        }
+        
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 500)
+            .setMinUpdateIntervalMillis(500)
+            .setMinUpdateDistanceMeters(0f)
+            .build()
+        
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                val location = locationResult.lastLocation ?: return
+                
+                val distance = calculateGpsDistance(
+                    location.latitude, location.longitude,
+                    exitLat!!, exitLng!!
+                )
+                
+                Log.d(TAG, "📍 네이티브 GPS: (${location.latitude}, ${location.longitude}) → 거리: ${String.format("%.1f", distance)}m")
+                
+                val reached = distance <= EXIT_THRESHOLD
+                
+                // EventChannel로 Flutter에 전송
+                mainHandler.post {
+                    try {
+                        eventSink?.success(mapOf(
+                            "type" to "exitDistance",
+                            "distance" to distance,
+                            "reached" to reached,
+                            "lat" to location.latitude,
+                            "lng" to location.longitude
+                        ))
+                    } catch (e: Exception) {
+                        Log.w(TAG, "EventChannel 전송 실패: ${e.message}")
+                    }
+                }
+                
+                if (reached) {
+                    Log.d(TAG, "✅ 횡단보도 반대편 도달! (거리: ${String.format("%.1f", distance)}m)")
+                }
+            }
+        }
+        
+        fusedLocationClient?.requestLocationUpdates(locationRequest, locationCallback!!, Looper.getMainLooper())
+        
+        Log.d(TAG, "✅ 네이티브 GPS 추적 시작됨")
+        result.success(true)
+    }
+    
+    private fun stopExitTracking(result: MethodChannel.Result) {
+        try {
+            locationCallback?.let { callback ->
+                fusedLocationClient?.removeLocationUpdates(callback)
+            }
+            locationCallback = null
+            fusedLocationClient = null
+            exitLat = null
+            exitLng = null
+            Log.d(TAG, "✅ 네이티브 GPS 추적 중지됨")
+            result.success(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ GPS 추적 중지 실패: ${e.message}")
+            result.error("STOP_ERROR", e.message, null)
+        }
+    }
+    
+    // GPS 거리 계산 (Haversine 공식)
+    private fun calculateGpsDistance(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+        val R = 6371000.0 // 지구 반경 (미터)
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLng = Math.toRadians(lng2 - lng1)
+        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                Math.sin(dLng / 2) * Math.sin(dLng / 2)
+        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        return R * c
+    }
+    
+    // ===== Navigation 관련 메서드 (센서 + GPS 통합) =====
+    
+    private fun startNavigation(result: MethodChannel.Result) {
+        Log.d(TAG, "🧭 네이티브 Navigation 시작")
+        
+        // 위치 권한 확인
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            result.error("PERMISSION_DENIED", "Location permission not granted", null)
+            return
+        }
+        
+        // 1. SensorManager 초기화 (Magnetometer)
+        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        magnetometer = sensorManager?.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        
+        sensorEventListener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                event?.let {
+                    // 나침반 방향 계산
+                    var heading = Math.atan2(it.values[1].toDouble(), it.values[0].toDouble())
+                    heading = heading * (180 / Math.PI)
+                    heading = 90 - heading
+                    if (heading < 0) heading += 360
+                    if (heading >= 360) heading -= 360
+                    
+                    deviceHeading = heading
+                    
+                    // EventChannel로 전송
+                    sendNavigationUpdate()
+                }
+            }
+            
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        
+        magnetometer?.let { sensor ->
+            sensorManager?.registerListener(sensorEventListener, sensor, SensorManager.SENSOR_DELAY_GAME)
+            Log.d(TAG, "✅ Magnetometer 리스너 등록됨")
+        }
+        
+        // 2. GPS 추적 시작
+        navFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 500)
+            .setMinUpdateIntervalMillis(500)
+            .setMinUpdateDistanceMeters(0f)
+            .build()
+        
+        navLocationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                val location = locationResult.lastLocation ?: return
+                
+                // 최근 위치 저장 (진행 방향 계산용)
+                recentPositions.add(location)
+                if (recentPositions.size > 2) {
+                    recentPositions.removeAt(0)
+                }
+                
+                // 진행 방향 계산
+                calculateTravelingBearing()
+                
+                // 목표 방향 계산
+                calculateRouteBearing(location)
+                
+                // EventChannel로 전송
+                sendNavigationUpdate()
+            }
+        }
+        
+        navFusedLocationClient?.requestLocationUpdates(locationRequest, navLocationCallback!!, Looper.getMainLooper())
+        
+        Log.d(TAG, "✅ 네이티브 Navigation 시작됨")
+        result.success(true)
+    }
+    
+    private fun stopNavigation(result: MethodChannel.Result) {
+        try {
+            // 센서 리스너 해제
+            sensorEventListener?.let { listener ->
+                sensorManager?.unregisterListener(listener)
+            }
+            sensorEventListener = null
+            sensorManager = null
+            magnetometer = null
+            
+            // GPS 추적 중지
+            navLocationCallback?.let { callback ->
+                navFusedLocationClient?.removeLocationUpdates(callback)
+            }
+            navLocationCallback = null
+            navFusedLocationClient = null
+            
+            // 변수 초기화
+            recentPositions.clear()
+            deviceHeading = 0.0
+            routeBearing = -1.0
+            travelingBearing = -1.0
+            targetLat = null
+            targetLng = null
+            
+            Log.d(TAG, "✅ 네이티브 Navigation 중지됨")
+            result.success(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Navigation 중지 실패: ${e.message}")
+            result.error("STOP_ERROR", e.message, null)
+        }
+    }
+    
+    private fun updateNavigationTarget(lat: Double?, lng: Double?, result: MethodChannel.Result) {
+        if (lat == null || lng == null) {
+            result.error("INVALID_ARGS", "targetLat and targetLng are required", null)
+            return
+        }
+        
+        targetLat = lat
+        targetLng = lng
+        Log.d(TAG, "🎯 Navigation 타겟 업데이트: ($lat, $lng)")
+        result.success(true)
+    }
+    
+    // 진행 방향 계산 (GPS 기반)
+    private fun calculateTravelingBearing() {
+        if (recentPositions.size < 2) return
+        
+        val prev = recentPositions[0]
+        val curr = recentPositions[1]
+        
+        val distance = calculateGpsDistance(prev.latitude, prev.longitude, curr.latitude, curr.longitude)
+        if (distance < MIN_DISTANCE_FOR_BEARING) return
+        
+        var bearing = calculateBearing(prev.latitude, prev.longitude, curr.latitude, curr.longitude)
+        if (bearing < 0) bearing += 360
+        
+        travelingBearing = bearing
+    }
+    
+    // 목표 방향 계산
+    private fun calculateRouteBearing(currentLocation: Location) {
+        val tLat = targetLat ?: return
+        val tLng = targetLng ?: return
+        
+        var bearing = calculateBearing(currentLocation.latitude, currentLocation.longitude, tLat, tLng)
+        if (bearing < 0) bearing += 360
+        
+        routeBearing = bearing
+    }
+    
+    // 두 좌표 간 방향 계산
+    private fun calculateBearing(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+        val dLng = Math.toRadians(lng2 - lng1)
+        val lat1Rad = Math.toRadians(lat1)
+        val lat2Rad = Math.toRadians(lat2)
+        
+        val x = Math.sin(dLng) * Math.cos(lat2Rad)
+        val y = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng)
+        
+        var bearing = Math.atan2(x, y)
+        bearing = Math.toDegrees(bearing)
+        
+        return bearing
+    }
+    
+    // EventChannel로 Navigation 데이터 전송
+    private fun sendNavigationUpdate() {
+        mainHandler.post {
+            try {
+                eventSink?.success(mapOf(
+                    "type" to "navigation",
+                    "deviceHeading" to deviceHeading,
+                    "routeBearing" to routeBearing,
+                    "travelingBearing" to travelingBearing,
+                    "targetLat" to targetLat,
+                    "targetLng" to targetLng
+                ))
+            } catch (e: Exception) {
+                Log.w(TAG, "Navigation EventChannel 전송 실패: ${e.message}")
+            }
+        }
+    }
+    
+    // ===== STT (음성인식) 메서드 =====
+    
+    private fun initSpeechRecognizer() {
+        if (speechRecognizer != null) return
+        
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            Log.e(TAG, "❌ 음성인식이 이 기기에서 지원되지 않습니다")
+            return
+        }
+        
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+        speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {
+                Log.d(TAG, "🎤 STT: 음성 입력 준비됨")
+                sendSttEvent("status", "ready")
+            }
+            
+            override fun onBeginningOfSpeech() {
+                Log.d(TAG, "🎤 STT: 음성 입력 시작")
+                sendSttEvent("status", "listening")
+            }
+            
+            override fun onRmsChanged(rmsdB: Float) {
+                // 볼륨 레벨 변화 (필요시 UI 업데이트용)
+            }
+            
+            override fun onBufferReceived(buffer: ByteArray?) {
+                // 오디오 버퍼 수신
+            }
+            
+            override fun onEndOfSpeech() {
+                Log.d(TAG, "🎤 STT: 음성 입력 종료")
+                isListening = false
+            }
+            
+            override fun onError(error: Int) {
+                val errorMsg = when (error) {
+                    SpeechRecognizer.ERROR_AUDIO -> "오디오 녹음 오류"
+                    SpeechRecognizer.ERROR_CLIENT -> "클라이언트 오류"
+                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "권한 부족"
+                    SpeechRecognizer.ERROR_NETWORK -> "네트워크 오류"
+                    SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "네트워크 타임아웃"
+                    SpeechRecognizer.ERROR_NO_MATCH -> "일치하는 결과 없음"
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "인식기 사용 중"
+                    SpeechRecognizer.ERROR_SERVER -> "서버 오류"
+                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "음성 입력 타임아웃"
+                    else -> "알 수 없는 오류 ($error)"
+                }
+                Log.e(TAG, "❌ STT 오류: $errorMsg")
+                isListening = false
+                sendSttEvent("error", errorMsg)
+            }
+            
+            override fun onResults(results: Bundle?) {
+                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                val text = matches?.firstOrNull() ?: ""
+                Log.d(TAG, "✅ STT 결과: $text")
+                isListening = false
+                sendSttEvent("result", text)
+            }
+            
+            override fun onPartialResults(partialResults: Bundle?) {
+                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                val text = matches?.firstOrNull() ?: ""
+                if (text.isNotEmpty()) {
+                    Log.d(TAG, "🔄 STT 부분 결과: $text")
+                    sendSttEvent("partial", text)
+                }
+            }
+            
+            override fun onEvent(eventType: Int, params: Bundle?) {
+                // 추가 이벤트 처리
+            }
+        })
+        
+        // STT Intent 초기화
+        sttIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ko-KR")
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        
+        Log.d(TAG, "✅ SpeechRecognizer 초기화 완료")
+    }
+    
+    private fun startListening(result: MethodChannel.Result) {
+        if (isListening) {
+            Log.w(TAG, "⚠️ 이미 음성인식 중입니다")
+            result.success(true)
+            return
+        }
+        
+        try {
+            initSpeechRecognizer()
+            
+            if (speechRecognizer == null || sttIntent == null) {
+                result.error("STT_ERROR", "SpeechRecognizer 초기화 실패", null)
+                return
+            }
+            
+            isListening = true
+            speechRecognizer?.startListening(sttIntent)
+            Log.d(TAG, "🎤 네이티브 음성인식 시작")
+            result.success(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 음성인식 시작 실패: ${e.message}")
+            isListening = false
+            result.error("STT_ERROR", e.message, null)
+        }
+    }
+    
+    private fun stopListening(result: MethodChannel.Result) {
+        try {
+            speechRecognizer?.stopListening()
+            isListening = false
+            Log.d(TAG, "🛑 네이티브 음성인식 중지")
+            result.success(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 음성인식 중지 실패: ${e.message}")
+            result.error("STT_ERROR", e.message, null)
+        }
+    }
+    
+    private fun sendSttEvent(eventType: String, data: String) {
+        mainHandler.post {
+            try {
+                eventSink?.success(mapOf(
+                    "type" to "stt",
+                    "eventType" to eventType,
+                    "data" to data
+                ))
+            } catch (e: Exception) {
+                Log.w(TAG, "STT EventChannel 전송 실패: ${e.message}")
+            }
+        }
     }
 }
 
