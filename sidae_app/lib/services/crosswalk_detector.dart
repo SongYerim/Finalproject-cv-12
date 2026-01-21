@@ -76,6 +76,10 @@ class CrosswalkDetector {
                 exitLng: exitLng,
               );
 
+              // 디버그 로그: exit 좌표 확인
+              print('🎯 횡단보도 exit 좌표 계산됨: ($exitLat, $exitLng)');
+              print('📍 횡단보도 시작점: (${step.lat}, ${step.lng})');
+
               onCrosswalkDetected?.call(crosswalkInfo);
               return; // 한 번에 하나만 처리
             }
