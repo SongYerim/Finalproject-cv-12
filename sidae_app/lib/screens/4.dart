@@ -68,7 +68,7 @@ class _Screen4State extends State<Screen4> {
         _isNavigatingToCrosswalk = true; // 플래그 설정
 
         if (!mounted) return;
-        await _ttsService.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려달주세요.");
+        await _ttsService.speak("횡단보도 앞입니다. 카메라를 신호등쪽으로 돌려주세요.");
         HapticFeedback.vibrate();
         await Future.delayed(const Duration(milliseconds: 500));
         if (!mounted) return;

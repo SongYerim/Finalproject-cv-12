@@ -16,7 +16,7 @@ class CrosswalkInfo {
 
 /// 횡단보도 감지 서비스
 class CrosswalkDetector {
-  static const double proximityThreshold = 20.0; // 20m 이내
+  static const double proximityThreshold = 10.0; // 20m 이내
 
   List<RouteSegment> routes = [];
   Function(CrosswalkInfo)? onCrosswalkDetected;
@@ -42,7 +42,7 @@ class CrosswalkDetector {
             step.lng,
           );
 
-          // 20m 이내 근접 시
+          // 10m 이내 근접 시
           if (distance <= proximityThreshold) {
             String crosswalkId = '${step.lat}_${step.lng}';
 
