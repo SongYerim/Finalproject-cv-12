@@ -42,6 +42,8 @@ dependencies:
   flutter_map: ^8.2.2
   latlong2: ^0.9.1
   sensors_plus: ^6.1.0
+  # 공간음향 (스테레오 패닝)
+  audioplayers: ^6.0.0
 
   cupertino_icons: ^1.0.8
 
@@ -63,3 +65,4 @@ flutter:
     - assets/best_int8.tflite # Best INT8 모델
     - assets/coco_labels.txt # COCO 라벨
     - assets/custom_labels.txt # 커스텀 라벨 (Zebra_Cross, R_Signal, G_Signal)
+    - assets/sounds/ # 공간음향 사운드 파일

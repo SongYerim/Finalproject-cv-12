@@ -10,6 +10,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sidae_app/screens/2.dart';
 import 'package:sidae_app/screens/3.dart';
 import 'package:sidae_app/screens/6.dart';
+import 'package:sidae_app/screens/spatial_audio_test_screen.dart';
+import 'package:sidae_app/screens/crosswalk_simulation_screen.dart';
 import '../services/api_service.dart';
 import '../services/tts_service.dart';
 import '../models/route_model.dart';
@@ -453,6 +455,64 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+        // 공간음향 테스트 버튼 추가
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _openSpatialAudioTest,
+                      child: const Text(
+                        '공간음향',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _openCrosswalkSimulation,
+                      child: const Text(
+                        '횡단보도 시뮬',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 24),
       ],
     );
@@ -541,6 +601,26 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const YoloTestScreen()),
+    );
+  }
+
+  // 공간음향 테스트 화면 열기
+  void _openSpatialAudioTest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const SpatialAudioTestScreen(),
+      ),
+    );
+  }
+
+  // 횡단보도 시뮬레이션 화면 열기
+  void _openCrosswalkSimulation() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CrosswalkSimulationScreen(),
+      ),
     );
   }
 

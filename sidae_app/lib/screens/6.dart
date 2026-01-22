@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/signal_state_service.dart';
 import '../services/tts_service.dart';
+import '../services/crosswalk_direction_service.dart';
 
 /// YOLO 온디바이스 객체 감지 테스트 화면
 ///
@@ -55,6 +56,12 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
   Timer? _exitTimer;
   int _exitCountdown = 10; // 10초 카운트다운
 
+  // 공간음향 방향 안내 서비스
+  final CrosswalkDirectionService _directionService = CrosswalkDirectionService();
+  double _deviceHeading = 0.0;
+  double _exitBearing = 0.0;
+  double _angleDiff = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -79,14 +86,44 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
       });
     };
 
-    // 반대편 좌표가 있으면 GPS 추적 시작
+    // 반대편 좌표가 있으면 GPS 추적 및 공간음향 시작
     if (widget.exitLat != null && widget.exitLng != null) {
       debugPrint(
         '✅ exitLat/exitLng 전달됨: (${widget.exitLat}, ${widget.exitLng})',
       );
       _startExitTracking();
+      _startDirectionGuidance();
     } else {
-      debugPrint('⚠️ exitLat/exitLng가 null - GPS 추적 비활성화');
+      debugPrint('⚠️ exitLat/exitLng가 null - GPS 추적 및 공간음향 비활성화');
+    }
+  }
+
+  /// 공간음향 방향 안내 시작
+  Future<void> _startDirectionGuidance() async {
+    debugPrint('🔊 공간음향 방향 안내 시작...');
+
+    // 방향 업데이트 콜백 설정
+    _directionService.onDirectionUpdate = (deviceHeading, exitBearing, angleDiff) {
+      if (!mounted) return;
+      setState(() {
+        _deviceHeading = deviceHeading;
+        _exitBearing = exitBearing;
+        _angleDiff = angleDiff;
+      });
+    };
+
+    // 서비스 시작
+    final success = await _directionService.start(
+      exitLat: widget.exitLat!,
+      exitLng: widget.exitLng!,
+    );
+
+    if (success) {
+      debugPrint('✅ 공간음향 방향 안내 시작됨');
+      // TTS로 안내
+      await TtsService.instance.speak('소리가 나는 방향이 횡단보도 끝지점입니다.');
+    } else {
+      debugPrint('❌ 공간음향 방향 안내 시작 실패');
     }
   }
 
@@ -291,6 +328,8 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
     _cameraChannel.invokeMethod('stopExitTracking').catchError((e) {
       debugPrint('❌ 네이티브 GPS 추적 중지 실패: $e');
     });
+    // 공간음향 방향 안내 중지
+    _directionService.dispose();
     // 종료 타이머 취소
     _exitTimer?.cancel();
     // 감지 스트림 중지
@@ -433,7 +472,49 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
             ),
           ),
 
-          // 2.6. 종료 카운트다운 오버레이 (화면 중앙)
+          // 2.6. 공간음향 방향 안내 오버레이 (우측 상단 아래)
+          if (widget.exitLat != null && widget.exitLng != null)
+            Positioned(
+              top: 50.0,
+              right: 16.0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white, width: 1),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      '🔊 방향 안내',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_getDirectionText()}',
+                      style: const TextStyle(
+                        color: Colors.yellowAccent,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '각도차: ${_angleDiff.toStringAsFixed(0)}°',
+                      style: const TextStyle(color: Colors.white70, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 2.7. 종료 카운트다운 오버레이 (화면 중앙)
           if (_hasReachedExit)
             Positioned.fill(
               child: Container(
@@ -575,6 +656,17 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
         return "초록불";
       case SignalConsensus.unknown:
         return "판정 중";
+    }
+  }
+
+  /// 방향 텍스트 반환
+  String _getDirectionText() {
+    if (_angleDiff.abs() < 15) {
+      return '정면';
+    } else if (_angleDiff < -15) {
+      return '왼쪽 ${_angleDiff.abs().toStringAsFixed(0)}°';
+    } else {
+      return '오른쪽 ${_angleDiff.toStringAsFixed(0)}°';
     }
   }
 }
