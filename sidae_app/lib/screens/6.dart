@@ -664,9 +664,9 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
     if (_angleDiff.abs() < 15) {
       return '정면';
     } else if (_angleDiff < -15) {
-      return '오른쪽 ${_angleDiff.abs().toStringAsFixed(0)}°';
+      return '왼쪽 ${_angleDiff.abs().toStringAsFixed(0)}°';
     } else {
-      return '왼쪽 ${_angleDiff.toStringAsFixed(0)}°';
+      return '오른쪽 ${_angleDiff.toStringAsFixed(0)}°';
     }
   }
 }
