@@ -225,7 +225,7 @@ class CrosswalkDirectionService {
 
     // 방향 계산 (atan2(-East, North))
     // 표준 나침반 방향: 북=0°, 동=90°, 남=180°, 서=270°
-    // 왼쪽으로 돌리면 heading 감소, 오른쪽으로 돌리면 heading 증가
+    // East 부호를 반전하여 올바른 방향 계산
     double heading = math.atan2(-yAxisEast, yAxisNorth);
 
     // 라디안 → 도 변환
