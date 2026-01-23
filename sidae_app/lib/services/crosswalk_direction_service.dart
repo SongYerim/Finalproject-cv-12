@@ -178,10 +178,10 @@ class CrosswalkDirectionService {
     // gz가 크면 폰이 눕혀있음 (수평), 작으면 세워져 있음 (수직)
     double heading;
 
-    if (math.abs(gz) > 0.7) {
+    if (gz.abs() > 0.7) {
       // 폰이 눕혀있을 때 (수평) - X, Y 축 사용
       heading = math.atan2(hyNorm, hxNorm);
-    } else if (math.abs(gy) > 0.7) {
+    } else if (gy.abs() > 0.7) {
       // 폰이 세로로 세워져 있을 때 (Portrait) - X, Z 축 사용
       heading = math.atan2(hxNorm, -hzNorm);
     } else {
