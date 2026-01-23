@@ -231,6 +231,9 @@ class CrosswalkDirectionService {
     // 라디안 → 도 변환
     heading = heading * (180 / math.pi);
 
+    // 180도 보정 (폰의 뒷면이 아닌 화면 방향 기준)
+    heading = heading + 180;
+
     // 0-360 범위로 정규화
     if (heading < 0) heading += 360;
     if (heading >= 360) heading -= 360;
