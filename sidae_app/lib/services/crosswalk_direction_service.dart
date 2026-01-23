@@ -215,16 +215,17 @@ class CrosswalkDirectionService {
     final northYNorm = northY / northNorm;
     final northZNorm = northZ / northNorm;
 
-    // 수평면 자기장 벡터를 지구 좌표계로 변환
-    // 수평면 자기장 벡터(hxNorm, hyNorm, hzNorm)는 기기 좌표계에 있음
-    // 이를 지구 좌표계(East, North)로 변환
-    // 회전 행렬의 전치 행렬을 사용 (기기 좌표계 → 지구 좌표계)
-    final magEast = hxNorm * eastXNorm + hyNorm * eastYNorm + hzNorm * eastZNorm;
-    final magNorth = hxNorm * northXNorm + hyNorm * northYNorm + hzNorm * northZNorm;
+    // 폰의 Y축(앞 방향)을 지구 좌표계로 변환
+    // 폰의 Y축 단위 벡터 (0, 1, 0)
+    // 회전 행렬의 전치를 사용하여 변환
+    // Y축의 East 성분 = East 벡터의 Y 성분
+    // Y축의 North 성분 = North 벡터의 Y 성분
+    final yAxisEast = eastYNorm;
+    final yAxisNorth = northYNorm;
 
     // 방향 계산 (atan2(East, North))
     // atan2(East, North)는 북쪽이 0도, 동쪽이 90도
-    double heading = math.atan2(magEast, magNorth);
+    double heading = math.atan2(yAxisEast, yAxisNorth);
 
     // 라디안 → 도 변환
     heading = heading * (180 / math.pi);
@@ -234,8 +235,7 @@ class CrosswalkDirectionService {
     if (heading >= 360) heading -= 360;
 
     // 디버깅: 값이 변하는지 확인
-    debugPrint('🧭 방향 계산: h=(${hxNorm.toStringAsFixed(3)}, ${hyNorm.toStringAsFixed(3)}, ${hzNorm.toStringAsFixed(3)}), '
-        'magEast=${magEast.toStringAsFixed(3)}, magNorth=${magNorth.toStringAsFixed(3)}, heading=${heading.toStringAsFixed(1)}°');
+    debugPrint('🧭 방향 계산: yAxisEast=${yAxisEast.toStringAsFixed(3)}, yAxisNorth=${yAxisNorth.toStringAsFixed(3)}, heading=${heading.toStringAsFixed(1)}°');
 
     _deviceHeading = heading;
 
