@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request
-from app.routers import search, route
+from app.routers import route, search, bus_ai
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -13,14 +13,14 @@ async def lifespan(app: FastAPI):
     await app.state.http_client.aclose()
 
 app = FastAPI(
-    title="Sidae API",
+    title="시대(Sidae) API 서버",
     description="시각장애인을 위한 대중교통 도우미 '시대' 백엔드 서버",
     version="1.0.0",
     lifespan=lifespan
 )
 
-# 🔥 [추가됨] 요청(Request) 로깅 미들웨어
-logger = logging.getLogger("__name__")
+# 요청(Request) 로깅 미들웨어
+logger = logging.getLogger("uvicorn") # 로거 이름을 uvicorn으로 맞추면 Cloud Run 로그에서 보기 편합니다.
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -34,9 +34,10 @@ async def log_requests(request: Request, call_next):
     logger.info(f"[RESPONSE STATUS] {response.status_code}")
     return response
 
-# 라우터 등록
+# 라우터 등록 (Router Registration)
 app.include_router(search.router, prefix="/search")
 app.include_router(route.router, prefix="/route")
+
 
 @app.get("/")
 def read_root():
