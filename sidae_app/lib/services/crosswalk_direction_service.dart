@@ -223,9 +223,10 @@ class CrosswalkDirectionService {
     final yAxisEast = eastYNorm;
     final yAxisNorth = northYNorm;
 
-    // 방향 계산 (atan2(East, North))
-    // atan2(East, North)는 북쪽이 0도, 동쪽이 90도
-    double heading = math.atan2(yAxisEast, yAxisNorth);
+    // 방향 계산 (atan2(-East, North))
+    // 표준 나침반 방향: 북=0°, 동=90°, 남=180°, 서=270°
+    // 왼쪽으로 돌리면 heading 감소, 오른쪽으로 돌리면 heading 증가
+    double heading = math.atan2(-yAxisEast, yAxisNorth);
 
     // 라디안 → 도 변환
     heading = heading * (180 / math.pi);
