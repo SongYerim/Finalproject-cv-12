@@ -8,6 +8,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.*
+import com.ctrlcv.sidae_app.utils.GeoUtils
 
 /**
  * 횡단보도 반대편 도달 추적 리스너
@@ -84,7 +85,7 @@ class ExitTracker(private val context: Context) {
                 val targetLat = exitLat ?: return
                 val targetLng = exitLng ?: return
                 
-                val distance = calculateDistance(
+                val distance = GeoUtils.calculateDistance(
                     location.latitude, location.longitude,
                     targetLat, targetLng
                 )
@@ -130,21 +131,7 @@ class ExitTracker(private val context: Context) {
      */
     fun isTracking(): Boolean = locationCallback != null
     
-    /**
-     * 두 좌표 간 거리 계산 (Haversine 공식)
-     * 
-     * @return 거리 (미터)
-     */
-    fun calculateDistance(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
-        val R = 6371000.0 // 지구 반경 (미터)
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLng = Math.toRadians(lng2 - lng1)
-        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                Math.sin(dLng / 2) * Math.sin(dLng / 2)
-        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-        return R * c
-    }
+
     
     /**
      * 리소스 해제

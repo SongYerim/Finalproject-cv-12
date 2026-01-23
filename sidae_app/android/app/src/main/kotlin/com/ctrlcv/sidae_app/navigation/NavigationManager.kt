@@ -12,6 +12,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.*
+import com.ctrlcv.sidae_app.utils.GeoUtils
 
 /**
  * 네비게이션 데이터 리스너
@@ -220,10 +221,10 @@ class NavigationManager(private val context: Context) {
         val prev = recentPositions[0]
         val curr = recentPositions[1]
         
-        val distance = calculateDistance(prev.latitude, prev.longitude, curr.latitude, curr.longitude)
+        val distance = GeoUtils.calculateDistance(prev.latitude, prev.longitude, curr.latitude, curr.longitude)
         if (distance < MIN_DISTANCE_FOR_BEARING) return
         
-        var bearing = calculateBearing(prev.latitude, prev.longitude, curr.latitude, curr.longitude)
+        var bearing = GeoUtils.calculateBearing(prev.latitude, prev.longitude, curr.latitude, curr.longitude)
         if (bearing < 0) bearing += 360
         
         travelingBearing = bearing
@@ -236,46 +237,13 @@ class NavigationManager(private val context: Context) {
         val tLat = targetLat ?: return
         val tLng = targetLng ?: return
         
-        var bearing = calculateBearing(currentLocation.latitude, currentLocation.longitude, tLat, tLng)
+        var bearing = GeoUtils.calculateBearing(currentLocation.latitude, currentLocation.longitude, tLat, tLng)
         if (bearing < 0) bearing += 360
         
         routeBearing = bearing
     }
     
-    /**
-     * 두 좌표 간 방향 계산
-     * 
-     * @return 방향 (도)
-     */
-    private fun calculateBearing(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
-        val dLng = Math.toRadians(lng2 - lng1)
-        val lat1Rad = Math.toRadians(lat1)
-        val lat2Rad = Math.toRadians(lat2)
-        
-        val x = Math.sin(dLng) * Math.cos(lat2Rad)
-        val y = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng)
-        
-        var bearing = Math.atan2(x, y)
-        bearing = Math.toDegrees(bearing)
-        
-        return bearing
-    }
-    
-    /**
-     * 두 좌표 간 거리 계산 (Haversine 공식)
-     * 
-     * @return 거리 (미터)
-     */
-    private fun calculateDistance(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
-        val R = 6371000.0 // 지구 반경 (미터)
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLng = Math.toRadians(lng2 - lng1)
-        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                Math.sin(dLng / 2) * Math.sin(dLng / 2)
-        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-        return R * c
-    }
+
     
     /**
      * 네비게이션 데이터 전송
