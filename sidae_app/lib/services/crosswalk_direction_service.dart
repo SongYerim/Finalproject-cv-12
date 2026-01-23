@@ -18,7 +18,12 @@ class CrosswalkDirectionService {
 
   // 센서 및 GPS 스트림 구독
   StreamSubscription<MagnetometerEvent>? _magnetometerSubscription;
+  StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
   StreamSubscription<Position?>? _positionSubscription;
+
+  // 센서 데이터 버퍼 (가속도계와 자기장 센서 동기화)
+  AccelerometerEvent? _lastAccelerometer;
+  MagnetometerEvent? _lastMagnetometer;
 
   // 현재 상태
   double _deviceHeading = 0.0; // 기기 방향 (0-360도)
@@ -57,7 +62,8 @@ class CrosswalkDirectionService {
       // 오디오 없이도 계속 진행 (방향 계산은 가능)
     }
 
-    // 2. 자기장 센서 시작 (기기 방향)
+    // 2. 센서 시작 (가속도계 + 자기장 센서)
+    _startAccelerometerListening();
     _startMagnetometerListening();
 
     // 3. GPS 위치 추적 시작
@@ -70,13 +76,30 @@ class CrosswalkDirectionService {
     return true;
   }
 
+  /// 가속도계 리스닝 시작
+  void _startAccelerometerListening() {
+    _accelerometerSubscription = accelerometerEventStream(
+      samplingPeriod: const Duration(milliseconds: 100),
+    ).listen(
+      (AccelerometerEvent event) {
+        _lastAccelerometer = event;
+        _calculateHeadingWithOrientation();
+      },
+      onError: (error) {
+        debugPrint('❌ 가속도계 센서 에러: $error');
+      },
+    );
+    debugPrint('✅ 가속도계 센서 리스닝 시작');
+  }
+
   /// 자기장 센서 리스닝 시작
   void _startMagnetometerListening() {
     _magnetometerSubscription = magnetometerEventStream(
       samplingPeriod: const Duration(milliseconds: 100),
     ).listen(
       (MagnetometerEvent event) {
-        _updateDeviceHeading(event);
+        _lastMagnetometer = event;
+        _calculateHeadingWithOrientation();
       },
       onError: (error) {
         debugPrint('❌ 자기장 센서 에러: $error');
@@ -85,13 +108,92 @@ class CrosswalkDirectionService {
     debugPrint('✅ 자기장 센서 리스닝 시작');
   }
 
-  /// 기기 방향 계산 (자기장 센서 기반)
-  void _updateDeviceHeading(MagnetometerEvent event) {
-    // 나침반 방향 계산
-    // atan2(y, x)로 각도 계산 후 북쪽(0도) 기준으로 변환
-    double heading = math.atan2(event.y, event.x);
-    heading = heading * (180 / math.pi); // 라디안 → 도
-    heading = 90 - heading; // 북쪽 기준으로 변환
+  /// 기기 방향 계산 (가속도계 + 자기장 센서 기반, 자세 보정)
+  ///
+  /// 가속도계와 자기장 센서를 함께 사용하여 폰의 자세(orientation)를
+  /// 고려한 정확한 방향을 계산합니다.
+  void _calculateHeadingWithOrientation() {
+    if (_lastAccelerometer == null || _lastMagnetometer == null) {
+      return;
+    }
+
+    // 가속도계 데이터 (중력 방향 포함)
+    final accel = _lastAccelerometer!;
+    final magnet = _lastMagnetometer!;
+
+    // 회전 행렬 계산을 위한 벡터 정규화
+    // 가속도계 벡터 (중력 방향)
+    final gravity = [accel.x, accel.y, accel.z];
+    final gravityNorm = math.sqrt(
+      gravity[0] * gravity[0] +
+      gravity[1] * gravity[1] +
+      gravity[2] * gravity[2],
+    );
+
+    if (gravityNorm < 0.1) {
+      // 중력이 너무 작으면 센서 데이터가 불안정
+      return;
+    }
+
+    // 자기장 벡터
+    final magnetic = [magnet.x, magnet.y, magnet.z];
+    final magneticNorm = math.sqrt(
+      magnetic[0] * magnetic[0] +
+      magnetic[1] * magnetic[1] +
+      magnetic[2] * magnetic[2],
+    );
+
+    if (magneticNorm < 0.1) {
+      // 자기장이 너무 작으면 계산 불가
+      return;
+    }
+
+    // 정규화
+    final gx = gravity[0] / gravityNorm;
+    final gy = gravity[1] / gravityNorm;
+    final gz = gravity[2] / gravityNorm;
+
+    final mx = magnetic[0] / magneticNorm;
+    final my = magnetic[1] / magneticNorm;
+    final mz = magnetic[2] / magneticNorm;
+
+    // 수평면에서의 자기장 벡터 계산
+    // 중력에 수직인 평면에서의 자기장 성분 (수평 성분)
+    final dotProduct = mx * gx + my * gy + mz * gz;
+    final hx = mx - gx * dotProduct;
+    final hy = my - gy * dotProduct;
+    final hz = mz - gz * dotProduct;
+
+    final hNorm = math.sqrt(hx * hx + hy * hy + hz * hz);
+    if (hNorm < 0.1) {
+      return;
+    }
+
+    // 정규화
+    final hxNorm = hx / hNorm;
+    final hyNorm = hy / hNorm;
+    final hzNorm = hz / hNorm;
+
+    // 폰의 자세에 따라 적절한 축 선택
+    // gz가 크면 폰이 눕혀있음 (수평), 작으면 세워져 있음 (수직)
+    double heading;
+
+    if (math.abs(gz) > 0.7) {
+      // 폰이 눕혀있을 때 (수평) - X, Y 축 사용
+      heading = math.atan2(hyNorm, hxNorm);
+    } else if (math.abs(gy) > 0.7) {
+      // 폰이 세로로 세워져 있을 때 (Portrait) - X, Z 축 사용
+      heading = math.atan2(hxNorm, -hzNorm);
+    } else {
+      // 폰이 가로로 세워져 있을 때 (Landscape) - Y, Z 축 사용
+      heading = math.atan2(hyNorm, -hzNorm);
+    }
+
+    // 라디안 → 도 변환
+    heading = heading * (180 / math.pi);
+
+    // 북쪽(0도) 기준으로 변환
+    heading = 90 - heading;
 
     // 0-360 범위로 정규화
     if (heading < 0) heading += 360;
@@ -176,8 +278,15 @@ class CrosswalkDirectionService {
     await _magnetometerSubscription?.cancel();
     _magnetometerSubscription = null;
 
+    await _accelerometerSubscription?.cancel();
+    _accelerometerSubscription = null;
+
     await _positionSubscription?.cancel();
     _positionSubscription = null;
+
+    // 센서 데이터 버퍼 초기화
+    _lastAccelerometer = null;
+    _lastMagnetometer = null;
 
     // 공간음향 중지
     await _audioService.stop();
