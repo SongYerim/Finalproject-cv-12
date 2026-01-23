@@ -110,8 +110,9 @@ class CrosswalkDirectionService {
 
   /// 기기 방향 계산 (가속도계 + 자기장 센서 기반, 자세 보정)
   ///
-  /// 가속도계와 자기장 센서를 함께 사용하여 폰의 자세(orientation)를
-  /// 고려한 정확한 방향을 계산합니다.
+  /// 가속도계와 자기장 센서를 함께 사용하여 폰의 자세(orientation)와
+  /// 상관없이 항상 동일한 지구 좌표계 기준 방향을 계산합니다.
+  /// 회전 행렬을 사용하여 기기 좌표계를 지구 좌표계로 변환합니다.
   void _calculateHeadingWithOrientation() {
     if (_lastAccelerometer == null || _lastMagnetometer == null) {
       return;
@@ -169,31 +170,52 @@ class CrosswalkDirectionService {
       return;
     }
 
-    // 정규화
+    // 정규화된 수평면 자기장 벡터
     final hxNorm = hx / hNorm;
     final hyNorm = hy / hNorm;
     final hzNorm = hz / hNorm;
 
-    // 폰의 자세에 따라 적절한 축 선택
-    // gz가 크면 폰이 눕혀있음 (수평), 작으면 세워져 있음 (수직)
-    double heading;
+    // 회전 행렬을 사용하여 지구 좌표계로 변환
+    // 지구 좌표계: [East, North, Up]
+    
+    // Up 벡터 = 중력 방향 (정규화됨, 위쪽이 양수)
+    final upX = gx;
+    final upY = gy;
+    final upZ = gz;
 
-    if (gz.abs() > 0.7) {
-      // 폰이 눕혀있을 때 (수평) - X, Y 축 사용
-      heading = math.atan2(hyNorm, hxNorm);
-    } else if (gy.abs() > 0.7) {
-      // 폰이 세로로 세워져 있을 때 (Portrait) - X, Z 축 사용
-      heading = math.atan2(hxNorm, -hzNorm);
-    } else {
-      // 폰이 가로로 세워져 있을 때 (Landscape) - Y, Z 축 사용
-      heading = math.atan2(hyNorm, -hzNorm);
+    // East 벡터 = Up × 자기장 (수평 성분)
+    // 외적을 사용하여 동쪽 방향 계산
+    final eastX = upY * hzNorm - upZ * hyNorm;
+    final eastY = upZ * hxNorm - upX * hzNorm;
+    final eastZ = upX * hyNorm - upY * hxNorm;
+    
+    final eastNorm = math.sqrt(eastX * eastX + eastY * eastY + eastZ * eastZ);
+    if (eastNorm < 0.1) {
+      // East 벡터가 너무 작으면 계산 불가
+      return;
     }
+
+    // 정규화된 East 벡터
+    final eastXNorm = eastX / eastNorm;
+    final eastYNorm = eastY / eastNorm;
+    final eastZNorm = eastZ / eastNorm;
+
+    // North 벡터 = Up × East (외적)
+    final northX = upY * eastZNorm - upZ * eastYNorm;
+    final northY = upZ * eastXNorm - upX * eastZNorm;
+    final northZ = upX * eastYNorm - upY * eastXNorm;
+
+    // 자기장 벡터를 지구 좌표계로 변환
+    // 자기장의 East와 North 성분 계산 (내적)
+    final magEast = mx * eastXNorm + my * eastYNorm + mz * eastZNorm;
+    final magNorth = mx * northX + my * northY + mz * northZ;
+
+    // 방향 계산 (atan2(East, North))
+    // atan2(East, North)는 북쪽이 0도, 동쪽이 90도
+    double heading = math.atan2(magEast, magNorth);
 
     // 라디안 → 도 변환
     heading = heading * (180 / math.pi);
-
-    // 북쪽(0도) 기준으로 변환
-    heading = 90 - heading;
 
     // 0-360 범위로 정규화
     if (heading < 0) heading += 360;
