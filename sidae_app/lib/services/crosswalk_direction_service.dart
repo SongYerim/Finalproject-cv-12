@@ -10,6 +10,10 @@ import 'spatial_audio_service.dart';
 /// IMU 센서와 GPS를 사용하여 기기 방향 대비 횡단보도 끝지점의
 /// 상대 각도를 계산하고, 공간음향으로 방향을 안내합니다.
 class CrosswalkDirectionService {
+  // 상수
+  static const double _radToDeg = 180 / math.pi;
+  static const double _smoothingFactor = 0.2; // Heading 스무딩 계수
+
   final SpatialAudioService _audioService = SpatialAudioService.instance;
 
   // 횡단보도 끝지점 좌표
@@ -19,7 +23,7 @@ class CrosswalkDirectionService {
   // 센서 및 GPS 스트림 구독
   StreamSubscription<MagnetometerEvent>? _magnetometerSubscription;
   StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
-  StreamSubscription<Position?>? _positionSubscription;
+  StreamSubscription<Position>? _positionSubscription;
 
   // 센서 데이터 버퍼 (가속도계와 자기장 센서 동기화)
   AccelerometerEvent? _lastAccelerometer;
@@ -27,23 +31,22 @@ class CrosswalkDirectionService {
 
   // 현재 상태
   double _deviceHeading = 0.0; // 기기 방향 (0-360도)
+  double _smoothedHeading = 0.0; // 스무딩된 기기 방향
   double _exitBearing = 0.0; // 끝지점 방향 (0-360도)
   double _angleDiff = 0.0; // 각도 차이 (-180 ~ 180도)
   Position? _currentPosition;
+  bool _pendingHeadingUpdate = false; // 중복 호출 방지 플래그
 
   // 콜백 (UI 업데이트용)
   Function(double deviceHeading, double exitBearing, double angleDiff)?
-      onDirectionUpdate;
+  onDirectionUpdate;
 
   bool _isRunning = false;
 
   /// 서비스 시작
   ///
   /// [exitLat], [exitLng]: 횡단보도 끝지점 좌표
-  Future<bool> start({
-    required double exitLat,
-    required double exitLng,
-  }) async {
+  Future<bool> start({required double exitLat, required double exitLng}) async {
     if (_isRunning) {
       debugPrint('⚠️ 방향 안내 서비스가 이미 실행 중');
       return true;
@@ -78,34 +81,47 @@ class CrosswalkDirectionService {
 
   /// 가속도계 리스닝 시작
   void _startAccelerometerListening() {
-    _accelerometerSubscription = accelerometerEventStream(
-      samplingPeriod: const Duration(milliseconds: 100),
-    ).listen(
-      (AccelerometerEvent event) {
-        _lastAccelerometer = event;
-        _calculateHeadingWithOrientation();
-      },
-      onError: (error) {
-        debugPrint('❌ 가속도계 센서 에러: $error');
-      },
-    );
+    _accelerometerSubscription =
+        accelerometerEventStream(
+          samplingPeriod: const Duration(milliseconds: 100),
+        ).listen(
+          (AccelerometerEvent event) {
+            _lastAccelerometer = event;
+            _scheduleHeadingUpdate();
+          },
+          onError: (error) {
+            debugPrint('❌ 가속도계 센서 에러: $error');
+          },
+        );
     debugPrint('✅ 가속도계 센서 리스닝 시작');
   }
 
   /// 자기장 센서 리스닝 시작
   void _startMagnetometerListening() {
-    _magnetometerSubscription = magnetometerEventStream(
-      samplingPeriod: const Duration(milliseconds: 100),
-    ).listen(
-      (MagnetometerEvent event) {
-        _lastMagnetometer = event;
-        _calculateHeadingWithOrientation();
-      },
-      onError: (error) {
-        debugPrint('❌ 자기장 센서 에러: $error');
-      },
-    );
+    _magnetometerSubscription =
+        magnetometerEventStream(
+          samplingPeriod: const Duration(milliseconds: 100),
+        ).listen(
+          (MagnetometerEvent event) {
+            _lastMagnetometer = event;
+            _scheduleHeadingUpdate();
+          },
+          onError: (error) {
+            debugPrint('❌ 자기장 센서 에러: $error');
+          },
+        );
     debugPrint('✅ 자기장 센서 리스닝 시작');
+  }
+
+  /// 센서 업데이트 예약 (중복 호출 방지)
+  void _scheduleHeadingUpdate() {
+    if (_pendingHeadingUpdate) return;
+    _pendingHeadingUpdate = true;
+
+    Future.microtask(() {
+      _pendingHeadingUpdate = false;
+      _calculateHeadingWithOrientation();
+    });
   }
 
   /// 기기 방향 계산 (가속도계 + 자기장 센서 기반, 자세 보정)
@@ -127,8 +143,8 @@ class CrosswalkDirectionService {
     final gravity = [accel.x, accel.y, accel.z];
     final gravityNorm = math.sqrt(
       gravity[0] * gravity[0] +
-      gravity[1] * gravity[1] +
-      gravity[2] * gravity[2],
+          gravity[1] * gravity[1] +
+          gravity[2] * gravity[2],
     );
 
     if (gravityNorm < 0.1) {
@@ -140,8 +156,8 @@ class CrosswalkDirectionService {
     final magnetic = [magnet.x, magnet.y, magnet.z];
     final magneticNorm = math.sqrt(
       magnetic[0] * magnetic[0] +
-      magnetic[1] * magnetic[1] +
-      magnetic[2] * magnetic[2],
+          magnetic[1] * magnetic[1] +
+          magnetic[2] * magnetic[2],
     );
 
     if (magneticNorm < 0.1) {
@@ -178,7 +194,7 @@ class CrosswalkDirectionService {
     // Android SensorManager.getRotationMatrix() 방식으로 회전 행렬 계산
     // 회전 행렬 R: 기기 좌표계 → 지구 좌표계 변환
     // R의 각 행은 지구 좌표계의 단위 벡터를 기기 좌표계로 표현한 것
-    
+
     // Up 벡터 (지구 좌표계의 위쪽) = 중력 방향 (기기 좌표계)
     final upX = gx;
     final upY = gy;
@@ -189,7 +205,7 @@ class CrosswalkDirectionService {
     final eastX = upY * hzNorm - upZ * hyNorm;
     final eastY = upZ * hxNorm - upX * hzNorm;
     final eastZ = upX * hyNorm - upY * hxNorm;
-    
+
     final eastNorm = math.sqrt(eastX * eastX + eastY * eastY + eastZ * eastZ);
     if (eastNorm < 0.1) {
       // East 벡터가 너무 작으면 계산 불가
@@ -207,13 +223,13 @@ class CrosswalkDirectionService {
     final northZ = upX * eastYNorm - upY * eastXNorm;
 
     // North 벡터 정규화
-    final northNorm = math.sqrt(northX * northX + northY * northY + northZ * northZ);
+    final northNorm = math.sqrt(
+      northX * northX + northY * northY + northZ * northZ,
+    );
     if (northNorm < 0.1) {
       return;
     }
-    final northXNorm = northX / northNorm;
     final northYNorm = northY / northNorm;
-    final northZNorm = northZ / northNorm;
 
     // 폰의 Y축(앞 방향)을 지구 좌표계로 변환
     // 폰의 Y축 단위 벡터 (0, 1, 0)
@@ -228,8 +244,8 @@ class CrosswalkDirectionService {
     // East 부호를 반전하여 올바른 방향 계산
     double heading = math.atan2(-yAxisEast, yAxisNorth);
 
-    // 라디안 → 도 변환
-    heading = heading * (180 / math.pi);
+    // 라디안 → 도 변환 (상수 사용)
+    heading = heading * _radToDeg;
 
     // 180도 보정 (폰의 뒷면이 아닌 화면 방향 기준)
     heading = heading + 180;
@@ -238,10 +254,15 @@ class CrosswalkDirectionService {
     if (heading < 0) heading += 360;
     if (heading >= 360) heading -= 360;
 
-    // 디버깅: 값이 변하는지 확인
-    debugPrint('🧭 방향 계산: yAxisEast=${yAxisEast.toStringAsFixed(3)}, yAxisNorth=${yAxisNorth.toStringAsFixed(3)}, heading=${heading.toStringAsFixed(1)}°');
+    // Heading 스무딩 (low-pass filter)
+    double angleDiff = heading - _smoothedHeading;
+    if (angleDiff > 180) angleDiff -= 360;
+    if (angleDiff < -180) angleDiff += 360;
+    _smoothedHeading = _smoothedHeading + _smoothingFactor * angleDiff;
+    if (_smoothedHeading < 0) _smoothedHeading += 360;
+    if (_smoothedHeading >= 360) _smoothedHeading -= 360;
 
-    _deviceHeading = heading;
+    _deviceHeading = _smoothedHeading;
 
     // 각도 차이 재계산
     _updateAngleDiff();
@@ -249,25 +270,22 @@ class CrosswalkDirectionService {
 
   /// GPS 위치 추적 시작
   void _startLocationTracking() {
-    // 500ms 간격으로 위치 업데이트
-    _positionSubscription = Stream.periodic(
-      const Duration(milliseconds: 500),
-      (count) => count,
-    ).asyncMap((_) async {
-      try {
-        return await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
+    // getPositionStream 사용 (폴링 방식보다 효율적)
+    _positionSubscription =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 1, // 1m 이동시에만 업데이트
+          ),
+        ).listen(
+          (Position position) {
+            _currentPosition = position;
+            _updateExitBearing(position);
+          },
+          onError: (error) {
+            debugPrint('❌ GPS 에러: $error');
+          },
         );
-      } catch (e) {
-        debugPrint('❌ GPS 위치 가져오기 실패: $e');
-        return null;
-      }
-    }).listen((Position? position) {
-      if (position != null) {
-        _currentPosition = position;
-        _updateExitBearing(position);
-      }
-    });
     debugPrint('✅ GPS 위치 추적 시작');
   }
 
