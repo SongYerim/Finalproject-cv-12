@@ -292,13 +292,15 @@ class CrosswalkDirectionService {
   /// 각도 차이 계산 및 공간음향 업데이트
   void _updateAngleDiff() {
     // 끝지점 방향 - 기기 방향 = 상대 각도
+    // 양수 = 오른쪽, 음수 = 왼쪽
     double diff = _exitBearing - _deviceHeading;
 
     // -180 ~ 180 범위로 정규화
     if (diff > 180) diff -= 360;
     if (diff < -180) diff += 360;
 
-    _angleDiff = diff;
+    // 부호 반전: heading 계산이 반대로 되어 있어서 보정
+    _angleDiff = -diff;
 
     // 공간음향 패닝 업데이트
     _audioService.updateDirection(_angleDiff);
