@@ -184,11 +184,11 @@ class CrosswalkDirectionService {
     final upY = gy;
     final upZ = gz;
 
-    // 원본 자기장 벡터를 사용하여 East 벡터 계산
-    // East = Up × 자기장 (외적)
-    final eastX = upY * mz - upZ * my;
-    final eastY = upZ * mx - upX * mz;
-    final eastZ = upX * my - upY * mx;
+    // 수평면 자기장 벡터를 사용하여 East 벡터 계산
+    // East = Up × 수평면 자기장 (외적)
+    final eastX = upY * hzNorm - upZ * hyNorm;
+    final eastY = upZ * hxNorm - upX * hzNorm;
+    final eastZ = upX * hyNorm - upY * hxNorm;
     
     final eastNorm = math.sqrt(eastX * eastX + eastY * eastY + eastZ * eastZ);
     if (eastNorm < 0.1) {
@@ -215,11 +215,12 @@ class CrosswalkDirectionService {
     final northYNorm = northY / northNorm;
     final northZNorm = northZ / northNorm;
 
-    // 원본 자기장 벡터를 지구 좌표계로 변환
-    // 회전 행렬의 역행렬을 사용 (전치 행렬)
-    // 자기장 벡터의 East와 North 성분 계산
-    final magEast = mx * eastXNorm + my * eastYNorm + mz * eastZNorm;
-    final magNorth = mx * northXNorm + my * northYNorm + mz * northZNorm;
+    // 수평면 자기장 벡터를 지구 좌표계로 변환
+    // 수평면 자기장 벡터(hxNorm, hyNorm, hzNorm)는 기기 좌표계에 있음
+    // 이를 지구 좌표계(East, North)로 변환
+    // 회전 행렬의 전치 행렬을 사용 (기기 좌표계 → 지구 좌표계)
+    final magEast = hxNorm * eastXNorm + hyNorm * eastYNorm + hzNorm * eastZNorm;
+    final magNorth = hxNorm * northXNorm + hyNorm * northYNorm + hzNorm * northZNorm;
 
     // 방향 계산 (atan2(East, North))
     // atan2(East, North)는 북쪽이 0도, 동쪽이 90도
@@ -233,7 +234,8 @@ class CrosswalkDirectionService {
     if (heading >= 360) heading -= 360;
 
     // 디버깅: 값이 변하는지 확인
-    debugPrint('🧭 방향 계산: magEast=${magEast.toStringAsFixed(3)}, magNorth=${magNorth.toStringAsFixed(3)}, heading=${heading.toStringAsFixed(1)}°');
+    debugPrint('🧭 방향 계산: h=(${hxNorm.toStringAsFixed(3)}, ${hyNorm.toStringAsFixed(3)}, ${hzNorm.toStringAsFixed(3)}), '
+        'magEast=${magEast.toStringAsFixed(3)}, magNorth=${magNorth.toStringAsFixed(3)}, heading=${heading.toStringAsFixed(1)}°');
 
     _deviceHeading = heading;
 
