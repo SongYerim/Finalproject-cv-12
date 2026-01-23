@@ -175,19 +175,20 @@ class CrosswalkDirectionService {
     final hyNorm = hy / hNorm;
     final hzNorm = hz / hNorm;
 
-    // 회전 행렬을 사용하여 지구 좌표계로 변환
-    // 지구 좌표계: [East, North, Up]
+    // Android SensorManager.getRotationMatrix() 방식으로 회전 행렬 계산
+    // 회전 행렬 R: 기기 좌표계 → 지구 좌표계 변환
+    // R의 각 행은 지구 좌표계의 단위 벡터를 기기 좌표계로 표현한 것
     
-    // Up 벡터 = 중력 방향 (정규화됨, 위쪽이 양수)
+    // Up 벡터 (지구 좌표계의 위쪽) = 중력 방향 (기기 좌표계)
     final upX = gx;
     final upY = gy;
     final upZ = gz;
 
-    // East 벡터 = Up × 자기장 (수평 성분)
-    // 외적을 사용하여 동쪽 방향 계산
-    final eastX = upY * hzNorm - upZ * hyNorm;
-    final eastY = upZ * hxNorm - upX * hzNorm;
-    final eastZ = upX * hyNorm - upY * hxNorm;
+    // 원본 자기장 벡터를 사용하여 East 벡터 계산
+    // East = Up × 자기장 (외적)
+    final eastX = upY * mz - upZ * my;
+    final eastY = upZ * mx - upX * mz;
+    final eastZ = upX * my - upY * mx;
     
     final eastNorm = math.sqrt(eastX * eastX + eastY * eastY + eastZ * eastZ);
     if (eastNorm < 0.1) {
@@ -205,10 +206,20 @@ class CrosswalkDirectionService {
     final northY = upZ * eastXNorm - upX * eastZNorm;
     final northZ = upX * eastYNorm - upY * eastXNorm;
 
-    // 자기장 벡터를 지구 좌표계로 변환
-    // 자기장의 East와 North 성분 계산 (내적)
+    // North 벡터 정규화
+    final northNorm = math.sqrt(northX * northX + northY * northY + northZ * northZ);
+    if (northNorm < 0.1) {
+      return;
+    }
+    final northXNorm = northX / northNorm;
+    final northYNorm = northY / northNorm;
+    final northZNorm = northZ / northNorm;
+
+    // 원본 자기장 벡터를 지구 좌표계로 변환
+    // 회전 행렬의 역행렬을 사용 (전치 행렬)
+    // 자기장 벡터의 East와 North 성분 계산
     final magEast = mx * eastXNorm + my * eastYNorm + mz * eastZNorm;
-    final magNorth = mx * northX + my * northY + mz * northZ;
+    final magNorth = mx * northXNorm + my * northYNorm + mz * northZNorm;
 
     // 방향 계산 (atan2(East, North))
     // atan2(East, North)는 북쪽이 0도, 동쪽이 90도
@@ -220,6 +231,9 @@ class CrosswalkDirectionService {
     // 0-360 범위로 정규화
     if (heading < 0) heading += 360;
     if (heading >= 360) heading -= 360;
+
+    // 디버깅: 값이 변하는지 확인
+    debugPrint('🧭 방향 계산: magEast=${magEast.toStringAsFixed(3)}, magNorth=${magNorth.toStringAsFixed(3)}, heading=${heading.toStringAsFixed(1)}°');
 
     _deviceHeading = heading;
 
