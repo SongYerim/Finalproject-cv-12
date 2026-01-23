@@ -46,6 +46,7 @@ import com.ctrlcv.sidae_app.navigation.NavigationListener
 import com.ctrlcv.sidae_app.stt.SpeechRecognizerManager
 import com.ctrlcv.sidae_app.stt.SpeechRecognizerListener
 import com.ctrlcv.sidae_app.stt.SttEventType
+import com.ctrlcv.sidae_app.audio.SpatialAudioManager
 
 /**
  * 메인 액티비티
@@ -86,6 +87,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     private lateinit var exitTracker: ExitTracker
     private lateinit var navigationManager: NavigationManager
     private lateinit var speechRecognizerManager: SpeechRecognizerManager
+    private lateinit var spatialAudioManager: SpatialAudioManager
     
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -116,6 +118,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         exitTracker = ExitTracker(this)
         navigationManager = NavigationManager(this)
         speechRecognizerManager = SpeechRecognizerManager(this)
+        spatialAudioManager = SpatialAudioManager(this)
         
         // 리스너 설정
         setupExitTrackerListener()
@@ -141,11 +144,18 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 "updateNavigationTarget" -> handleUpdateNavigationTarget(call, result)
                 "startListening" -> handleStartListening(result)
                 "stopListening" -> handleStopListening(result)
+                // 공간음향 관련
+                "initializeSpatialAudio" -> handleInitializeSpatialAudio(result)
+                "startSpatialAudio" -> handleStartSpatialAudio(result)
+                "stopSpatialAudio" -> handleStopSpatialAudio(result)
+                "updateSpatialAudioDirection" -> handleUpdateSpatialAudioDirection(call, result)
+                "setSpatialAudioVolume" -> handleSetSpatialAudioVolume(call, result)
+                "releaseSpatialAudio" -> handleReleaseSpatialAudio(result)
                 else -> result.notImplemented()
             }
+            }
         }
-    }
-    
+        
     /**
      * EventChannel 설정
      */
@@ -171,8 +181,8 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         
         if (modelBytes == null || labelsText == null) {
             result.error("INVALID_ARGUMENTS", "modelBytes and labelsText are required", null)
-            return
-        }
+                    return
+                }
         
         // 기존 카메라 중지
         try {
@@ -181,7 +191,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
             imageAnalysis = null
             preview = null
             Log.d(TAG, "📷 기존 카메라 중지됨")
-        } catch (e: Exception) {
+                    } catch (e: Exception) {
             Log.w(TAG, "⚠️ 기존 카메라 중지 중 오류: ${e.message}")
         }
         
@@ -202,7 +212,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
         scope.launch {
             try {
-                val cameraProviderFuture: ListenableFuture<ProcessCameraProvider> =
+                val cameraProviderFuture: ListenableFuture<ProcessCameraProvider> = 
                     ProcessCameraProvider.getInstance(this@MainActivity)
                 cameraProvider = cameraProviderFuture.await()
                 
@@ -322,6 +332,57 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         result.success(true)
     }
     
+    // ===== 공간음향 핸들러 =====
+    
+    private fun handleInitializeSpatialAudio(result: MethodChannel.Result) {
+        val success = spatialAudioManager.initialize()
+        if (success) {
+            result.success(true)
+        } else {
+            result.error("SPATIAL_AUDIO_ERROR", "Failed to initialize spatial audio", null)
+        }
+    }
+    
+    private fun handleStartSpatialAudio(result: MethodChannel.Result) {
+        spatialAudioManager.start()
+        result.success(true)
+    }
+    
+    private fun handleStopSpatialAudio(result: MethodChannel.Result) {
+        spatialAudioManager.stop()
+        result.success(true)
+    }
+    
+    private fun handleUpdateSpatialAudioDirection(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        val angleDiff = call.argument<Double>("angleDiff")?.toFloat()
+        val distance = call.argument<Double>("distance")?.toFloat() // 거리 파라미터 추가 (옵션)
+        
+        if (angleDiff == null) {
+            result.error("INVALID_ARGS", "angleDiff is required", null)
+            return
+        }
+        
+        spatialAudioManager.updateDirection(angleDiff, distance)
+        result.success(true)
+    }
+    
+    private fun handleSetSpatialAudioVolume(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        val volume = call.argument<Double>("volume")?.toFloat()
+        
+        if (volume == null) {
+            result.error("INVALID_ARGS", "volume is required", null)
+            return
+        }
+        
+        spatialAudioManager.setVolume(volume)
+        result.success(true)
+    }
+    
+    private fun handleReleaseSpatialAudio(result: MethodChannel.Result) {
+        spatialAudioManager.release()
+        result.success(true)
+    }
+    
     // ===== 리스너 설정 =====
     
     private fun setupExitTrackerListener() {
@@ -353,8 +414,8 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 targetLat: Double?,
                 targetLng: Double?
             ) {
-                mainHandler.post {
-                    try {
+        mainHandler.post {
+            try {
                         eventSink?.success(mapOf(
                             "type" to "navigation",
                             "deviceHeading" to deviceHeading,
@@ -363,7 +424,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                             "targetLat" to targetLat,
                             "targetLng" to targetLng
                         ))
-                    } catch (e: Exception) {
+            } catch (e: Exception) {
                         Log.w(TAG, "Navigation EventChannel 전송 실패: ${e.message}")
                     }
                 }
@@ -494,6 +555,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         exitTracker.release()
         navigationManager.release()
         speechRecognizerManager.release()
+        spatialAudioManager.release()
         
         Log.d(TAG, "✅ 모든 리소스 해제 완료")
     }
