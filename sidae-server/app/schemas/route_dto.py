@@ -1,12 +1,6 @@
 from enum import Enum
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any
-
-class LocationResponse(BaseModel):
-    name: str = Field(..., description="장소명")
-    address: str = Field("", description="주소")
-    latitude: float = Field(..., description="위도")
-    longitude: float = Field(..., description="경도")
+from typing import List, Optional
 
 class MoveType(str, Enum):
     WALK = "WALK"
@@ -19,7 +13,6 @@ class StationInfo(BaseModel):
     lat: float
     lng: float
 
-# ✨ [수정] RouteStep에 path 필드 추가
 class RouteStep(BaseModel):
     description: str = Field(..., description="안내 문구")
     lat: float = Field(..., description="지점 위도")

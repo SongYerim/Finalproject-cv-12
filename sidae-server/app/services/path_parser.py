@@ -1,7 +1,35 @@
+import logging
 from typing import List, Dict, Any
-from app.schemas.common import RouteSegment, MoveType, StationInfo, RouteStep
+from app.schemas.route_dto import RouteSegment, MoveType, StationInfo, RouteStep
+
+logger = logging.getLogger(__name__)
 
 class PathParser:
+    # 📌 [수정됨] 정확한 TMAP 보행자 turnType 코드 매핑
+    TURN_TYPE_MAP = {
+        # 안내 없음 / 직진
+        0: "", 1: "", 2: "", 3: "", 4: "", 5: "", 6: "", 7: "",
+        11: "직진",
+        233: "직진", # 임시 직진
+        
+        # ... (중략) ...
+        # (기존 map 내용 유지, 너무 길어서 생략하려 했으나 replace tool 특성상 전체 변경이 안전할 수 있음. 
+        # 하지만 startLine/endLine을 잘 조절하면 됨. 
+        # 여기서는 파일 상단 import와 logger 설정부터 _parse_walk_leg 내부 수정까지 덮어야 함.
+        # 차라리 import/logger 부분과 _parse_walk_leg 부분을 나눠서 하는게 나을 수도 있지만, 
+        # 한번에 가능하면 한번에 함.)
+    }
+    # ... (TURN_TYPE_MAP 내용은 그대로 둠. 위 내용 무시하고 코드만 봄)
+    
+    # 앗, replace_file_content는 block replace임.
+    # 나눠서 진행함.
+    
+    # 전략:
+    # 1. 상단 import 추가
+    # 2. _parse_walk_leg 내부 print 변경
+    
+    # 이 호출은 1번: 상단 import 및 logger 설정
+
     # 📌 [수정됨] 정확한 TMAP 보행자 turnType 코드 매핑
     TURN_TYPE_MAP = {
         # 안내 없음 / 직진
@@ -80,7 +108,7 @@ class PathParser:
 
         if distance > 50 and self.sk_service:
             try:
-                print(f"🚶‍♂️ [도보 상세] API 호출... ({distance}m)")
+                logger.info(f"🚶‍♂️ [Detailed Walk] API Call... ({distance}m)")
                 start_lat = float(leg['start']['lat'])
                 start_lng = float(leg['start']['lon'])
                 end_lat = float(leg['end']['lat'])
@@ -132,7 +160,7 @@ class PathParser:
                             step_description_list.append(desc)
 
             except Exception as e:
-                print(f"⚠️ [도보 상세] 에러: {e}")
+                logger.error(f"⚠️ [Detailed Walk] Error: {e}")
 
         # Fallback (상세 정보 없으면 대략적인 정보 추가)
         if not step_description_list:
@@ -183,5 +211,7 @@ class PathParser:
                 try:
                     lng, lat = point.split(",")
                     path_list.append([float(lat), float(lng)])
-                except: pass
+                except ValueError:
+                    logger.warning(f"Invalid coordinate format: {point}")
+                    continue
         return path_list
