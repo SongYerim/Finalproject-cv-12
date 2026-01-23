@@ -21,6 +21,11 @@ import android.graphics.ImageFormat
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -76,6 +81,11 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     private var frameCount = 0
     private var lastFpsUpdate = System.currentTimeMillis()
     private var fps = 0.0
+
+    // ===== ROTATION_VECTOR 센서 =====
+    private var sensorManager: SensorManager? = null
+    private var rotationVectorSensor: Sensor? = null
+    private var rotationVectorListener: SensorEventListener? = null
     
     // ===== Flutter 통신 =====
     private var eventSink: EventChannel.EventSink? = null
@@ -151,6 +161,16 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 "updateSpatialAudioDirection" -> handleUpdateSpatialAudioDirection(call, result)
                 "setSpatialAudioVolume" -> handleSetSpatialAudioVolume(call, result)
                 "releaseSpatialAudio" -> handleReleaseSpatialAudio(result)
+                "startListening" -> handleStartListening(result)
+                "stopListening" -> handleStopListening(result)
+                "startRotationVector" -> {
+                    startRotationVectorSensor()
+                    result.success(true)
+                }
+                "stopRotationVector" -> {
+                    stopRotationVectorSensor()
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
             }
@@ -330,6 +350,66 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     private fun handleStopListening(result: MethodChannel.Result) {
         speechRecognizerManager.stopListening()
         result.success(true)
+    }
+
+    // ===== ROTATION_VECTOR 센서 메서드 =====
+
+    private fun startRotationVectorSensor() {
+        if (sensorManager == null) {
+            sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        }
+        if (rotationVectorSensor == null) {
+            rotationVectorSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        }
+
+        if (rotationVectorListener == null) {
+            rotationVectorListener = object : SensorEventListener {
+                override fun onSensorChanged(event: SensorEvent) {
+                    if (event.sensor.type == Sensor.TYPE_ROTATION_VECTOR) {
+                        try {
+                            val rotationMatrix = FloatArray(9)
+                            SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+
+                            val orientation = FloatArray(3)
+                            SensorManager.getOrientation(rotationMatrix, orientation)
+
+                            // azimuth (rad -> deg)
+                            var heading = Math.toDegrees(orientation[0].toDouble())
+                            // 0~360 정규화
+                            if (heading < 0) heading += 360
+
+                            // Flutter로 전송
+                            mainHandler.post {
+                                eventSink?.success(mapOf(
+                                    "type" to "heading",
+                                    "heading" to heading
+                                ))
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "센서 데이터 처리 오류: ${e.message}")
+                        }
+                    }
+                }
+
+                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+            }
+        }
+
+        rotationVectorSensor?.let { sensor ->
+            sensorManager?.registerListener(
+                rotationVectorListener,
+                sensor,
+                SensorManager.SENSOR_DELAY_UI // UI 갱신 속도에 맞춤
+            )
+            Log.d(TAG, "🧭 ROTATION_VECTOR 센서 시작됨")
+        }
+    }
+
+    private fun stopRotationVectorSensor() {
+        if (sensorManager != null && rotationVectorListener != null) {
+            sensorManager?.unregisterListener(rotationVectorListener)
+            Log.d(TAG, "🛑 ROTATION_VECTOR 센서 중지됨")
+        }
     }
     
     // ===== 공간음향 핸들러 =====
@@ -555,6 +635,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         exitTracker.release()
         navigationManager.release()
         speechRecognizerManager.release()
+        stopRotationVectorSensor() // 센서 해제
         spatialAudioManager.release()
         
         Log.d(TAG, "✅ 모든 리소스 해제 완료")

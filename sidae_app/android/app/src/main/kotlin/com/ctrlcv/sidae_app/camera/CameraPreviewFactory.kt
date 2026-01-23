@@ -65,10 +65,6 @@ class CameraPreviewFactory(
             isClickable = false
             isFocusable = false
             visibility = View.VISIBLE
-            
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                elevation = 20f
-            }
         }
         
         // FrameLayout 컨테이너 생성
