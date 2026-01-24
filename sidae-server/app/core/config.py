@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     # SK TMAP API (Tmap 경로 탐색)
     SK_API_KEY: str
+    BUS_KEY: str
 
     # 환경 설정 (.env 파일을 읽어오도록 설정)
     class Config:
