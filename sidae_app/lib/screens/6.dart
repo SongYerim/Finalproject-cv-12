@@ -57,7 +57,8 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
   int _exitCountdown = 10; // 10초 카운트다운
 
   // 공간음향 방향 안내 서비스
-  final CrosswalkDirectionService _directionService = CrosswalkDirectionService();
+  final CrosswalkDirectionService _directionService =
+      CrosswalkDirectionService();
   double _deviceHeading = 0.0;
   double _exitBearing = 0.0;
   double _angleDiff = 0.0;
@@ -103,14 +104,15 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
     debugPrint('🔊 공간음향 방향 안내 시작...');
 
     // 방향 업데이트 콜백 설정
-    _directionService.onDirectionUpdate = (deviceHeading, exitBearing, angleDiff) {
-      if (!mounted) return;
-      setState(() {
-        _deviceHeading = deviceHeading;
-        _exitBearing = exitBearing;
-        _angleDiff = angleDiff;
-      });
-    };
+    _directionService.onDirectionUpdate =
+        (deviceHeading, exitBearing, angleDiff) {
+          if (!mounted) return;
+          setState(() {
+            _deviceHeading = deviceHeading;
+            _exitBearing = exitBearing;
+            _angleDiff = angleDiff;
+          });
+        };
 
     // 서비스 시작
     final success = await _directionService.start(
@@ -345,7 +347,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
         appBar: AppBar(
           title: const Text("카메라 권한 필요"),
           backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
+          foregroundColor: Colors.yellow, // 고대비: 노란색
         ),
         body: Center(
           child: Column(
@@ -395,7 +397,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
       appBar: AppBar(
         title: const Text("YOLO 객체 감지 (온디바이스)"),
         backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
+        foregroundColor: Colors.yellow, // 고대비: 노란색
       ),
       body: Stack(
         children: [
@@ -427,7 +429,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
               child: Text(
                 "FPS: ${_fps.toStringAsFixed(1)}",
                 style: const TextStyle(
-                  color: Colors.greenAccent,
+                  color: Colors.yellow, // 고대비: 노란색
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -478,7 +480,10 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
               top: 50.0,
               right: 16.0,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.blue.withValues(alpha: 0.8),
                   borderRadius: BorderRadius.circular(8),
@@ -507,7 +512,10 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
                     ),
                     Text(
                       '각도차: ${_angleDiff.toStringAsFixed(0)}°',
-                      style: const TextStyle(color: Colors.white70, fontSize: 10),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                      ),
                     ),
                   ],
                 ),
@@ -587,7 +595,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.redAccent,
+                            color: Colors.yellow, // 고대비: 노란색
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Column(

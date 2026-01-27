@@ -237,12 +237,12 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         circleColor = Colors.grey.withOpacity(0.5);
         radius = 5;
       } else if (i == _tracker.currentTargetIndex) {
-        // 현재 목표: 노란색 (더 크게)
-        circleColor = Colors.yellowAccent.withOpacity(0.8);
+        // 현재 목표: 노란색 (더 크게) - 고대비
+        circleColor = Colors.yellow.withOpacity(0.9);
         radius = 10;
       } else {
-        // 아직 안 지나간 점: 파란색
-        circleColor = Colors.blueAccent.withOpacity(0.6);
+        // 아직 안 지나간 점: 흰색 - 고대비
+        circleColor = Colors.white.withOpacity(0.7);
         radius = 6;
       }
 
@@ -344,7 +344,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       appBar: AppBar(
         title: Text(widget.destinationName),
         backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
+        foregroundColor: Colors.yellow, // 고대비: 노란색
       ),
       body: Column(
         children: [
@@ -381,17 +381,17 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
             ),
           ),
 
-          // 범례
+          // 범례 - 고대비
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
-            color: Colors.grey.shade900,
+            color: const Color(0xFF2A2A2A), // 고대비: 어두운 회색
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildLegendItem(Colors.grey, "지나간 지점"),
-                _buildLegendItem(Colors.yellowAccent, "현재 목표"),
-                _buildLegendItem(Colors.blueAccent, "다음 지점"),
+                _buildLegendItem(Colors.yellow, "현재 목표"), // 고대비: 노란색
+                _buildLegendItem(Colors.white, "다음 지점"), // 고대비: 흰색
               ],
             ),
           ),

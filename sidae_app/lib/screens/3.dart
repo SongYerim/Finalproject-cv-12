@@ -36,18 +36,22 @@ class _MapResultScreenState extends State<MapResultScreen> {
       distanceFilter: 5, // 5m마다 업데이트
     );
 
-    _positionSubscription = Geolocator.getPositionStream(locationSettings: locationSettings)
-        .listen((Position position) {
-      if (!mounted || _mapController == null) return;
-      
-      debugPrint("[3.dart] 현재 위치: ${position.latitude}, ${position.longitude}");
-      _updateCurrentLocationMarker(position);
-    });
+    _positionSubscription =
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+          (Position position) {
+            if (!mounted || _mapController == null) return;
+
+            debugPrint(
+              "[3.dart] 현재 위치: ${position.latitude}, ${position.longitude}",
+            );
+            _updateCurrentLocationMarker(position);
+          },
+        );
   }
 
   void _updateCurrentLocationMarker(Position position) {
     final currentPos = NLatLng(position.latitude, position.longitude);
-    
+
     // 기존 마커가 있으면 제거
     if (_currentLocationMarker != null) {
       _mapController!.deleteOverlay(_currentLocationMarker!.info);
@@ -76,7 +80,7 @@ class _MapResultScreenState extends State<MapResultScreen> {
       appBar: AppBar(
         title: Text(widget.destinationName),
         backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
+        foregroundColor: Colors.yellow, // 고대비: 노란색
       ),
       body: Column(
         children: [
@@ -124,13 +128,17 @@ class _MapResultScreenState extends State<MapResultScreen> {
                     child: SingleChildScrollView(
                       child: Text(
                         widget.routes.isNotEmpty
-                            ? widget.routes.map((route) {
-                                // 각 Segment 안에 있는 stepDescription(["설명1", "설명2"...])를
-                                // 줄바꿈(\n)으로 합쳐서 문자열로 만듭니다.
-                                return route.stepDescription.join('\n'); 
-                              }).join('\n\n') // 각 Segment(덩어리) 사이에는 두 줄을 띄웁니다.
+                            ? widget.routes
+                                  .map((route) {
+                                    // 각 Segment 안에 있는 stepDescription(["설명1", "설명2"...])를
+                                    // 줄바꿈(\n)으로 합쳐서 문자열로 만듭니다.
+                                    return route.stepDescription.join('\n');
+                                  })
+                                  .join(
+                                    '\n\n',
+                                  ) // 각 Segment(덩어리) 사이에는 두 줄을 띄웁니다.
                             : "안내 정보를 불러오는 중...",
-                        
+
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
@@ -149,10 +157,12 @@ class _MapResultScreenState extends State<MapResultScreen> {
                       // 주의: 'Screen4' 부분을 4.dart에 있는 실제 클래스 이름으로 바꿔주세요.
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => Screen4(
-                          routes: widget.routes,
-                          destinationName: widget.destinationName,
-                        )), 
+                        MaterialPageRoute(
+                          builder: (context) => Screen4(
+                            routes: widget.routes,
+                            destinationName: widget.destinationName,
+                          ),
+                        ),
                       );
                     },
                     child: Container(
@@ -183,12 +193,12 @@ class _MapResultScreenState extends State<MapResultScreen> {
   }
 
   // (이하 _drawRouteOnMap 함수는 기존과 동일하므로 생략 가능, 혹은 그대로 유지)
-void _drawRouteOnMap() {
+  void _drawRouteOnMap() {
     if (_mapController == null || widget.routes.isEmpty) return;
 
     // 1. 카메라 이동 범위를 계산하기 위해 모든 좌표를 모을 리스트
     final allBoundsCoords = <NLatLng>[];
-    
+
     // 오버레이를 한 번에 추가하기 위한 Set
     final Set<NAddableOverlay> overlays = {};
 
@@ -202,7 +212,7 @@ void _drawRouteOnMap() {
       // 2. 이동 수단에 따른 색상 분기 처리
       Color routeColor;
       Color outlineColor;
-      
+
       if (segment.moveType == "WALK") {
         // 도보: 초록색 (또는 회색 점선 등 원하는 스타일)
         routeColor = Colors.green;
@@ -216,15 +226,15 @@ void _drawRouteOnMap() {
       // 3. 개별 경로 오버레이 생성
       // id는 유니크해야 하므로 인덱스를 활용합니다.
       final path = NPathOverlay(
-        id: "route_path_$i", 
+        id: "route_path_$i",
         coords: segment.pathCoordinates,
         color: routeColor,
         width: 10,
         outlineColor: outlineColor,
         // 도보인 경우 패턴을 주고 싶다면 아래 속성 활용 가능 (선택사항)
-        // patternInterval: segment.move_type == "WALK" ? 10 : 0, 
+        // patternInterval: segment.move_type == "WALK" ? 10 : 0,
       );
-      
+
       overlays.add(path);
     }
 

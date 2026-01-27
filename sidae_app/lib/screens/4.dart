@@ -276,7 +276,7 @@ class _Screen4State extends State<Screen4> {
       appBar: AppBar(
         title: const Text("실시간 길안내"),
         backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
+        foregroundColor: Colors.yellow, // 고대비: 노란색
       ),
       body: Column(
         children: [
@@ -295,8 +295,8 @@ class _Screen4State extends State<Screen4> {
                   Text(
                     "남은 거리: ${_distanceToTarget.toStringAsFixed(0)}m",
                     style: const TextStyle(
-                      color: Colors.greenAccent,
-                      fontSize: 24,
+                      color: Colors.yellow, // 고대비: 노란색
+                      fontSize: 26,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -341,8 +341,8 @@ class _Screen4State extends State<Screen4> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
-                color: Colors.blue.shade900,
-                border: Border(bottom: BorderSide(color: Colors.grey.shade800)),
+                color: const Color(0xFF2A2A2A), // 고대비: 어두운 회색
+                border: Border.all(color: Colors.yellow, width: 2),
               ),
               child: _busArrivalInfo != null
                   ? Column(
@@ -474,9 +474,9 @@ class _Screen4State extends State<Screen4> {
                     ),
                     decoration: BoxDecoration(
                       border: Border(
-                        bottom: BorderSide(color: Colors.grey.shade800),
+                        bottom: BorderSide(color: Colors.yellow, width: 2),
                       ),
-                      color: Colors.grey.shade900,
+                      color: const Color(0xFF2A2A2A), // 고대비: 어두운 회색
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -484,14 +484,14 @@ class _Screen4State extends State<Screen4> {
                         const Text(
                           "상세 경로 안내",
                           style: TextStyle(
-                            color: Colors.white,
+                            color: Colors.yellow, // 고대비: 노란색
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Icon(
                           Icons.format_list_numbered,
-                          color: Colors.grey.shade400,
+                          color: Colors.yellow, // 고대비: 노란색
                         ),
                       ],
                     ),
@@ -588,8 +588,8 @@ class _Screen4State extends State<Screen4> {
             icon: const Icon(Icons.map),
             label: const Text("경로 추적 지도 보기"),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blueAccent,
-              foregroundColor: Colors.white,
+              backgroundColor: Colors.yellow, // 고대비: 노란색 배경
+              foregroundColor: Colors.black, // 고대비: 검은색 텍스트
               padding: const EdgeInsets.symmetric(vertical: 16),
               textStyle: const TextStyle(
                 fontSize: 18,
