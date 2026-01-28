@@ -39,9 +39,9 @@ class _SpatialAudioTestScreenState extends State<SpatialAudioTestScreen> {
 
   Future<void> _togglePlayback() async {
     if (!_isInitialized) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('오디오 초기화 실패')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('오디오 초기화 실패')));
       return;
     }
 
@@ -230,10 +230,19 @@ class _SpatialAudioTestScreenState extends State<SpatialAudioTestScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _buildInfoItem('각도 차이', '${_angleDiff.toStringAsFixed(1)}°'),
-                        _buildInfoItem('패닝 값', _getPanValue().toStringAsFixed(2)),
+                        _buildInfoItem(
+                          '각도 차이',
+                          '${_angleDiff.toStringAsFixed(1)}°',
+                        ),
+                        _buildInfoItem(
+                          '패닝 값',
+                          _getPanValue().toStringAsFixed(2),
+                        ),
                         if (_useDistance && _distance != null)
-                          _buildInfoItem('거리', '${_distance!.toStringAsFixed(1)}m'),
+                          _buildInfoItem(
+                            '거리',
+                            '${_distance!.toStringAsFixed(1)}m',
+                          ),
                       ],
                     ),
                   ],
@@ -268,18 +277,9 @@ class _SpatialAudioTestScreenState extends State<SpatialAudioTestScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        '-180°',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                      const Text(
-                        '0°',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                      const Text(
-                        '+180°',
-                        style: TextStyle(color: Colors.grey),
-                      ),
+                      const Text('-180°', style: TextStyle(color: Colors.grey)),
+                      const Text('0°', style: TextStyle(color: Colors.grey)),
+                      const Text('+180°', style: TextStyle(color: Colors.grey)),
                     ],
                   ),
                 ],
@@ -303,7 +303,10 @@ class _SpatialAudioTestScreenState extends State<SpatialAudioTestScreen> {
                             } else if (_distance == null) {
                               _distance = 50.0; // 기본값
                             }
-                            _audioService.updateDirection(_angleDiff, _useDistance ? _distance : null);
+                            _audioService.updateDirection(
+                              _angleDiff,
+                              _useDistance ? _distance : null,
+                            );
                           });
                         },
                         activeColor: Colors.blue,
@@ -335,14 +338,8 @@ class _SpatialAudioTestScreenState extends State<SpatialAudioTestScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          '1m',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                        const Text(
-                          '50m',
-                          style: TextStyle(color: Colors.grey),
-                        ),
+                        const Text('1m', style: TextStyle(color: Colors.grey)),
+                        const Text('50m', style: TextStyle(color: Colors.grey)),
                         const Text(
                           '100m',
                           style: TextStyle(color: Colors.grey),
@@ -386,10 +383,7 @@ class _SpatialAudioTestScreenState extends State<SpatialAudioTestScreen> {
                 child: const Text(
                   '💡 이어폰을 착용하고 슬라이더를 조절하면\n방향에 따라 소리가 이동하는 것을 확인할 수 있습니다.\n\n🎧 네이티브 HRTF + Virtualizer 사용\n⏱️ 정면에 가까울수록 비프 간격이 빨라집니다\n📏 거리 조절: 가까울수록 큰 소리, 멀수록 작은 소리',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
                 ),
               ),
             ],
@@ -402,13 +396,7 @@ class _SpatialAudioTestScreenState extends State<SpatialAudioTestScreen> {
   Widget _buildInfoItem(String label, String value) {
     return Column(
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.grey,
-            fontSize: 12,
-          ),
-        ),
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
         const SizedBox(height: 4),
         Text(
           value,
@@ -428,10 +416,7 @@ class DirectionPainter extends CustomPainter {
   final double angle;
   final Color color;
 
-  DirectionPainter({
-    required this.angle,
-    required this.color,
-  });
+  DirectionPainter({required this.angle, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {

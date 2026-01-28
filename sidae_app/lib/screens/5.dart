@@ -7,6 +7,8 @@ import 'dart:math' as math;
 import '../models/route_model.dart';
 import '../services/route_tracker.dart';
 import '../services/crosswalk_detector.dart';
+import '../services/bus_stop_detector.dart';
+import '../services/bus_arrival_service.dart';
 import '../services/tts_service.dart';
 import '../services/navigation_service.dart';
 import '../widgets/progress_indicator_widget.dart';
@@ -32,10 +34,18 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   final NavigationService _navService = NavigationService();
   final TtsService _ttsService = TtsService.instance;
   CrosswalkDetector? _crosswalkDetector;
+  BusStopDetector? _busStopDetector;
   Position? _currentPosition;
   static const double _passThreshold = 15.0;
   bool _isNavigatingToCrosswalk = false; // 화면 이동 중복 방지
+  bool _isNavigatingToBusStop = false; // 버스 정류장 화면 중복 방지
   double _distanceToTarget = 0.0;
+
+  // 버스 도착 정보 오버레이
+  final BusArrivalService _busArrivalService = BusArrivalService();
+  bool _showBusArrivalOverlay = false;
+  BusArrival? _busArrival;
+  String? _busStationName;
 
   // 360-0 wrap-around 처리를 위한 이전 각도
   double _prevTargetAngle = 0.0;
@@ -44,6 +54,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
     super.initState();
     _initializePathPoints();
     _initCrosswalkDetector();
+    _initBusStopDetector();
     _ttsService.initialize();
     _navService.initSensor();
 
@@ -96,7 +107,6 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   void _initializePathPoints() {
     // 이미 초기화되었으면 건너뛰기 (Screen4에서 이미 초기화된 경우)
     if (_tracker.allPathPoints.isNotEmpty) {
-      debugPrint("RouteTracker 이미 초기화됨, 건너뛰기");
       return;
     }
 
@@ -107,8 +117,6 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
     // RouteTracker에 경로 초기화
     _tracker.initialize(allPathPoints);
-
-    debugPrint("총 경로 점 개수: ${_tracker.allPathPoints.length}");
   }
 
   void _startLocationTracking() {
@@ -121,6 +129,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       _currentPosition = position;
     });
     _checkCrosswalk(position);
+    _checkBusStop(position);
     _checkAndUpdatePassedPoints(position);
     _updateMapMarkers();
   }
@@ -131,6 +140,164 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
     if (_isNavigatingToCrosswalk) return;
     if (_crosswalkDetector == null) return;
     _crosswalkDetector!.checkCrosswalkProximity(position);
+  }
+
+  // 버스 정류장 근접 감지
+  void _checkBusStop(Position position) {
+    if (_isNavigatingToBusStop) return;
+    if (_busStopDetector == null) return;
+    _busStopDetector!.checkBusStopProximity(position);
+  }
+
+  // 버스 정류장 감지기 초기화
+  void _initBusStopDetector() {
+    _busStopDetector = BusStopDetector(
+      routes: widget.routes,
+      onBusStopDetected: (BusStopInfo busStopInfo) async {
+        if (_isNavigatingToBusStop) return;
+        _isNavigatingToBusStop = true;
+
+        if (!mounted) return;
+        await _ttsService.speak("버스 정류장에 도착했습니다.");
+        HapticFeedback.vibrate();
+
+        // 버스 도착 정보 오버레이 표시
+        setState(() {
+          _showBusArrivalOverlay = true;
+          _busStationName = busStopInfo.stationName;
+        });
+
+        // 버스 도착 정보 조회 시작
+        _busArrivalService.onArrivalUpdate = (arrival) {
+          if (!mounted) return;
+          setState(() {
+            _busArrival = arrival;
+          });
+          if (arrival != null) {
+            _ttsService.speak("${arrival.busNumber}번 버스, ${arrival.statusMsg}");
+          }
+        };
+        await _busArrivalService.startTracking(
+          busStopInfo.busNumber,
+          busStopInfo.stationName,
+        );
+      },
+    );
+  }
+
+  // 버스 도착 오버레이 닫기
+  void _closeBusArrivalOverlay() {
+    _busArrivalService.stopTracking();
+    setState(() {
+      _showBusArrivalOverlay = false;
+      _busArrival = null;
+      _isNavigatingToBusStop = false;
+    });
+  }
+
+  // 버스 도착 정보 오버레이 위젯
+  Widget _buildBusArrivalOverlay() {
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 100,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.blue.withValues(alpha: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 헤더
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.directions_bus,
+                      color: Colors.blue,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _busStationName ?? '버스 정류장',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.grey),
+                  onPressed: _closeBusArrivalOverlay,
+                ),
+              ],
+            ),
+            const Divider(color: Colors.grey),
+            // 도착 정보
+            if (_busArrival != null) ...[
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _busArrival!.busNumber,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _busArrival!.statusMsg,
+                    style: const TextStyle(
+                      color: Colors.orange,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_busArrival!.plateNo.isNotEmpty)
+                Text(
+                  '차량번호: ${_busArrival!.plateNo}',
+                  style: const TextStyle(color: Colors.grey, fontSize: 14),
+                ),
+            ] else
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(color: Colors.blue),
+                ),
+              ),
+            const SizedBox(height: 8),
+            const Center(
+              child: Text(
+                '1분마다 자동 갱신',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // 현재 위치를 기준으로 지나간 점들을 체크
@@ -159,10 +326,6 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       }
     }
 
-    debugPrint(
-      "현재 목표: ${_tracker.currentTargetIndex}, 가장 가까운 점: $closestIndex, 거리: ${closestDistance.toStringAsFixed(1)}m",
-    );
-
     // 가장 가까운 점이 임계값 이내면 해당 점까지 모두 통과 처리
     if (closestIndex >= 0 && closestDistance <= _passThreshold) {
       setState(() {
@@ -172,9 +335,6 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         if (closestIndex + 1 < _tracker.allPathPoints.length) {
           _tracker.currentTargetIndex = closestIndex + 1;
         }
-        debugPrint(
-          "지점 $closestIndex까지 통과! 다음 목표: ${_tracker.currentTargetIndex}",
-        );
       });
     }
   }
@@ -328,6 +488,9 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
                 ),
                 // 왼쪽 위에 방향 정보 표시
                 Positioned(top: 16, left: 16, child: _buildDirectionInfo()),
+
+                // 버스 도착 정보 오버레이
+                if (_showBusArrivalOverlay) _buildBusArrivalOverlay(),
               ],
             ),
           ),

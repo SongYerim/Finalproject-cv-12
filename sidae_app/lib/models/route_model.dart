@@ -75,6 +75,12 @@ class RouteSegment {
   final int duration;
   final List<NLatLng> pathCoordinates;
 
+  // BUS/SUBWAY용 필드
+  final String? transportName; // 버스 번호 또는 지하철 노선
+  final String? startStation; // 승차 정류장
+  final String? endStation; // 하차 정류장
+  final List<BusStation> stations; // 정류장 목록
+
   RouteSegment({
     required this.segmentIndex,
     required this.moveType,
@@ -84,6 +90,10 @@ class RouteSegment {
     required this.distance,
     required this.duration,
     required this.pathCoordinates,
+    this.transportName,
+    this.startStation,
+    this.endStation,
+    this.stations = const [],
   });
 
   // Dart 객체 -> JSON 변환
@@ -96,7 +106,13 @@ class RouteSegment {
       'steps': steps.map((step) => step.toJson()).toList(),
       'distance': distance,
       'duration': duration,
-      'path_coordinates': pathCoordinates.map((coord) => [coord.latitude, coord.longitude]).toList(),
+      'path_coordinates': pathCoordinates
+          .map((coord) => [coord.latitude, coord.longitude])
+          .toList(),
+      'transport_name': transportName,
+      'start_station': startStation,
+      'end_station': endStation,
+      'stations': stations.map((s) => s.toJson()).toList(),
     };
   }
 
@@ -127,6 +143,14 @@ class RouteSegment {
           .toList();
     }
 
+    // stations 파싱
+    List<BusStation> stationsList = [];
+    if (json['stations'] != null) {
+      stationsList = (json['stations'] as List)
+          .map((s) => BusStation.fromJson(s))
+          .toList();
+    }
+
     return RouteSegment(
       segmentIndex: json['segment_index'],
       moveType: json['move_type'],
@@ -135,7 +159,39 @@ class RouteSegment {
       steps: stepsList,
       distance: json['distance'] ?? 0,
       duration: json['duration'] ?? 0,
-      pathCoordinates: coords, // 저장
+      pathCoordinates: coords,
+      transportName: json['transport_name'],
+      startStation: json['start_station'],
+      endStation: json['end_station'],
+      stations: stationsList,
+    );
+  }
+}
+
+/// 버스/지하철 정류장 정보
+class BusStation {
+  final int index;
+  final String name;
+  final double lat;
+  final double lng;
+
+  BusStation({
+    required this.index,
+    required this.name,
+    required this.lat,
+    required this.lng,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {'index': index, 'name': name, 'lat': lat, 'lng': lng};
+  }
+
+  factory BusStation.fromJson(Map<String, dynamic> json) {
+    return BusStation(
+      index: json['index'] ?? 0,
+      name: json['name'] ?? '',
+      lat: (json['lat'] ?? 0.0).toDouble(),
+      lng: (json['lng'] ?? 0.0).toDouble(),
     );
   }
 }

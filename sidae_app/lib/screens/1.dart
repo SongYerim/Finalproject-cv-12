@@ -80,45 +80,34 @@ class _HomeScreenState extends State<HomeScreen> {
   // 네이티브 STT EventChannel 구독 초기화
   void _initSpeech() {
     try {
-      _sttSubscription = _eventChannel.receiveBroadcastStream().listen(
-        (event) {
-          if (event is Map && event['type'] == 'stt') {
-            final eventType = event['eventType'] as String?;
-            final data = event['data'] as String?;
+      _sttSubscription = _eventChannel.receiveBroadcastStream().listen((event) {
+        if (event is Map && event['type'] == 'stt') {
+          final eventType = event['eventType'] as String?;
+          final data = event['data'] as String?;
 
-            debugPrint('[HomeScreen][STT] eventType: $eventType, data: $data');
-
-            switch (eventType) {
-              case 'status':
-                if (data == 'ready' || data == 'listening') {
-                  debugPrint('[HomeScreen][STT][status] $data');
-                }
-                break;
-              case 'result':
-                // 최종 결과
-                _handleSttResult(data ?? '');
-                break;
-              case 'partial':
-                // 부분 결과 (필요시 UI 업데이트용)
-                debugPrint('[HomeScreen][STT][partial] $data');
-                break;
-              case 'error':
-                // 에러 처리
-                _handleSttError(data ?? 'unknown_error');
-                break;
-            }
+          switch (eventType) {
+            case 'status':
+              // status handling
+              break;
+            case 'result':
+              // 최종 결과
+              _handleSttResult(data ?? '');
+              break;
+            case 'partial':
+              // 부분 결과 (필요시 UI 업데이트용)
+              // partial result
+              break;
+            case 'error':
+              // 에러 처리
+              _handleSttError(data ?? 'unknown_error');
+              break;
           }
-        },
-        onError: (error) {
-          debugPrint('[HomeScreen][STT][stream error] $error');
-        },
-      );
+        }
+      }, onError: (error) {});
 
       if (!mounted) return;
       setState(() => _isSpeechEnabled = true);
-      debugPrint('[HomeScreen] 네이티브 STT EventChannel 구독 완료');
     } catch (e) {
-      debugPrint("STT 초기화 실패: $e");
       if (!mounted) return;
       setState(() => _isSpeechEnabled = false);
     }
@@ -204,9 +193,7 @@ class _HomeScreenState extends State<HomeScreen> {
       try {
         // 네이티브 MethodChannel로 음성인식 시작
         await _channel.invokeMethod('startListening');
-        debugPrint('[HomeScreen] 네이티브 STT 시작됨');
       } catch (e) {
-        debugPrint("Listen 에러: $e");
         // 예외도 동일하게 실패 처리로 통일
         await _handleSttError("listen_exception");
       }
@@ -258,8 +245,6 @@ class _HomeScreenState extends State<HomeScreen> {
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      debugPrint("내 위치: ${position.latitude}, ${position.longitude}");
-
       // 2) 목적지 검색 (텍스트 -> 좌표)
       final placeData = await _apiService.searchPlace(destination);
 
@@ -280,13 +265,6 @@ class _HomeScreenState extends State<HomeScreen> {
       // 이 단계는 2.dart(RouteSearchScreen)에서 수행합니다.
       if (!mounted) return;
 
-      debugPrint("[1.dart] RouteSearchScreen으로 이동 시작");
-      debugPrint(
-        "[1.dart] startLat: ${position.latitude}, startLng: ${position.longitude}",
-      );
-      debugPrint("[1.dart] endLat: $endLat, endLng: $endLng");
-      debugPrint("[1.dart] destinationName: $placeName");
-
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -299,11 +277,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       );
-
-      debugPrint("[1.dart] Navigator.push 완료");
     } catch (e) {
-      // 에러 핸들링 (print 대신 debugPrint 사용 권장)
-      debugPrint("에러 발생: $e");
+      // 에러 핸들링
       if (!mounted) return;
       _speak("오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
       setState(() {
@@ -480,10 +455,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       );
-
-      debugPrint("[1.dart] route_data.json 로드 완료, ${routes.length}개 구간");
     } catch (e) {
-      debugPrint("[1.dart] route_data.json 로드 실패: $e");
       if (!mounted) return;
       _speak("경로 데이터를 불러오는데 실패했습니다.");
     }
@@ -500,15 +472,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
         if (await file.exists()) {
           jsonString = await file.readAsString(encoding: utf8);
-          debugPrint("[1.dart] 앱 내부 저장소에서 route_data_2.json 로드 성공");
         } else {
           jsonString = await rootBundle.loadString('assets/route_data_2.json');
-          debugPrint("[1.dart] assets에서 route_data_2.json 로드 성공");
         }
       } catch (e) {
-        debugPrint("[1.dart] 앱 내부 저장소 읽기 실패, assets에서 시도: $e");
         jsonString = await rootBundle.loadString('assets/route_data_2.json');
-        debugPrint("[1.dart] assets에서 route_data_2.json 로드 성공");
       }
 
       final List<dynamic> jsonData = json.decode(jsonString);
@@ -527,10 +495,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       );
-
-      debugPrint("[1.dart] route_data_2.json 로드 완료, ${routes.length}개 구간");
     } catch (e) {
-      debugPrint("[1.dart] route_data_2.json 로드 실패: $e");
       if (!mounted) return;
       _speak("경로 데이터를 불러오는데 실패했습니다.");
     }
@@ -680,10 +645,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       onPressed: () async {
                         // 2.dart/경로 탐색로 연결
-                        debugPrint("[1.dart] 확인 버튼 클릭됨");
-                        debugPrint(
-                          "[1.dart] _recognizedDestination: $_recognizedDestination",
-                        );
 
                         if (_recognizedDestination.isEmpty) {
                           _speak("목적지가 없습니다. 다시 말씀해주세요.");
@@ -697,9 +658,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                         try {
                           await _processNavigation(_recognizedDestination);
-                          debugPrint("[1.dart] _processNavigation 완료");
                         } catch (e) {
-                          debugPrint("[1.dart] _processNavigation 에러: $e");
                           if (!mounted) return;
                           _speak("경로 탐색 중 오류가 발생했습니다.");
                           setState(() {

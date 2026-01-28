@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'spatial_audio_service.dart';
@@ -9,16 +8,17 @@ import 'spatial_audio_service.dart';
 ///
 /// IMU 센서와 GPS를 사용하여 기기 방향 대비 횡단보도 끝지점의
 /// 상대 각도를 계산하고, 공간음향으로 방향을 안내합니다.
+///
+/// 주의: 이 서비스는 EventChannel을 직접 구독하지 않습니다.
+/// 외부에서 handleHeadingEvent()를 호출하여 heading 데이터를 전달해야 합니다.
+/// (EventChannel 충돌 방지를 위함)
 class CrosswalkDirectionService {
   // 상수
   static const int _headingHistorySize = 5; // Moving average 크기
 
-  // 네이티브 채널
+  // 네이티브 채널 (메소드 호출용)
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
-  );
-  static const EventChannel _eventChannel = EventChannel(
-    'com.ctrlcv.sidae_app/yolo_detections',
   );
 
   final SpatialAudioService _audioService = SpatialAudioService.instance;
@@ -27,8 +27,7 @@ class CrosswalkDirectionService {
   double? _exitLat;
   double? _exitLng;
 
-  // 스트림 구독
-  StreamSubscription? _nativeEventSubscription;
+  // 스트림 구독 (GPS만 - EventChannel은 외부에서 처리)
   StreamSubscription<Position>? _positionSubscription;
 
   // 현재 상태
@@ -47,27 +46,28 @@ class CrosswalkDirectionService {
   /// 서비스 시작
   ///
   /// [exitLat], [exitLng]: 횡단보도 끝지점 좌표
-  Future<bool> start({required double exitLat, required double exitLng}) async {
+  /// [useEventChannel]: false면 EventChannel 구독을 하지 않음 (외부에서 heading 이벤트 전달)
+  Future<bool> start({
+    required double exitLat,
+    required double exitLng,
+    bool useEventChannel = false, // 기본값 false - 외부에서 heading 이벤트 전달
+  }) async {
     if (_isRunning) {
-      debugPrint('⚠️ 방향 안내 서비스가 이미 실행 중');
       return true;
     }
 
     _exitLat = exitLat;
     _exitLng = exitLng;
 
-    debugPrint('🧭 횡단보도 방향 안내 시작');
-    debugPrint('📍 끝지점: ($exitLat, $exitLng)');
-
     // 1. 공간음향 서비스 초기화
-    final audioInitialized = await _audioService.initialize();
-    if (!audioInitialized) {
-      debugPrint('❌ 공간음향 초기화 실패');
-      // 오디오 없이도 계속 진행 (방향 계산은 가능)
-    }
+    await _audioService.initialize();
 
-    // 2. 센서 시작 (네이티브 ROTATION_VECTOR)
-    _startNativeSensor();
+    // 2. 센서 시작 (네이티브 ROTATION_VECTOR) - EventChannel 구독 없이 메소드만 호출
+    try {
+      await _channel.invokeMethod('startRotationVector');
+    } catch (e) {
+      // 무시
+    }
 
     // 3. GPS 위치 추적 시작
     _startLocationTracking();
@@ -79,26 +79,11 @@ class CrosswalkDirectionService {
     return true;
   }
 
-  /// 네이티브 센서 시작 및 리스닝
-  Future<void> _startNativeSensor() async {
-    try {
-      await _channel.invokeMethod('startRotationVector');
-      debugPrint('✅ ROTATION_VECTOR 센서 시작됨');
-    } catch (e) {
-      debugPrint('❌ ROTATION_VECTOR 시작 실패: $e');
-    }
-
-    _nativeEventSubscription = _eventChannel.receiveBroadcastStream().listen(
-      (dynamic event) {
-        if (event is Map && event['type'] == 'heading') {
-          final heading = (event['heading'] as num).toDouble();
-          _handleHeadingUpdate(heading);
-        }
-      },
-      onError: (error) {
-        debugPrint('❌ EventChannel 에러: $error');
-      },
-    );
+  /// 외부에서 heading 이벤트를 전달받아 처리
+  /// YoloTestScreen의 EventChannel 리스너에서 호출해야 함
+  void handleHeadingEvent(double heading) {
+    if (!_isRunning) return;
+    _handleHeadingUpdate(heading);
   }
 
   /// Heading 업데이트 처리 (Moving Average 적용)
@@ -152,10 +137,9 @@ class CrosswalkDirectionService {
             _updateExitBearing(position);
           },
           onError: (error) {
-            debugPrint('❌ GPS 에러: $error');
+            // 무시
           },
         );
-    debugPrint('✅ GPS 위치 추적 시작');
   }
 
   /// 끝지점 방향 계산 (현재 위치 → 끝지점)
@@ -203,17 +187,10 @@ class CrosswalkDirectionService {
   Future<void> stop() async {
     if (!_isRunning) return;
 
-    debugPrint('🛑 횡단보도 방향 안내 중지');
-
-    // 스트림 구독 해제
-    await _nativeEventSubscription?.cancel();
-    _nativeEventSubscription = null;
-
     try {
       await _channel.invokeMethod('stopRotationVector');
-      debugPrint('🛑 ROTATION_VECTOR 센서 중지됨');
     } catch (e) {
-      debugPrint('❌ ROTATION_VECTOR 중지 실패: $e');
+      // 무시
     }
 
     await _positionSubscription?.cancel();

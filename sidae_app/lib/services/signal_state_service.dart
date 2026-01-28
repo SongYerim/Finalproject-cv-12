@@ -1,5 +1,4 @@
 import 'dart:collection';
-import 'package:flutter/foundation.dart';
 import 'tts_service.dart';
 
 /// 신호등 상태 상수 정의
@@ -49,7 +48,6 @@ class SignalStateService {
   void reset() {
     _signalBuffer.clear();
     _currentState = SignalState.init;
-    debugPrint('🔄 SignalStateService 초기화됨');
   }
 
   /// 감지 결과 처리
@@ -57,21 +55,11 @@ class SignalStateService {
   /// [detections]는 YOLO 모델의 감지 결과 리스트로,
   /// 각 감지 결과는 'label'과 'confidence' 키를 포함해야 합니다.
   void processDetections(List<Map<String, dynamic>> detections) {
-    // 디버그: 전달받은 모든 라벨 확인
-    final allLabels = detections.map((d) => d['label']).toList();
-    debugPrint('📥 전달받은 라벨들: $allLabels');
-
     // 1. R_Signal과 G_Signal만 필터링 (trim()으로 줄바꿈 제거)
     final signalCandidates = detections.where((det) {
       final label = (det['label'] as String?)?.trim();
-      final isSignal = label == 'R_Signal' || label == 'G_Signal';
-      if (isSignal) {
-        debugPrint('   ✓ 신호 감지: "$label"');
-      }
-      return isSignal;
+      return label == 'R_Signal' || label == 'G_Signal';
     }).toList();
-
-    debugPrint('🔎 필터링된 신호: ${signalCandidates.length}개');
 
     // 2. 감지된 신호가 있다면 confidence가 가장 높은 것 선택
     String targetLabel = 'NONE';
@@ -90,7 +78,6 @@ class SignalStateService {
       } else {
         targetLabel = 'GREEN';
       }
-      debugPrint('✅ 선택된 신호: $targetLabel (${bestSignal['confidence']})');
     }
 
     // 3. 최선의 결과를 버퍼에 삽입
@@ -101,7 +88,6 @@ class SignalStateService {
 
     // 4. 판단을 위한 과반수 데이터 확보 확인 (10개)
     if (_signalBuffer.length < _bufferSize) {
-      debugPrint('🔄 신호 버퍼 수집 중: ${_signalBuffer.length}/$_bufferSize');
       return;
     }
 
@@ -116,8 +102,6 @@ class SignalStateService {
   SignalConsensus _getConsensus() {
     int redCount = _signalBuffer.where((s) => s == 'RED').length;
     int greenCount = _signalBuffer.where((s) => s == 'GREEN').length;
-
-    debugPrint('📊 신호 버퍼: RED=$redCount, GREEN=$greenCount');
 
     if (redCount >= _consensusThreshold) {
       return SignalConsensus.red;
@@ -168,14 +152,12 @@ class SignalStateService {
     // 상태 변경 시 콜백 호출
     if (previousState != _currentState ||
         consensus != SignalConsensus.unknown) {
-      debugPrint('🚦 상태: $previousState → $_currentState (판정: $consensus)');
       onStateChanged?.call(_currentState, consensus);
     }
   }
 
   /// 음성 안내 재생
   Future<void> _playVoice(String text) async {
-    debugPrint('🔊 [음성 안내]: $text');
     await _ttsService.speak(text);
   }
 

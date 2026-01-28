@@ -5,31 +5,33 @@ import 'package:ffi/ffi.dart';
 import 'package:camera/camera.dart';
 
 /// FFI 함수 타입 정의 (top-level)
-typedef NativePreprocessFunction = Void Function(
-  Pointer<Uint8> yPlane,
-  Int32 yStride,
-  Pointer<Uint8> uPlane,
-  Int32 uStride,
-  Pointer<Uint8> vPlane,
-  Int32 vStride,
-  Int32 srcWidth,
-  Int32 srcHeight,
-  Pointer<Float> output,
-  Bool rotate90,
-);
+typedef NativePreprocessFunction =
+    Void Function(
+      Pointer<Uint8> yPlane,
+      Int32 yStride,
+      Pointer<Uint8> uPlane,
+      Int32 uStride,
+      Pointer<Uint8> vPlane,
+      Int32 vStride,
+      Int32 srcWidth,
+      Int32 srcHeight,
+      Pointer<Float> output,
+      Bool rotate90,
+    );
 
-typedef DartPreprocessFunction = void Function(
-  Pointer<Uint8> yPlane,
-  int yStride,
-  Pointer<Uint8> uPlane,
-  int uStride,
-  Pointer<Uint8> vPlane,
-  int vStride,
-  int srcWidth,
-  int srcHeight,
-  Pointer<Float> output,
-  bool rotate90,
-);
+typedef DartPreprocessFunction =
+    void Function(
+      Pointer<Uint8> yPlane,
+      int yStride,
+      Pointer<Uint8> uPlane,
+      int uStride,
+      Pointer<Uint8> vPlane,
+      int vStride,
+      int srcWidth,
+      int srcHeight,
+      Pointer<Float> output,
+      bool rotate90,
+    );
 
 /// 네이티브 이미지 전처리 FFI 바인딩
 /// C++ 라이브러리를 통해 YUV420 → RGB → 리사이즈 → 패딩 → Float32 변환 수행
@@ -47,9 +49,11 @@ class ImagePreprocessorFFI {
     try {
       if (Platform.isAndroid) {
         _lib = DynamicLibrary.open('libimage_preprocessor.so');
-        _preprocessFunc = _lib!.lookup<NativeFunction<NativePreprocessFunction>>(
-          'preprocessYUV420ToFloat32',
-        ).asFunction<DartPreprocessFunction>();
+        _preprocessFunc = _lib!
+            .lookup<NativeFunction<NativePreprocessFunction>>(
+              'preprocessYUV420ToFloat32',
+            )
+            .asFunction<DartPreprocessFunction>();
         _available = true;
       }
     } catch (e) {
@@ -65,7 +69,7 @@ class ImagePreprocessorFFI {
   }
 
   /// 이미지 전처리 수행 (바이트 데이터 직접 사용, TransferableTypedData 최적화)
-  /// 
+  ///
   /// [yPlaneBytes] Y 평면 바이트 데이터
   /// [yStride] Y 평면 stride
   /// [uPlaneBytes] U 평면 바이트 데이터
@@ -75,15 +79,19 @@ class ImagePreprocessorFFI {
   /// [width] 이미지 너비
   /// [height] 이미지 높이
   /// [rotate90] 90도 회전 여부
-  /// 
+  ///
   /// Returns: Float32List (640x640x3 = 1,228,800 floats)
   static Float32List? preprocessFromBytes(
-    Uint8List yPlaneBytes, int yStride,
-    Uint8List uPlaneBytes, int uStride,
-    Uint8List vPlaneBytes, int vStride,
-    int width, int height,
-    {bool rotate90 = true}
-  ) {
+    Uint8List yPlaneBytes,
+    int yStride,
+    Uint8List uPlaneBytes,
+    int uStride,
+    Uint8List vPlaneBytes,
+    int vStride,
+    int width,
+    int height, {
+    bool rotate90 = true,
+  }) {
     if (!isAvailable()) {
       return null;
     }
@@ -137,21 +145,28 @@ class ImagePreprocessorFFI {
   }
 
   /// 이미지 전처리 수행 (CameraImage 버전, 호환성 유지)
-  /// 
+  ///
   /// [cameraImage] 카메라 이미지 (YUV420)
   /// [rotate90] 90도 회전 여부
-  /// 
+  ///
   /// Returns: Float32List (640x640x3 = 1,228,800 floats)
-  static Float32List? preprocess(CameraImage cameraImage, {bool rotate90 = true}) {
+  static Float32List? preprocess(
+    CameraImage cameraImage, {
+    bool rotate90 = true,
+  }) {
     final yPlane = cameraImage.planes[0];
     final uPlane = cameraImage.planes[1];
     final vPlane = cameraImage.planes[2];
-    
+
     return preprocessFromBytes(
-      yPlane.bytes, yPlane.bytesPerRow,
-      uPlane.bytes, uPlane.bytesPerRow,
-      vPlane.bytes, vPlane.bytesPerRow,
-      cameraImage.width, cameraImage.height,
+      yPlane.bytes,
+      yPlane.bytesPerRow,
+      uPlane.bytes,
+      uPlane.bytesPerRow,
+      vPlane.bytes,
+      vPlane.bytesPerRow,
+      cameraImage.width,
+      cameraImage.height,
       rotate90: rotate90,
     );
   }

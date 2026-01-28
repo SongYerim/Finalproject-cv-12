@@ -89,20 +89,13 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
 
     // 반대편 좌표가 있으면 GPS 추적 및 공간음향 시작
     if (widget.exitLat != null && widget.exitLng != null) {
-      debugPrint(
-        '✅ exitLat/exitLng 전달됨: (${widget.exitLat}, ${widget.exitLng})',
-      );
       _startExitTracking();
       _startDirectionGuidance();
-    } else {
-      debugPrint('⚠️ exitLat/exitLng가 null - GPS 추적 및 공간음향 비활성화');
     }
   }
 
   /// 공간음향 방향 안내 시작
   Future<void> _startDirectionGuidance() async {
-    debugPrint('🔊 공간음향 방향 안내 시작...');
-
     // 방향 업데이트 콜백 설정
     _directionService.onDirectionUpdate =
         (deviceHeading, exitBearing, angleDiff) {
@@ -121,27 +114,20 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
     );
 
     if (success) {
-      debugPrint('✅ 공간음향 방향 안내 시작됨');
       // TTS로 안내
       await TtsService.instance.speak('소리가 나는 방향이 횡단보도 끝지점입니다.');
-    } else {
-      debugPrint('❌ 공간음향 방향 안내 시작 실패');
     }
   }
 
   /// 횡단보도 반대편 도달 추적 시작 (네이티브 GPS 사용)
   Future<void> _startExitTracking() async {
-    debugPrint('🚶 네이티브 GPS 추적 시작 시도...');
-    debugPrint('🎯 exit 좌표: (${widget.exitLat}, ${widget.exitLng})');
-
     try {
       await _cameraChannel.invokeMethod('startExitTracking', {
         'exitLat': widget.exitLat,
         'exitLng': widget.exitLng,
       });
-      debugPrint('✅ 네이티브 GPS 추적 시작됨');
     } catch (e) {
-      debugPrint('❌ 네이티브 GPS 추적 시작 실패: $e');
+      // 무시
     }
   }
 
@@ -150,7 +136,6 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
     if (_hasReachedExit) return;
     _hasReachedExit = true;
 
-    debugPrint('✅ 횡단보도 반대편 도달! 10초 후 카메라 종료');
     TtsService.instance.speak('횡단보도를 거의 다 건넜습니다. 10초 후 카메라가 종료됩니다.');
 
     // 10초 카운트다운 타이머 시작
@@ -174,7 +159,6 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
   /// 화면 종료
   void _closeScreen() {
     if (!mounted) return;
-    debugPrint('🚪 카메라 화면 종료');
     Navigator.pop(context);
   }
 
@@ -189,13 +173,11 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
         setState(() {
           _permissionDenied = true;
         });
-        debugPrint("❌ 카메라 권한이 거부되었습니다.");
         return;
       }
     }
 
     // 권한이 허용된 경우
-    debugPrint("✅ 카메라 권한이 허용되었습니다.");
     if (!mounted) return;
     setState(() {
       _permissionDenied = false;
@@ -222,87 +204,75 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
         'modelPath': modelPath, // 모델 파일명 전달
       });
 
-      if (initResult is Map && initResult['initialized'] == true) {
-        final engineType = initResult['engineType'] as String? ?? 'UNKNOWN';
-        debugPrint("✅ YOLO 모델 초기화 완료 (엔진: $engineType)");
-      } else {
-        debugPrint("❌ YOLO 모델 초기화 실패");
+      if (initResult is! Map || initResult['initialized'] != true) {
         return;
       }
 
       // 2. 결과 스트림 리스닝 (카메라 시작 전에 설정)
-      _detectionsSubscription = _detectionsChannel.receiveBroadcastStream().listen(
-        (dynamic result) {
-          if (result is Map) {
-            // FPS 업데이트 (네이티브에서 받음)
-            if (result['fps'] != null) {
-              final nativeFps = (result['fps'] as num).toDouble();
-              if (!mounted) return;
-              setState(() {
-                _fps = nativeFps;
-              });
-            }
+      _detectionsSubscription = _detectionsChannel
+          .receiveBroadcastStream()
+          .listen(
+            (dynamic result) {
+              if (result is Map) {
+                // FPS 업데이트 (네이티브에서 받음)
+                if (result['fps'] != null) {
+                  final nativeFps = (result['fps'] as num).toDouble();
+                  if (!mounted) return;
+                  setState(() {
+                    _fps = nativeFps;
+                  });
+                }
 
-            // 감지 결과 업데이트
-            if (result['detections'] != null) {
-              final detectionsList = (result['detections'] as List).map((d) {
-                final map = d as Map;
-                return Detection(
-                  label: map['label'] as String,
-                  confidence: (map['confidence'] as num).toDouble(),
-                  bbox: (map['bbox'] as List)
-                      .map((e) => (e as num).toDouble())
-                      .toList(),
-                );
-              }).toList();
+                // 감지 결과 업데이트
+                if (result['detections'] != null) {
+                  final detectionsList = (result['detections'] as List).map((
+                    d,
+                  ) {
+                    final map = d as Map;
+                    return Detection(
+                      label: map['label'] as String,
+                      confidence: (map['confidence'] as num).toDouble(),
+                      bbox: (map['bbox'] as List)
+                          .map((e) => (e as num).toDouble())
+                          .toList(),
+                    );
+                  }).toList();
 
-              if (!mounted) return;
-              setState(() {
-                _detections = detectionsList;
-              });
+                  if (!mounted) return;
+                  setState(() {
+                    _detections = detectionsList;
+                  });
 
-              // 디버그: 탐지 결과 출력
-              if (detectionsList.isNotEmpty) {
-                debugPrint(
-                  "🔍 감지: ${detectionsList.map((d) => '${d.label}(${(d.confidence * 100).toStringAsFixed(0)}%)').join(', ')}",
-                );
+                  // 신호 상태 서비스에 감지 결과 전달
+                  final signalDetections = detectionsList
+                      .map<Map<String, dynamic>>(
+                        (d) => {'label': d.label, 'confidence': d.confidence},
+                      )
+                      .toList();
+
+                  _signalStateService.processDetections(signalDetections);
+                }
+
+                // 네이티브 GPS 추적 결과 처리
+                if (result['type'] == 'exitDistance') {
+                  final reached = result['reached'] as bool;
+
+                  if (reached && !_hasReachedExit) {
+                    _onReachedExit();
+                  }
+                }
+
+                // Heading 이벤트 처리 (CrosswalkDirectionService로 전달)
+                if (result['type'] == 'heading') {
+                  final heading = (result['heading'] as num).toDouble();
+                  _directionService.handleHeadingEvent(heading);
+                }
               }
-
-              // 신호 상태 서비스에 감지 결과 전달
-              final signalDetections = detectionsList
-                  .map<Map<String, dynamic>>(
-                    (d) => {'label': d.label, 'confidence': d.confidence},
-                  )
-                  .toList();
-
-              // 디버그: 전달되는 신호 데이터 확인
-              if (signalDetections.isNotEmpty) {
-                debugPrint('🚦 신호 감지 데이터: $signalDetections');
-              }
-
-              _signalStateService.processDetections(signalDetections);
-            }
-
-            // 네이티브 GPS 추적 결과 처리
-            if (result['type'] == 'exitDistance') {
-              final distance = (result['distance'] as num).toDouble();
-              final reached = result['reached'] as bool;
-
-              debugPrint(
-                '📍 네이티브 GPS: 거리=${distance.toStringAsFixed(1)}m, 도달=$reached',
-              );
-
-              if (reached && !_hasReachedExit) {
-                debugPrint('✅ 횡단보도 반대편 도달! _onReachedExit() 호출');
-                _onReachedExit();
-              }
-            }
-          }
-        },
-        onError: (error) {
-          debugPrint('❌ EventChannel 에러: $error');
-        },
-      );
+            },
+            onError: (error) {
+              // 무시
+            },
+          );
 
       // 3. 카메라 시작
       await _cameraChannel.invokeMethod('startCamera');
@@ -311,10 +281,8 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
       setState(() {
         _isCameraInitialized = true;
       });
-
-      debugPrint("✅ 네이티브 카메라 초기화 완료");
     } catch (e) {
-      debugPrint('❌ 네이티브 카메라 초기화 실패: $e');
+      // 무시
     }
   }
 
@@ -322,13 +290,13 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
   void dispose() {
     // 네이티브 카메라 먼저 중지 (비동기지만 fire-and-forget)
     _cameraChannel.invokeMethod('stopCamera').catchError((e) {
-      debugPrint('❌ 네이티브 카메라 중지 실패: $e');
+      // 무시
     });
     // 신호 상태 서비스 콜백 해제
     _signalStateService.onStateChanged = null;
     // 네이티브 GPS 추적 중지
     _cameraChannel.invokeMethod('stopExitTracking').catchError((e) {
-      debugPrint('❌ 네이티브 GPS 추적 중지 실패: $e');
+      // 무시
     });
     // 공간음향 방향 안내 중지
     _directionService.dispose();
@@ -407,11 +375,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
             child: AndroidView(
               viewType: 'cameraPreview',
               onPlatformViewCreated: (int viewId) {
-                debugPrint("✅ 카메라 프리뷰 PlatformView 생성됨: $viewId");
-                debugPrint(
-                  "📐 PlatformView는 Flutter Stack의 첫 번째 child로 배치됨 (배경 레이어)",
-                );
-                debugPrint("📐 바운딩 박스는 네이티브 BoundingBoxOverlayView에서 그려짐");
+                // PlatformView 생성됨
               },
             ),
           ),

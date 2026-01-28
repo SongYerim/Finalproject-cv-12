@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// HRTF 기반 공간음향 서비스 (네이티브 Android)
@@ -25,7 +24,7 @@ class SpatialAudioService {
 
   // 현재 각도 차이
   double _currentAngleDiff = 0.0;
-  
+
   // 현재 거리 (미터 단위, null이면 거리 무시)
   double? _currentDistance;
 
@@ -34,18 +33,12 @@ class SpatialAudioService {
     if (_isInitialized) return true;
 
     try {
-      final result = await _channel.invokeMethod<bool>('initializeSpatialAudio');
+      final result = await _channel.invokeMethod<bool>(
+        'initializeSpatialAudio',
+      );
       _isInitialized = result ?? false;
-      
-      if (_isInitialized) {
-        debugPrint('✅ 공간음향 서비스 초기화 완료 (네이티브 HRTF)');
-      } else {
-        debugPrint('❌ 공간음향 서비스 초기화 실패');
-      }
-      
       return _isInitialized;
     } catch (e) {
-      debugPrint('❌ 공간음향 서비스 초기화 실패: $e');
       return false;
     }
   }
@@ -63,43 +56,40 @@ class SpatialAudioService {
     // 값이 크게 변했을 때만 업데이트 (성능 최적화)
     // 각도 차이가 2도 이상이거나, 거리가 1미터 이상 변했을 때 업데이트
     final angleChanged = (angleDiff - _currentAngleDiff).abs() > 2.0;
-    final distanceChanged = distance != null && _currentDistance != null &&
+    final distanceChanged =
+        distance != null &&
+        _currentDistance != null &&
         (distance - _currentDistance!).abs() > 1.0;
     final distanceSet = distance != null && _currentDistance == null;
-    
+
     if (angleChanged || distanceChanged || distanceSet) {
       _currentAngleDiff = angleDiff;
       _currentDistance = distance;
-      
+
       // 네이티브 호출 (비동기, 결과 무시)
-      final args = <String, dynamic>{
-        'angleDiff': angleDiff,
-      };
+      final args = <String, dynamic>{'angleDiff': angleDiff};
       if (distance != null) {
         args['distance'] = distance;
       }
-      
-      _channel.invokeMethod('updateSpatialAudioDirection', args).catchError((e) {
-        debugPrint('⚠️ 방향 업데이트 실패: $e');
+
+      _channel.invokeMethod('updateSpatialAudioDirection', args).catchError((
+        e,
+      ) {
+        // 무시
       });
     }
   }
 
   /// 재생 시작
   Future<void> start() async {
-    if (!_isInitialized) {
-      debugPrint('⚠️ 공간음향: 초기화되지 않음');
-      return;
-    }
-
+    if (!_isInitialized) return;
     if (_isPlaying) return;
 
     try {
       await _channel.invokeMethod('startSpatialAudio');
       _isPlaying = true;
-      debugPrint('▶️ 공간음향 재생 시작 (네이티브 HRTF)');
     } catch (e) {
-      debugPrint('❌ 공간음향 재생 실패: $e');
+      // 무시
     }
   }
 
@@ -110,22 +100,21 @@ class SpatialAudioService {
     try {
       await _channel.invokeMethod('stopSpatialAudio');
       _isPlaying = false;
-      debugPrint('⏹️ 공간음향 재생 중지');
     } catch (e) {
-      debugPrint('❌ 공간음향 중지 실패: $e');
+      // 무시
     }
   }
 
   /// 볼륨 설정 (0.0 ~ 1.0)
   Future<void> setVolume(double volume) async {
     if (!_isInitialized) return;
-    
+
     try {
       await _channel.invokeMethod('setSpatialAudioVolume', {
         'volume': volume.clamp(0.0, 1.0),
       });
     } catch (e) {
-      debugPrint('⚠️ 볼륨 설정 실패: $e');
+      // 무시
     }
   }
 
@@ -138,15 +127,14 @@ class SpatialAudioService {
   /// 리소스 해제
   void dispose() {
     if (!_isInitialized) return;
-    
+
     try {
       _channel.invokeMethod('releaseSpatialAudio');
     } catch (e) {
-      debugPrint('⚠️ 공간음향 해제 실패: $e');
+      // 무시
     }
-    
+
     _isInitialized = false;
     _isPlaying = false;
-    debugPrint('🗑️ 공간음향 서비스 해제됨');
   }
 }

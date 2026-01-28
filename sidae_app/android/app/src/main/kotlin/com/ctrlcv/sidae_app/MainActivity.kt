@@ -161,8 +161,6 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 "updateSpatialAudioDirection" -> handleUpdateSpatialAudioDirection(call, result)
                 "setSpatialAudioVolume" -> handleSetSpatialAudioVolume(call, result)
                 "releaseSpatialAudio" -> handleReleaseSpatialAudio(result)
-                "startListening" -> handleStartListening(result)
-                "stopListening" -> handleStopListening(result)
                 "startRotationVector" -> {
                     startRotationVectorSensor()
                     result.success(true)
@@ -173,9 +171,9 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 }
                 else -> result.notImplemented()
             }
-            }
         }
-        
+    }
+    
     /**
      * EventChannel 설정
      */

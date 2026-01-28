@@ -41,9 +41,6 @@ class _MapResultScreenState extends State<MapResultScreen> {
           (Position position) {
             if (!mounted || _mapController == null) return;
 
-            debugPrint(
-              "[3.dart] 현재 위치: ${position.latitude}, ${position.longitude}",
-            );
             _updateCurrentLocationMarker(position);
           },
         );

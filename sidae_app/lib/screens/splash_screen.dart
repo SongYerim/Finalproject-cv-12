@@ -42,7 +42,7 @@ class _SplashScreenState extends State<SplashScreen> {
     await FlutterNaverMap().init(
       clientId: mapClientId,
       onAuthFailed: (ex) {
-        debugPrint("네이버 지도 인증 실패: $ex");
+        // 인증 실패 처리
       },
     );
   }
