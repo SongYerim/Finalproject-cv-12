@@ -1,13 +1,15 @@
 import 'dart:convert';
+import 'dart:io'; // Platform 확인용
 import 'dart:async'; // TimeoutException 사용
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/route_model.dart';
 
 class ApiService {
-  // 데스크탑의 로컬 IP 주소로 통일 (에뮬레이터/실제 기기 모두)
-  // 서버 실행: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-  static const String baseUrl = 'http://192.168.0.15:8000';
+  // 에뮬레이터 환경에 따른 주소 설정
+  static final String baseUrl = Platform.isAndroid
+      ? 'http://10.0.2.2:8000/' // 에뮬레이터용 (localhost)
+      : 'http://127.0.0.1:8000/'; // Windows용
 
   // 1. 목적지 검색 (텍스트 -> 좌표)
   Future<Map<String, dynamic>?> searchPlace(String query) async {

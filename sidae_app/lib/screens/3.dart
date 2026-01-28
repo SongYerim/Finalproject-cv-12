@@ -80,7 +80,7 @@ class _MapResultScreenState extends State<MapResultScreen> {
       appBar: AppBar(
         title: Text(widget.destinationName),
         backgroundColor: Colors.black,
-        foregroundColor: Colors.yellow, // 고대비: 노란색
+        foregroundColor: Colors.white,
       ),
       body: Column(
         children: [

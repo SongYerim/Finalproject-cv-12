@@ -133,7 +133,7 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
     );
   }
 
-  // 로딩 화면: "경로 탐색 처리용" 화면 (고대비 버전)
+  // 로딩 화면: "경로 탐색 처리용" 화면 (첨부 이미지 형태)
   Widget _buildRouteSearchingView() {
     // 화면 전체 여백/배치용
     return Padding(
@@ -142,29 +142,32 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
         // 위-가운데-아래로 배치
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // 1) 상단 아이콘 3개 (도보/버스/지하철) - 고대비: 노란색
+          // 1) 상단 아이콘 3개 (도보/버스/지하철)
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: const [
-              Icon(Icons.directions_walk, size: 32, color: Colors.yellow),
+              Icon(Icons.directions_walk, size: 28, color: Colors.black87),
               SizedBox(width: 26),
-              Icon(Icons.directions_bus_filled, size: 32, color: Colors.yellow),
+              Icon(
+                Icons.directions_bus_filled,
+                size: 28,
+                color: Colors.black87,
+              ),
               SizedBox(width: 26),
-              Icon(Icons.train, size: 32, color: Colors.yellow),
+              Icon(Icons.train, size: 28, color: Colors.black87),
             ],
           ),
 
           const SizedBox(height: 36),
 
-          // 2) 가운데 카드 (고대비: 어두운 회색 배경 + 흰색/노란색 텍스트)
+          // 2) 가운데 카드 (연보라 느낌 + 라운드)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
             decoration: BoxDecoration(
-              // 고대비: 어두운 회색 카드
-              color: const Color(0xFF2A2A2A),
+              // 이미지의 "연한 보라색 카드" 느낌
+              color: const Color(0xFFEDEBFF),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.yellow, width: 2),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -173,21 +176,20 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
                 RichText(
                   textAlign: TextAlign.center,
                   text: const TextSpan(
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: Colors.black87),
                     children: [
                       TextSpan(
                         text: "출발: ",
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       TextSpan(
                         text: "내 위치",
                         style: TextStyle(
-                          fontSize: 28,
+                          fontSize: 26,
                           fontWeight: FontWeight.w800,
-                          color: Colors.yellow,
                         ),
                       ),
                     ],
@@ -200,21 +202,20 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
                 RichText(
                   textAlign: TextAlign.center,
                   text: TextSpan(
-                    style: const TextStyle(color: Colors.white),
+                    style: const TextStyle(color: Colors.black87),
                     children: [
                       const TextSpan(
                         text: "도착: ",
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       TextSpan(
                         text: widget.destinationName,
                         style: const TextStyle(
-                          fontSize: 26,
+                          fontSize: 24,
                           fontWeight: FontWeight.w800,
-                          color: Colors.yellow,
                         ),
                       ),
                     ],
@@ -223,15 +224,11 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
 
                 const SizedBox(height: 10),
 
-                // 안내 문구
+                // 안내 문구 (이미지 문구에 맞춤)
                 const Text(
                   "최단 경로를 찾고있습니다.",
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                 ),
               ],
             ),
@@ -239,23 +236,29 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
 
           const SizedBox(height: 44),
 
-          // 3) 하단 큰 로딩 인디케이터 - 고대비: 노란색
+          // 3) 하단 큰 로딩 인디케이터
           SizedBox(
             width: 90,
             height: 90,
             child: CircularProgressIndicator(
+              // 좀 더 “두꺼운 링” 느낌
               strokeWidth: 9,
-              valueColor: AlwaysStoppedAnimation(Colors.yellow),
-              backgroundColor: Color(0xFF444444),
+              // 기본 테마 색을 쓰고 싶으면 Theme.colorScheme.primary로도 가능
+              valueColor: AlwaysStoppedAnimation(Color(0xFF8E7CFF)),
+              backgroundColor: Color(0xFFE0DDF9),
             ),
           ),
+
+          // (선택) 상태 텍스트를 디버깅/유지하고 싶으면 아래처럼 숨겨둘 수도 있어요.
+          // const SizedBox(height: 18),
+          // Text(_statusText, textAlign: TextAlign.center),
         ],
       ),
     );
   }
 
   // ------------------------------------------------------------
-  // 실패/에러 화면 (고대비)
+  // 실패/에러 화면 (기존 기능 유지, UI는 심플하게)
   Widget _buildErrorView() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -265,23 +268,14 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
           Text(
             _errorText ?? "알 수 없는 오류",
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 18, color: Colors.white),
+            style: const TextStyle(fontSize: 16),
           ),
           const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _fetchRoute,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.yellow,
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-            ),
-            child: const Text("다시 시도", style: TextStyle(fontSize: 18)),
-          ),
+          ElevatedButton(onPressed: _fetchRoute, child: const Text("다시 시도")),
           const SizedBox(height: 8),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(foregroundColor: Colors.yellow),
-            child: const Text("이전 화면으로", style: TextStyle(fontSize: 16)),
+            child: const Text("이전 화면으로"),
           ),
         ],
       ),

@@ -9,9 +9,6 @@ import '../services/route_tracker.dart';
 import '../services/crosswalk_detector.dart';
 import '../services/tts_service.dart';
 import '../services/navigation_service.dart';
-import '../services/bus_stop_detector.dart';
-import '../services/bus_arrival_service.dart';
-import '../models/bus_info_model.dart';
 import '../widgets/progress_indicator_widget.dart';
 import '5.dart';
 import '6.dart';
@@ -35,25 +32,30 @@ class _Screen4State extends State<Screen4> {
   final NavigationService _navService = NavigationService();
   final TtsService _ttsService = TtsService.instance;
   CrosswalkDetector? _crosswalkDetector;
-  BusStopDetector? _busStopDetector;
-  final BusArrivalService _busArrivalService = BusArrivalService();
   bool _isNavigatingToCrosswalk = false; // 카메라 중복 실행 방지 플래그
 
   double _distanceToTarget = 0.0;
   DateTime _lastVibrationTime = DateTime.now();
 
-  // 버스 도착 정보
-  BusArrivalInfo? _busArrivalInfo;
-  String? _busArrivalError;
+  // 360-0 wrap-around 처리를 위한 이전 각도
+  double _prevTargetAngle = 0.0;
+  double _prevCurrentAngle = 0.0;
 
   @override
   void initState() {
     super.initState();
     _initializePathPoints();
     _initCrosswalkDetector();
-    _initBusStopDetector();
     _ttsService.initialize();
     _navService.initSensor();
+
+    // 센서 방향 업데이트 시 UI 갱신 (60Hz)
+    _navService.onBearingUpdate = () {
+      if (mounted) {
+        setState(() {}); // 센서 데이터 변경 시 즉시 UI 갱신
+      }
+    };
+
     _navService.startLocationTracking(onUpdate: _onPositionUpdate);
   }
 
@@ -100,7 +102,6 @@ class _Screen4State extends State<Screen4> {
   void _onPositionUpdate(Position position) {
     if (!mounted) return;
     _checkCrosswalk(position);
-    _checkBusStop(position);
     _checkAndUpdatePassedPoints(position);
     _distanceToTarget = _navService.getDistanceToTarget(position);
     _checkDirectionAndVibrate();
@@ -110,8 +111,6 @@ class _Screen4State extends State<Screen4> {
   @override
   void dispose() {
     _navService.dispose();
-    _busArrivalService.dispose();
-    _busStopDetector?.dispose();
     super.dispose();
   }
 
@@ -120,45 +119,6 @@ class _Screen4State extends State<Screen4> {
     if (_isNavigatingToCrosswalk) return; // 이미 카메라로 이동 중이면 체크하지 않음
     if (_crosswalkDetector == null) return;
     _crosswalkDetector!.checkCrosswalkProximity(position);
-  }
-
-  // 버스 정류장 감지기 초기화
-  void _initBusStopDetector() {
-    _busStopDetector = BusStopDetector(
-      routes: widget.routes,
-      onBusStopDetected: (BusStopInfo busStopInfo) async {
-        if (!mounted) return;
-        await _ttsService.speak(
-          "${busStopInfo.busNumber}번 버스 정류장에 도착했습니다. 버스 도착 정보를 확인하세요.",
-        );
-        HapticFeedback.vibrate();
-
-        // 버스 도착 정보 polling 시작
-        _busArrivalService.startPolling(
-          busNumber: busStopInfo.busNumber,
-          stationName: busStopInfo.stationName,
-          onUpdate: (BusArrivalInfo arrivalInfo) {
-            if (!mounted) return;
-            setState(() {
-              _busArrivalInfo = arrivalInfo;
-              _busArrivalError = null;
-            });
-          },
-          onError: (String error) {
-            if (!mounted) return;
-            setState(() {
-              _busArrivalError = error;
-            });
-          },
-        );
-      },
-    );
-  }
-
-  // 버스 정류장 근접 감지
-  void _checkBusStop(Position position) {
-    if (_busStopDetector == null) return;
-    _busStopDetector!.checkBusStopProximity(position);
   }
 
   // 현재 위치를 기준으로 지나간 점들을 체크
@@ -227,6 +187,18 @@ class _Screen4State extends State<Screen4> {
     }
   }
 
+  // 각도 정규화: 360도 wrap-around 시 짧은 경로로 회전
+  double _normalizeAngle(double newAngle, double prevAngle) {
+    double diff = newAngle - prevAngle;
+    // 180도 이상 차이나면 반대 방향이 더 짧음
+    if (diff > math.pi) {
+      newAngle -= 2 * math.pi; // 360도 빼기
+    } else if (diff < -math.pi) {
+      newAngle += 2 * math.pi; // 360도 더하기
+    }
+    return newAngle;
+  }
+
   // 방향 위젯 빌더
   Widget _buildDirectionWidget({
     required String label,
@@ -245,9 +217,17 @@ class _Screen4State extends State<Screen4> {
           ),
         ),
         const SizedBox(height: 15),
-        Transform.rotate(
-          angle: angle,
-          child: Icon(Icons.arrow_upward_rounded, size: 100, color: color),
+        // 부드러운 회전을 위한 애니메이션
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: angle, end: angle),
+          duration: const Duration(milliseconds: 100), // 부드러운 전환
+          curve: Curves.easeOut,
+          builder: (context, value, child) {
+            return Transform.rotate(
+              angle: value,
+              child: Icon(Icons.arrow_upward_rounded, size: 100, color: color),
+            );
+          },
         ),
         const SizedBox(height: 10),
         Text(
@@ -267,16 +247,27 @@ class _Screen4State extends State<Screen4> {
     double targetDirection = _navService.routeBearing >= 0
         ? _navService.routeBearing
         : _navService.targetBearing;
-    double currentDirection = _navService.travelingBearing >= 0
-        ? _navService.travelingBearing
-        : _navService.deviceHeading;
+    // 센서 기반으로 통일 - GPS 오차 제거하여 안정적인 방향 표시
+    double currentDirection = _navService.deviceHeading;
+
+    // 라디안으로 변환
+    double targetAngle = targetDirection * (math.pi / 180);
+    double currentAngle = currentDirection * (math.pi / 180);
+
+    // 360-0 wrap-around 처리 (짧은 경로로 회전)
+    targetAngle = _normalizeAngle(targetAngle, _prevTargetAngle);
+    currentAngle = _normalizeAngle(currentAngle, _prevCurrentAngle);
+
+    // 다음 프레임을 위해 저장
+    _prevTargetAngle = targetAngle;
+    _prevCurrentAngle = currentAngle;
 
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         title: const Text("실시간 길안내"),
         backgroundColor: Colors.black,
-        foregroundColor: Colors.yellow, // 고대비: 노란색
+        foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
@@ -295,8 +286,8 @@ class _Screen4State extends State<Screen4> {
                   Text(
                     "남은 거리: ${_distanceToTarget.toStringAsFixed(0)}m",
                     style: const TextStyle(
-                      color: Colors.yellow, // 고대비: 노란색
-                      fontSize: 26,
+                      color: Colors.greenAccent,
+                      fontSize: 24,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -309,14 +300,14 @@ class _Screen4State extends State<Screen4> {
                       // 가야할 방향
                       _buildDirectionWidget(
                         label: "가야할 방향",
-                        angle: targetDirection * (math.pi / 180),
+                        angle: targetAngle, // 이미 정규화된 라디안 값
                         degrees: targetDirection.toStringAsFixed(0),
                         color: Colors.yellowAccent,
                       ),
                       // 진행 방향
                       _buildDirectionWidget(
                         label: "진행 방향",
-                        angle: currentDirection * (math.pi / 180),
+                        angle: currentAngle, // 이미 정규화된 라디안 값
                         degrees: currentDirection.toStringAsFixed(0),
                         color: Colors.greenAccent,
                       ),
@@ -332,127 +323,6 @@ class _Screen4State extends State<Screen4> {
               ),
             ),
           ),
-
-          // ---------------------------------------------------------
-          // 1.5. 버스 도착 정보 카드 (버스 정류장 도착 시 표시)
-          // ----------------------------------------------------------
-          if (_busArrivalInfo != null || _busArrivalError != null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2A2A2A), // 고대비: 어두운 회색
-                border: Border.all(color: Colors.yellow, width: 2),
-              ),
-              child: _busArrivalInfo != null
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.directions_bus,
-                              color: Colors.yellowAccent,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${_busArrivalInfo!.busNumber}번 버스 도착 정보',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.access_time,
-                              color: Colors.greenAccent,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _busArrivalInfo!.statusMsg,
-                              style: const TextStyle(
-                                color: Colors.greenAccent,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '차량번호: ${_busArrivalInfo!.plateNo}',
-                          style: TextStyle(
-                            color: Colors.grey.shade300,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '정류장: ${_busArrivalInfo!.stationName}',
-                          style: TextStyle(
-                            color: Colors.grey.shade300,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.refresh,
-                              color: Colors.grey.shade400,
-                              size: 14,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '1분마다 자동 갱신',
-                              style: TextStyle(
-                                color: Colors.grey.shade400,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.error_outline,
-                              color: Colors.redAccent,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              '버스 도착 정보 오류',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _busArrivalError ?? '알 수 없는 오류',
-                          style: const TextStyle(
-                            color: Colors.redAccent,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
 
           // ---------------------------------------------------------
           // 2. 하단 절반: 상세 경로 단계 리스트 (Steps List)
@@ -474,9 +344,9 @@ class _Screen4State extends State<Screen4> {
                     ),
                     decoration: BoxDecoration(
                       border: Border(
-                        bottom: BorderSide(color: Colors.yellow, width: 2),
+                        bottom: BorderSide(color: Colors.grey.shade800),
                       ),
-                      color: const Color(0xFF2A2A2A), // 고대비: 어두운 회색
+                      color: Colors.grey.shade900,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -484,14 +354,14 @@ class _Screen4State extends State<Screen4> {
                         const Text(
                           "상세 경로 안내",
                           style: TextStyle(
-                            color: Colors.yellow, // 고대비: 노란색
+                            color: Colors.white,
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Icon(
                           Icons.format_list_numbered,
-                          color: Colors.yellow, // 고대비: 노란색
+                          color: Colors.grey.shade400,
                         ),
                       ],
                     ),
@@ -588,8 +458,8 @@ class _Screen4State extends State<Screen4> {
             icon: const Icon(Icons.map),
             label: const Text("경로 추적 지도 보기"),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.yellow, // 고대비: 노란색 배경
-              foregroundColor: Colors.black, // 고대비: 검은색 텍스트
+              backgroundColor: Colors.blueAccent,
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
               textStyle: const TextStyle(
                 fontSize: 18,

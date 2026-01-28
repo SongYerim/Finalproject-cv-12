@@ -316,7 +316,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, // 고대비: 검은색 배경
+      backgroundColor: Colors.white,
+
       // 화면 아무 곳이나 누르면 듣기 시작 (요구사항 유지)
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
@@ -351,8 +352,8 @@ class _HomeScreenState extends State<HomeScreen> {
           '목적지를\n말해주세요.',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: Colors.yellow, // 고대비: 노란색
-            fontSize: 32,
+            color: Colors.black,
+            fontSize: 28,
             fontWeight: FontWeight.w700,
             height: 1.25,
           ),
@@ -362,8 +363,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: _micPanel(
-              panelColor: const Color(0xFF2A2A2A), // 고대비: 어두운 회색 박스
-              micColor: Colors.yellow, // 고대비: 노란색 마이크
+              panelColor: const Color(0xFFF1EFFE), // 연보라 박스
+              micColor: const Color(0xFF8B86B8), // 보라 마이크 원
             ),
           ),
         ),
@@ -379,8 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 50,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.yellow, // 고대비: 노란색
-                        foregroundColor: Colors.black,
+                        backgroundColor: Colors.orange,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -389,7 +389,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: const Text(
                         '테스트: route_data.json',
                         style: TextStyle(
-                          color: Colors.black, // 고대비
+                          color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                         ),
@@ -406,8 +406,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 50,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.yellow, // 고대비: 노란색
-                        foregroundColor: Colors.black,
+                        backgroundColor: Colors.green,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -416,7 +415,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: const Text(
                         '테스트: route_data_2.json',
                         style: TextStyle(
-                          color: Colors.black, // 고대비
+                          color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                         ),
@@ -437,8 +436,7 @@ class _HomeScreenState extends State<HomeScreen> {
             height: 50,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.yellow, // 고대비: 노란색
-                foregroundColor: Colors.black,
+                backgroundColor: Colors.purple,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -447,7 +445,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Text(
                 '테스트: YOLO 객체 감지',
                 style: TextStyle(
-                  color: Colors.black, // 고대비
+                  color: Colors.white,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -555,8 +553,8 @@ class _HomeScreenState extends State<HomeScreen> {
           '음성인식 중...',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: Colors.yellow, // 고대비: 노란색
-            fontSize: 30,
+            color: Colors.black,
+            fontSize: 26,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -565,8 +563,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: _micPanel(
-              panelColor: const Color(0xFF2A2A2A), // 고대비: 어두운 회색
-              micColor: Colors.red, // 고대비: 빨간색 (녹음 중 표시)
+              panelColor: const Color(0xFFFFEAEA), // 연핑크 박스
+              micColor: const Color(0xFFD9534F), // 빨간 마이크 원
             ),
           ),
         ),
@@ -583,15 +581,15 @@ class _HomeScreenState extends State<HomeScreen> {
         RichText(
           text: const TextSpan(
             style: TextStyle(
-              fontSize: 30,
+              fontSize: 26,
               fontWeight: FontWeight.w700,
-              color: Colors.white, // 고대비: 흰색
+              color: Colors.black,
             ),
             children: [
               TextSpan(text: '음성인식 '),
               TextSpan(
                 text: '실패',
-                style: TextStyle(color: Colors.red), // 빨간색 유지 (경고색)
+                style: TextStyle(color: Colors.red),
               ),
             ],
           ),
@@ -620,15 +618,15 @@ class _HomeScreenState extends State<HomeScreen> {
         RichText(
           text: const TextSpan(
             style: TextStyle(
-              fontSize: 30,
+              fontSize: 26,
               fontWeight: FontWeight.w700,
-              color: Colors.white, // 고대비: 흰색
+              color: Colors.black,
             ),
             children: [
               TextSpan(text: '음성인식 '),
               TextSpan(
                 text: '완료',
-                style: TextStyle(color: Colors.yellow), // 고대비: 노란색
+                style: TextStyle(color: Colors.green),
               ),
             ],
           ),
@@ -636,23 +634,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
         const SizedBox(height: 16),
 
-        // 목적지 표시 박스 - 고대비
+        // 목적지 표시 박스
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 28),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           decoration: BoxDecoration(
-            color: const Color(0xFF2A2A2A), // 고대비: 어두운 회색
+            color: Colors.grey.shade300,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.yellow, width: 2),
           ),
           child: Align(
             alignment: Alignment.centerLeft,
             child: Text(
               '목적지 : ${_recognizedDestination.isEmpty ? "(없음)" : _recognizedDestination}',
-              style: const TextStyle(
-                fontSize: 18,
-                color: Colors.white,
-              ), // 고대비: 흰색
+              style: const TextStyle(fontSize: 16),
             ),
           ),
         ),
@@ -665,9 +659,8 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Container(
               width: double.infinity,
               decoration: BoxDecoration(
-                color: const Color(0xFF2A2A2A), // 고대비: 어두운 회색
+                color: const Color(0xFFE7F7E7), // 연녹색
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.yellow, width: 2),
               ),
               padding: const EdgeInsets.all(18),
               child: Column(
@@ -679,8 +672,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 70,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.yellow, // 고대비: 노란색
-                        foregroundColor: Colors.black,
+                        backgroundColor: const Color(0xFF7BC96F),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
@@ -718,9 +710,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: const Text(
                         '확인',
                         style: TextStyle(
-                          fontSize: 24,
+                          fontSize: 22,
                           fontWeight: FontWeight.w700,
-                          color: Colors.black, // 고대비
+                          color: Colors.white,
                         ),
                       ),
                     ),
@@ -734,8 +726,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 70,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF555555), // 고대비: 회색
-                        foregroundColor: Colors.white,
+                        backgroundColor: const Color(0xFFFFB3B3),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),

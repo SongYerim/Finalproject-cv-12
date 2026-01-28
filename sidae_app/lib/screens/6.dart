@@ -347,7 +347,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
         appBar: AppBar(
           title: const Text("카메라 권한 필요"),
           backgroundColor: Colors.black,
-          foregroundColor: Colors.yellow, // 고대비: 노란색
+          foregroundColor: Colors.white,
         ),
         body: Center(
           child: Column(
@@ -397,7 +397,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
       appBar: AppBar(
         title: const Text("YOLO 객체 감지 (온디바이스)"),
         backgroundColor: Colors.black,
-        foregroundColor: Colors.yellow, // 고대비: 노란색
+        foregroundColor: Colors.white,
       ),
       body: Stack(
         children: [
@@ -429,7 +429,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
               child: Text(
                 "FPS: ${_fps.toStringAsFixed(1)}",
                 style: const TextStyle(
-                  color: Colors.yellow, // 고대비: 노란색
+                  color: Colors.greenAccent,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -595,7 +595,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.yellow, // 고대비: 노란색
+                            color: Colors.redAccent,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Column(

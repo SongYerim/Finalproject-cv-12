@@ -48,7 +48,7 @@ class NavigationManager(private val context: Context) {
     
     companion object {
         private const val TAG = "NavigationManager"
-        private const val UPDATE_INTERVAL_MS = 500L
+        private const val UPDATE_INTERVAL_MS = 200L  // 200ms로 단축 (더 빠른 반응)
         private const val MIN_DISTANCE_FOR_BEARING = 1.0 // 1m 이상 이동해야 진행 방향 계산
     }
     
@@ -108,10 +108,10 @@ class NavigationManager(private val context: Context) {
         sensorEventListener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent?) {
                 event?.let {
-                    // 나침반 방향 계산
+                    // 나침반 방향 계산 (좌우 반전 수정)
                     var heading = Math.atan2(it.values[1].toDouble(), it.values[0].toDouble())
                     heading = heading * (180 / Math.PI)
-                    heading = 90 - heading
+                    heading = heading - 90  // 변경: 90 - heading → heading - 90
                     if (heading < 0) heading += 360
                     if (heading >= 360) heading -= 360
                     
@@ -124,8 +124,9 @@ class NavigationManager(private val context: Context) {
         }
         
         magnetometer?.let { sensor ->
-            sensorManager?.registerListener(sensorEventListener, sensor, SensorManager.SENSOR_DELAY_GAME)
-            Log.d(TAG, "✅ 자기장 센서 리스너 등록됨")
+            // SENSOR_DELAY_UI: ~60Hz 업데이트로 부드러운 방향 전환
+            sensorManager?.registerListener(sensorEventListener, sensor, SensorManager.SENSOR_DELAY_UI)
+            Log.d(TAG, "✅ 자기장 센서 리스너 등록됨 (UI 모드 - 빠른 갱신)")
         }
     }
     
