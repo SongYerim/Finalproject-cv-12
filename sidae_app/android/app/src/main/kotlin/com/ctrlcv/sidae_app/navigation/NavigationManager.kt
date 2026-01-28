@@ -53,7 +53,7 @@ class NavigationManager(private val context: Context) {
     }
     
     private var sensorManager: SensorManager? = null
-    private var magnetometer: Sensor? = null
+    private var rotationVectorSensor: Sensor? = null
     private var sensorEventListener: SensorEventListener? = null
     private var fusedLocationClient: FusedLocationProviderClient? = null
     private var locationCallback: LocationCallback? = null
@@ -103,30 +103,41 @@ class NavigationManager(private val context: Context) {
     
     private fun initializeSensor() {
         sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        magnetometer = sensorManager?.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        rotationVectorSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         
         sensorEventListener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent?) {
                 event?.let {
-                    // 나침반 방향 계산 (좌우 반전 수정)
-                    var heading = Math.atan2(it.values[1].toDouble(), it.values[0].toDouble())
-                    heading = heading * (180 / Math.PI)
-                    heading = heading - 90  // 변경: 90 - heading → heading - 90
+                    // ROTATION_VECTOR를 사용하여 기기 기울기 보정된 방향 계산
+                    val rotationMatrix = FloatArray(9)
+                    val orientationAngles = FloatArray(3)
+                    
+                    // 회전 벡터 → 회전 행렬 변환
+                    android.hardware.SensorManager.getRotationMatrixFromVector(rotationMatrix, it.values)
+                    
+                    // 회전 행렬 → 방위각, 피치, 롤 계산
+                    android.hardware.SensorManager.getOrientation(rotationMatrix, orientationAngles)
+                    
+                    // 방위각(azimuth)을 도(degree)로 변환 (0-360)
+                    var heading = Math.toDegrees(orientationAngles[0].toDouble())
                     if (heading < 0) heading += 360
-                    if (heading >= 360) heading -= 360
                     
                     deviceHeading = heading
                     sendNavigationUpdate()
                 }
             }
             
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+                Log.d(TAG, "센서 정확도 변경: $accuracy")
+            }
         }
         
-        magnetometer?.let { sensor ->
+        rotationVectorSensor?.let { sensor ->
             // SENSOR_DELAY_UI: ~60Hz 업데이트로 부드러운 방향 전환
-            sensorManager?.registerListener(sensorEventListener, sensor, SensorManager.SENSOR_DELAY_UI)
-            Log.d(TAG, "✅ 자기장 센서 리스너 등록됨 (UI 모드 - 빠른 갱신)")
+            sensorManager?.registerListener(sensorEventListener, sensor, android.hardware.SensorManager.SENSOR_DELAY_UI)
+            Log.d(TAG, "✅ ROTATION_VECTOR 센서 리스너 등록됨 (기울기 보정 지원)")
+        } ?: run {
+            Log.e(TAG, "❌ ROTATION_VECTOR 센서를 사용할 수 없음")
         }
     }
     
@@ -178,7 +189,7 @@ class NavigationManager(private val context: Context) {
             }
             sensorEventListener = null
             sensorManager = null
-            magnetometer = null
+            rotationVectorSensor = null
             
             // GPS 추적 중지
             locationCallback?.let { callback ->
