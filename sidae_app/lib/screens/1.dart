@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sidae_app/screens/2.dart';
 import 'package:sidae_app/screens/3.dart';
 import 'package:sidae_app/screens/6.dart';
+import 'package:sidae_app/screens/8.dart';
 import '../services/api_service.dart';
 import '../services/tts_service.dart';
 import '../models/route_model.dart';
@@ -428,6 +429,31 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+        // 버스 전용 화면 테스트 버튼 추가
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+          child: SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: _openBusOnlyScreen,
+              child: const Text(
+                '테스트: 버스 전용 화면',
+                style: TextStyle(
+                  color: Color(0xFFFFD400),
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ),
         const SizedBox(height: 24),
       ],
     );
@@ -506,6 +532,14 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const YoloTestScreen()),
+    );
+  }
+
+  // 버스 전용 화면 열기
+  void _openBusOnlyScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const BusOnlyScreen()),
     );
   }
 
