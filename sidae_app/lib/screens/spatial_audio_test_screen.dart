@@ -197,7 +197,7 @@ class _SpatialAudioTestScreenState extends State<SpatialAudioTestScreen> {
                       child: Text(
                         'N',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.5),
+                          color: Colors.white.withValues(alpha: 0.5),
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                         ),
@@ -377,7 +377,7 @@ class _SpatialAudioTestScreenState extends State<SpatialAudioTestScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.2),
+                  color: Colors.blue.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(

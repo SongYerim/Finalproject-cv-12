@@ -237,12 +237,7 @@ class _CrosswalkSimulationScreenState extends State<CrosswalkSimulationScreen> {
                 child: Row(
                   children: [
                     // 조이스틱
-                    Expanded(
-                      flex: 2,
-                      child: Center(
-                        child: _buildJoystick(),
-                      ),
-                    ),
+                    Expanded(flex: 2, child: Center(child: _buildJoystick())),
 
                     // 컨트롤 버튼
                     Expanded(
@@ -258,8 +253,9 @@ class _CrosswalkSimulationScreenState extends State<CrosswalkSimulationScreen> {
                                   ? (_isPlaying ? _stopAudio : _startAudio)
                                   : null,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    _isPlaying ? Colors.red : Colors.green,
+                                backgroundColor: _isPlaying
+                                    ? Colors.red
+                                    : Colors.green,
                                 shape: const CircleBorder(),
                               ),
                               child: Icon(
@@ -307,16 +303,13 @@ class _CrosswalkSimulationScreenState extends State<CrosswalkSimulationScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color),
       ),
       child: Column(
         children: [
-          Text(
-            label,
-            style: TextStyle(color: color, fontSize: 10),
-          ),
+          Text(label, style: TextStyle(color: color, fontSize: 10)),
           Text(
             value,
             style: TextStyle(
@@ -390,7 +383,7 @@ class _CrosswalkSimulationScreenState extends State<CrosswalkSimulationScreen> {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
+                      color: Colors.black.withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(2, 2),
                     ),
@@ -456,7 +449,12 @@ class CrosswalkPainter extends CustomPainter {
     paint.style = PaintingStyle.stroke;
     paint.strokeWidth = 4;
     canvas.drawRect(
-      Rect.fromLTRB(crosswalkLeft, crosswalkTop, crosswalkRight, crosswalkBottom),
+      Rect.fromLTRB(
+        crosswalkLeft,
+        crosswalkTop,
+        crosswalkRight,
+        crosswalkBottom,
+      ),
       paint,
     );
 
@@ -469,16 +467,16 @@ class CrosswalkPainter extends CustomPainter {
 
     // 출구 아이콘
     final textPainter = TextPainter(
-      text: const TextSpan(
-        text: '🏁',
-        style: TextStyle(fontSize: 24),
-      ),
+      text: const TextSpan(text: '🏁', style: TextStyle(fontSize: 24)),
       textDirection: TextDirection.ltr,
     );
     textPainter.layout();
     textPainter.paint(
       canvas,
-      Offset(exitPosX - textPainter.width / 2, exitPosY - textPainter.height / 2),
+      Offset(
+        exitPosX - textPainter.width / 2,
+        exitPosY - textPainter.height / 2,
+      ),
     );
 
     // 플레이어
@@ -525,10 +523,7 @@ class CrosswalkPainter extends CustomPainter {
     startTextPainter.layout();
     startTextPainter.paint(
       canvas,
-      Offset(
-        size.width / 2 - startTextPainter.width / 2,
-        size.height - 25,
-      ),
+      Offset(size.width / 2 - startTextPainter.width / 2, size.height - 25),
     );
 
     // 출구 레이블
@@ -546,10 +541,7 @@ class CrosswalkPainter extends CustomPainter {
     exitTextPainter.layout();
     exitTextPainter.paint(
       canvas,
-      Offset(
-        exitPosX - exitTextPainter.width / 2,
-        exitPosY - 40,
-      ),
+      Offset(exitPosX - exitTextPainter.width / 2, exitPosY - 40),
     );
   }
 
@@ -566,7 +558,7 @@ class JoystickGuidePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.grey[600]!.withOpacity(0.5)
+      ..color = Colors.grey[600]!.withValues(alpha: 0.5)
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
 

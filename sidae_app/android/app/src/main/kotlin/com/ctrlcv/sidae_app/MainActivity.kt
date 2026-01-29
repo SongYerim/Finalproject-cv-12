@@ -227,6 +227,10 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     }
     
     private fun handleStartCamera(result: MethodChannel.Result) {
+        // 상태 변수 초기화 (시작 시점에도 확실히 리셋)
+        cameraWidth = 0
+        cameraHeight = 0
+
         val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
         scope.launch {
             try {
@@ -277,7 +281,19 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     
     private fun handleStopCamera(result: MethodChannel.Result) {
         try {
+            Log.d(TAG, "🛑 handleStopCamera 호출")
             isProcessing = false
+            
+            // 상태 변수 초기화 (중요: 재진입 시 오버레이 좌표 오차 방지)
+            cameraWidth = 0
+            cameraHeight = 0
+            
+            // 바운딩 박스 오버레이 초기화
+            mainHandler.post {
+                boundingBoxOverlayView?.clearDetections()
+                Log.d(TAG, "  - BoundingBoxOverlay 및 해상도 변수 초기화 완료")
+            }
+            
             cameraProvider?.unbindAll()
             camera = null
             imageAnalysis = null

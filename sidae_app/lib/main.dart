@@ -1,8 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:developer' as developer;
 import 'screens/splash_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized(); // 플러터 엔진 초기화
+
+  // .env 파일 로드
+  try {
+    developer.log('📂 .env 파일 로딩 시작...', name: 'Main');
+    await dotenv.load(fileName: ".env");
+    developer.log('✅ .env 파일 로드 완료!', name: 'Main');
+    developer.log(
+      '  - dotenv.isInitialized: ${dotenv.isInitialized}',
+      name: 'Main',
+    );
+    developer.log(
+      '  - SIDAE_SERVER_CLOUD_URL: ${dotenv.env['SIDAE_SERVER_CLOUD_URL']}',
+      name: 'Main',
+    );
+    developer.log('  - 모든 환경 변수: ${dotenv.env.keys.toList()}', name: 'Main');
+  } catch (e) {
+    developer.log('❌ .env 파일 로드 실패: $e', name: 'Main', error: e);
+  }
 
   runApp(const SidaeApp());
 }

@@ -14,6 +14,7 @@ import '../services/navigation_service.dart';
 import '../widgets/progress_indicator_widget.dart';
 import '5.dart';
 import '6.dart';
+import '7.dart';
 
 class Screen4 extends StatefulWidget {
   final List<RouteSegment> routes;
@@ -50,6 +51,14 @@ class _Screen4State extends State<Screen4> {
   // 360-0 wrap-around 처리를 위한 이전 각도
   double _prevTargetAngle = 0.0;
   double _prevCurrentAngle = 0.0;
+
+  /// "곧 도착" 상태인지 확인
+  bool _isBusApproachingStatus(String statusMsg) {
+    return statusMsg.contains('곧 도착') ||
+        statusMsg.contains('잠시 후') ||
+        statusMsg.contains('1분') ||
+        statusMsg.contains('2분');
+  }
 
   @override
   void initState() {
@@ -163,9 +172,32 @@ class _Screen4State extends State<Screen4> {
           if (!mounted) return;
           setState(() {
             _busArrival = arrival;
+            // 응답이 올 때마다 오버레이 다시 표시 (사용자가 닫아도 자동으로 다시 켜짐)
+            if (arrival != null) {
+              _showBusArrivalOverlay = true;
+            }
           });
           if (arrival != null) {
             _ttsService.speak("${arrival.busNumber}번 버스, ${arrival.statusMsg}");
+
+            // "곧 도착" 상태 감지 시 BusArrivalScreen으로 화면 전환
+            if (_isBusApproachingStatus(arrival.statusMsg)) {
+              _closeBusArrivalOverlay();
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => BusArrivalScreen(
+                    busNumber: arrival.busNumber,
+                    stationName: busStopInfo.stationName,
+                    enableCamera: true, // 카메라 모드 활성화
+                  ),
+                ),
+              ).then((_) {
+                if (mounted) {
+                  _isNavigatingToBusStop = false;
+                }
+              });
+            }
           }
         };
         await _busArrivalService.startTracking(
@@ -186,103 +218,86 @@ class _Screen4State extends State<Screen4> {
     });
   }
 
-  // 버스 도착 정보 오버레이 위젯
+  // 버스 도착 정보 오버레이 위젯 (간소화)
   Widget _buildBusArrivalOverlay() {
     return Positioned(
       left: 16,
       right: 16,
       bottom: 100,
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.blue.withValues(alpha: 0.5)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 간소화된 헤더
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.directions_bus,
-                      color: Colors.blue,
-                      size: 24,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _busStationName ?? '버스 정류장',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+                Text(
+                  _busStationName ?? '버스 정류장',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.grey),
+                  icon: const Icon(Icons.close, color: Colors.grey, size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                   onPressed: _closeBusArrivalOverlay,
                 ),
               ],
             ),
-            const Divider(color: Colors.grey),
             if (_busArrival != null) ...[
+              // 버스 번호 + 남은 시간 (한 줄로)
               Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
+                      horizontal: 8,
+                      vertical: 4,
                     ),
                     decoration: BoxDecoration(
                       color: Colors.blue,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       _busArrival!.busNumber,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 18,
+                        fontSize: 14,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   Text(
                     _busArrival!.statusMsg,
                     style: const TextStyle(
                       color: Colors.orange,
-                      fontSize: 20,
+                      fontSize: 14,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              if (_busArrival!.plateNo.isNotEmpty)
-                Text(
-                  '차량번호: ${_busArrival!.plateNo}',
-                  style: const TextStyle(color: Colors.grey, fontSize: 14),
-                ),
             ] else
               const Center(
                 child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: CircularProgressIndicator(color: Colors.blue),
+                  padding: EdgeInsets.all(8),
+                  child: CircularProgressIndicator(
+                    color: Colors.blue,
+                    strokeWidth: 2,
+                  ),
                 ),
               ),
-            const SizedBox(height: 8),
-            const Center(
-              child: Text(
-                '1분마다 자동 갱신',
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-            ),
           ],
         ),
       ),

@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sidae_app/screens/2.dart';
 import 'package:sidae_app/screens/3.dart';
 import 'package:sidae_app/screens/6.dart';
+import 'package:sidae_app/screens/7.dart';
 import '../services/api_service.dart';
 import '../services/tts_service.dart';
 import '../models/route_model.dart';
@@ -405,7 +406,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         // YOLO 테스트 버튼 추가
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 6),
           child: SizedBox(
             width: double.infinity,
             height: 50,
@@ -419,6 +420,31 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: _openYoloTest,
               child: const Text(
                 '테스트: YOLO 객체 감지',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ),
+        // BusArrivalScreen 테스트 버튼 추가
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 6),
+          child: SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: _openBusArrivalTest,
+              child: const Text(
+                '테스트: 버스 도착 화면 (7.dart)',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,
@@ -506,6 +532,20 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const YoloTestScreen()),
+    );
+  }
+
+  // BusArrivalScreen 테스트 열기
+  void _openBusArrivalTest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const BusArrivalScreen(
+          busNumber: '1111', // 테스트용 버스 번호
+          stationName: '테스트 정류장', // 테스트용 정류장 이름
+          enableCamera: true, // 카메라 활성화
+        ),
+      ),
     );
   }
 

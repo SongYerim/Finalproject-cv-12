@@ -62,7 +62,6 @@ flutter:
     - assets/route_data_2.json
     - assets/yolo11n_float16.tflite # YOLO11n FP16 (경량화)
     - assets/best_float16.tflite # Best FP16 모델
-    - assets/best_int8.tflite # Best INT8 모델
     - assets/coco_labels.txt # COCO 라벨
     - assets/custom_labels.txt # 커스텀 라벨 (Zebra_Cross, R_Signal, G_Signal)
     - assets/sounds/ # 공간음향 사운드 파일

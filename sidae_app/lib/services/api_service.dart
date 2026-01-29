@@ -1,14 +1,31 @@
 import 'dart:convert';
 import 'dart:io'; // Platform 확인용
 import 'dart:async'; // TimeoutException 사용
+import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
 import '../models/route_model.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiService {
-  // 에뮬레이터 환경에 따른 주소 설정
-  static final String baseUrl = Platform.isAndroid
-      ? 'http://10.0.2.2:8000/' // 에뮬레이터용 (localhost)
-      : 'http://127.0.0.1:8000/'; // Windows용
+  // .env 파일에서 서버 URL 로드
+  static String get baseUrl {
+    final envUrl = dotenv.env['SIDAE_SERVER_CLOUD_URL'];
+    final fallbackUrl = 'http://10.0.2.2:8000'; // 기본값 (Android Emulator)
+
+    developer.log('🔍 [ApiService] baseUrl 체크', name: 'ApiService');
+    developer.log(
+      '  - dotenv.env["SIDAE_SERVER_CLOUD_URL"]: $envUrl',
+      name: 'ApiService',
+    );
+    developer.log(
+      '  - dotenv.isInitialized: ${dotenv.isInitialized}',
+      name: 'ApiService',
+    );
+    developer.log('  - 사용할 URL: ${envUrl ?? fallbackUrl}', name: 'ApiService');
+
+    // envUrl이 null이면 fallbackUrl 사용
+    return envUrl ?? fallbackUrl;
+  }
 
   // 1. 목적지 검색 (텍스트 -> 좌표)
   Future<Map<String, dynamic>?> searchPlace(String query) async {
