@@ -36,6 +36,10 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
   BusDetection? _currentDetection;
   Uint8List? _croppedBusImage;
 
+  // 매칭 상태
+  String _matchStatus = ''; // 'MATCH', 'MISMATCH', ''
+  String _lastOcrResult = '';
+
   @override
   void initState() {
     super.initState();
@@ -88,6 +92,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
     setState(() {
       _detectionStatus = '카메라 시작 중...';
+      _matchStatus = '';
     });
 
     _busDetectorService.onStatusChanged = (status) {
@@ -103,7 +108,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         setState(() {
           _currentDetection = detection;
         });
-        _ttsService.speak("버스가 감지되었습니다");
+        // _ttsService.speak("버스가 감지되었습니다");
       }
     };
 
@@ -111,8 +116,18 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
       if (mounted) {
         setState(() {
           _croppedBusImage = croppedImage;
+          if (_matchStatus != 'MATCH') {
+            _matchStatus = 'CHECKING';
+          }
         });
-        // TODO: OCR 서버로 전송
+        // TODO: OCR 서버로 전송 (Service 내부에서 처리됨)
+      }
+    };
+
+    // OCR 결과 수신
+    _busDetectorService.onBusNumberFound = (ocrResult) {
+      if (mounted) {
+        _checkMatch(ocrResult);
       }
     };
 
@@ -127,6 +142,39 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     }
   }
 
+  // 매칭 로직
+  void _checkMatch(String ocrResult) {
+    _lastOcrResult = ocrResult;
+
+    // 1. 버스 번호 매칭 (문자열 포함 여부)
+    bool isNumberMatch = ocrResult.contains(widget.busNumber);
+
+    // 2. 번호판 매칭 (뒤 4자리)
+    bool isPlateMatch = false;
+    if (_arrival != null && _arrival!.plateNo.isNotEmpty) {
+      String plate = _arrival!.plateNo;
+      // 뒤 4자리 추출
+      String last4 = plate.length >= 4
+          ? plate.substring(plate.length - 4)
+          : plate;
+      isPlateMatch = ocrResult.contains(last4);
+    }
+
+    if (isNumberMatch || isPlateMatch) {
+      setState(() {
+        _matchStatus = 'MATCH';
+      });
+      _ttsService.speak("탑승할 버스입니다! ${widget.busNumber}번");
+    } else {
+      if (_matchStatus != 'MATCH') {
+        setState(() {
+          _matchStatus = 'MISMATCH';
+        });
+        // _ttsService.speak("다른 버스입니다.");
+      }
+    }
+  }
+
   /// 카메라 중지
   void _stopCamera() {
     _busDetectorService.stopDetection();
@@ -134,6 +182,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
       _cameraActive = false;
       _currentDetection = null;
       _croppedBusImage = null;
+      _matchStatus = '';
     });
   }
 
@@ -212,6 +261,16 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
           // 2. 바운딩 박스 오버레이 (네이티브에서 처리하므로 Flutter 페인터 제거)
           // if (_currentDetection != null) _buildBoundingBoxOverlay(),
 
+          // 매칭 결과 오버레이 (성공 시 화면 테두리 등 효과)
+          if (_matchStatus == 'MATCH')
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.green, width: 8),
+                ),
+              ),
+            ),
+
           // 3. 하단 정보 패널
           Positioned(
             left: 0,
@@ -230,6 +289,50 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
           // 5. 감지 상태 표시 (좌측 상단)
           Positioned(top: 100, left: 16, child: _buildDetectionStatusBadge()),
+
+          // 6. 매칭 결과 텍스트 (중앙 상단)
+          if (_matchStatus == 'MATCH')
+            Positioned(
+              top: 150,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
+                  color: Colors.green,
+                  child: const Text(
+                    "탑승할 버스입니다!",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else if (_matchStatus == 'MISMATCH')
+            Positioned(
+              top: 150,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
+                  color: Colors.red.withOpacity(0.8),
+                  child: Text(
+                    "다른 버스입니다 ($_lastOcrResult)",
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -319,15 +422,32 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
                 const SizedBox(width: 12),
                 if (_arrival != null)
                   Expanded(
-                    child: Text(
-                      _arrival!.statusMsg,
-                      style: TextStyle(
-                        color: _isBusApproachingStatus(_arrival!.statusMsg)
-                            ? Colors.orange
-                            : Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _arrival!.statusMsg,
+                          style: TextStyle(
+                            color: _isBusApproachingStatus(_arrival!.statusMsg)
+                                ? Colors.orange
+                                : Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        // 차량 번호 (있는 경우에만 표시)
+                        if (_arrival!.plateNo.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              _arrival!.plateNo,
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   )
                 else if (_isLoading)
@@ -369,21 +489,8 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
               height: 80,
               fit: BoxFit.cover,
             ),
+
             // 라벨
-            Container(
-              width: 120,
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              color: Colors.green,
-              child: const Text(
-                'Cropped Bus',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
           ],
         ),
       ),

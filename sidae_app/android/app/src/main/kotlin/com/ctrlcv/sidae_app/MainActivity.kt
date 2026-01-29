@@ -17,7 +17,13 @@
 
 package com.ctrlcv.sidae_app
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
+import android.graphics.Matrix
+import android.graphics.Rect
+import android.graphics.YuvImage
+import java.io.ByteArrayOutputStream
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -547,13 +553,6 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     // ===== 이미지 처리 =====
     
     private fun processImage(imageProxy: ImageProxy) {
-        if (isProcessing) {
-            imageProxy.close()
-            return
-        }
-        
-        isProcessing = true
-        
         try {
             val image = imageProxy.image
             if (image != null && image.format == ImageFormat.YUV_420_888) {
@@ -573,11 +572,67 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                     // YOLO 추론 실행
                     val detections = yoloProcessor.runInference(image, imageProxy.width, imageProxy.height)
                     
+                    // 디버깅: 감지된 모든 객체 로그 출력
+                    if (detections.isNotEmpty()) {
+                        val detectedList = detections.joinToString(", ") { 
+                            "${it["label"]}(${String.format("%.2f", it["confidence"])})" 
+                        }
+                        Log.d(TAG, "🔍 감지됨: $detectedList")
+                    } else {
+                        // Log.d(TAG, "🔍 감지된 객체 없음")
+                    }
+
+                    // --- 가장 큰 버스 이미지 크롭 ---
+                    var croppedBusBytes: ByteArray? = null
+                    try {
+                        val bestBus = detections.filter { 
+                            val rawLabel = it["label"]
+                            val label = rawLabel as? String
+                            // 상세 디버깅: 라벨 타입과 값 확인
+                            // if (rawLabel != null) Log.d(TAG, "🔍 체크 중: '$rawLabel' (${rawLabel.javaClass.simpleName})")
+                            
+                            label != null && label.trim().equals("bus", ignoreCase = true) 
+                        }
+                            .maxByOrNull { dict ->
+                                val bbox = dict["bbox"] as List<*>
+                                val w = (bbox[2] as Number).toFloat() - (bbox[0] as Number).toFloat()
+                                val h = (bbox[3] as Number).toFloat() - (bbox[1] as Number).toFloat()
+                                w * h
+                            }
+
+                        if (bestBus != null) {
+                            Log.d(TAG, "🚌 버스 찾음! Confidence: ${bestBus["confidence"]}")
+                            val bitmap = imageProxyToBitmap(imageProxy)
+                            if (bitmap != null) {
+                                val bbox = bestBus["bbox"] as List<*>
+                                val x1 = (bbox[0] as Number).toFloat()
+                                val y1 = (bbox[1] as Number).toFloat()
+                                val x2 = (bbox[2] as Number).toFloat()
+                                val y2 = (bbox[3] as Number).toFloat()
+
+                                val left = x1.toInt().coerceIn(0, bitmap.width)
+                                val top = y1.toInt().coerceIn(0, bitmap.height)
+                                val width = (x2 - x1).toInt().coerceIn(1, bitmap.width - left)
+                                val height = (y2 - y1).toInt().coerceIn(1, bitmap.height - top)
+
+                                if (width > 0 && height > 0) {
+                                    val croppedBitmap = Bitmap.createBitmap(bitmap, left, top, width, height)
+                                    val stream = ByteArrayOutputStream()
+                                    // 품질 80으로 압축
+                                    croppedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+                                    croppedBusBytes = stream.toByteArray()
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Crop 실패: ${e.message}")
+                    }
+                    
                     // FPS 업데이트
                     updateFps()
                     
                     // Flutter로 결과 전송
-                    sendDetectionsToFlutter(detections)
+                    sendDetectionsToFlutter(detections, croppedBusBytes)
                 } catch (e: OutOfMemoryError) {
                     Log.e(TAG, "메모리 부족: ${e.message}")
                     System.gc()
@@ -593,7 +648,6 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
             } catch (e: Exception) {
                 Log.w(TAG, "imageProxy.close() 실패: ${e.message}")
             }
-            isProcessing = false
         }
     }
     
@@ -608,12 +662,16 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         }
     }
     
-    private fun sendDetectionsToFlutter(detections: List<Map<String, Any>>) {
+    private fun sendDetectionsToFlutter(detections: List<Map<String, Any>>, croppedImage: ByteArray? = null) {
         val sink = eventSink ?: return
-        val data = mapOf(
+        val data = mutableMapOf<String, Any>(
             "detections" to detections,
             "fps" to fps
         )
+        if (croppedImage != null) {
+            data["croppedImage"] = croppedImage
+        }
+        
         mainHandler.post {
             try {
                 sink.success(data)
@@ -637,6 +695,90 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     
     // ===== 라이프사이클 =====
     
+    /**
+     * ImageProxy(YUV) -> Bitmap 변환 (회전 적용)
+     */
+    /**
+     * ImageProxy(YUV) -> Bitmap 변환 (회전 적용)
+     * RowStride를 고려하여 안전하게 변환
+     */
+    private fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
+        try {
+            val yBuffer = image.planes[0].buffer // Y
+            val uBuffer = image.planes[1].buffer // U
+            val vBuffer = image.planes[2].buffer // V
+
+            val yRowStride = image.planes[0].rowStride
+            val uRowStride = image.planes[1].rowStride
+            val vRowStride = image.planes[2].rowStride
+            val uPixelStride = image.planes[1].pixelStride
+            val vPixelStride = image.planes[2].pixelStride
+
+            val width = image.width
+            val height = image.height
+
+            // NV21 포맷 버퍼 생성 (Size: width * height * 3 / 2)
+            val nv21 = ByteArray(width * height * 3 / 2)
+            
+            // 1. Y Plane Copy
+            if (yRowStride == width) {
+                // Stride가 width와 같으면 한 번에 복사
+                yBuffer.get(nv21, 0, width * height)
+            } else {
+                // Stride가 다르면 행 단위 복사
+                for (row in 0 until height) {
+                    yBuffer.position(row * yRowStride)
+                    yBuffer.get(nv21, row * width, width)
+                }
+            }
+            
+            // 2. UV Plane Copy (NV21: V, U 순서 인터리빙)
+            // U, V Plane에서 width/2, height/2 만큼 샘플링
+            val uvHeight = height / 2
+            val uvWidth = width / 2
+            val startPos = width * height
+            
+            for (row in 0 until uvHeight) {
+                for (col in 0 until uvWidth) {
+                    val uIndex = row * uRowStride + col * uPixelStride
+                    val vIndex = row * vRowStride + col * vPixelStride
+                    
+                    // NV21은 V가 먼저, 그 다음 U
+                    val vValue = vBuffer.get(vIndex)
+                    val uValue = uBuffer.get(uIndex)
+                    
+                    val outIndex = startPos + row * width + col * 2
+                    if (outIndex + 1 < nv21.size) {
+                        nv21[outIndex] = vValue
+                        nv21[outIndex + 1] = uValue
+                    }
+                }
+            }
+
+            val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
+            val out = ByteArrayOutputStream()
+            yuvImage.compressToJpeg(Rect(0, 0, width, height), 90, out)
+            val imageBytes = out.toByteArray()
+            
+            // Bitmap 로드
+            val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            if (bitmap == null) return null
+
+            // 회전 적용
+            val rotationDegrees = image.imageInfo.rotationDegrees
+            return if (rotationDegrees != 0) {
+                val matrix = Matrix()
+                matrix.postRotate(rotationDegrees.toFloat())
+                Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            } else {
+                bitmap
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Bitmap 변환 실패: ${e.message}")
+            return null
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         

@@ -1,6 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:typed_data';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart'; // MediaType
+import '../services/api_service.dart';
 
 /// 버스 감지 결과
 class BusDetection {
@@ -41,11 +46,13 @@ class BusDetectorService {
 
   StreamSubscription? _detectionSubscription;
   bool _isActive = false;
+  bool _isSending = false; // OCR 요청 중복 방지 플래그
 
   // 콜백
   Function(BusDetection detection)? onBusDetected;
   Function(Uint8List croppedImage)? onBusCropped; // 현재 네이티브 모드에서 미지원
   Function(String status)? onStatusChanged;
+  Function(String busNumber)? onBusNumberFound; // OCR 결과 콜백
 
   // 상태
   bool get isActive => _isActive;
@@ -129,13 +136,27 @@ class BusDetectorService {
 
   /// 감지 결과 처리
   void _handleDetections(Map<dynamic, dynamic> event) {
+    // 1. 크롭된 이미지 처리
+    final croppedImage = event['croppedImage'] as Uint8List?;
+    if (croppedImage != null) {
+      // developer.log(
+      //   '📸 [BusDetectorService] 크롭 이미지 수신 (크기: ${croppedImage.length} bytes)',
+      //   name: 'BusDetectorService',
+      // );
+      onBusCropped?.call(croppedImage);
+
+      // OCR 서버 전송
+      _sendCroppedImage(croppedImage);
+    }
+
+    // 2. 감지된 객체 처리
     final detections = event['detections'] as List?;
     if (detections == null || detections.isEmpty) return;
 
     // 버스만 필터링 (label == 'bus')
     for (final det in detections) {
       if (det is Map) {
-        final label = det['label'] as String?;
+        final label = (det['label'] as String?)?.trim();
         if (label != null && label == 'bus') {
           final confidence = (det['confidence'] as num?)?.toDouble() ?? 0.0;
 
@@ -150,14 +171,57 @@ class BusDetectorService {
               );
 
               onBusDetected?.call(busDetection);
-
-              // Note: 네이티브 모드에서는 Flutter 'camera' 패키지를 사용하지 않으므로
-              // 현재 구조에서는 Dart 측에서 이미지 crop이 불가능합니다.
-              // 필요 시 네이티브에서 crop된 이미지를 전달받도록 수정해야 합니다.
             }
           }
         }
       }
+    }
+  }
+
+  /// 서버로 크롭된 이미지 전송 (OCR)
+  Future<void> _sendCroppedImage(Uint8List imageBytes) async {
+    if (_isSending) return; // 이미 전송 중이면 스킵
+    _isSending = true;
+
+    try {
+      final baseUrl = ApiService.baseUrl;
+      final uri = Uri.parse('$baseUrl/ai/bus-recognition');
+
+      final request = http.MultipartRequest('POST', uri)
+        ..files.add(
+          http.MultipartFile.fromBytes(
+            'file',
+            imageBytes,
+            filename: 'bus_crop.jpg',
+            contentType: MediaType('image', 'jpeg'),
+          ),
+        );
+
+      // 타임아웃 3초 (빠른 응답 필요)
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 3),
+      );
+
+      if (streamedResponse.statusCode == 200) {
+        final response = await http.Response.fromStream(streamedResponse);
+        final jsonResponse = json.decode(utf8.decode(response.bodyBytes));
+
+        if (jsonResponse['status'] == 'success') {
+          final busNumber = jsonResponse['bus_number'] as String?;
+          if (busNumber != null) {
+            developer.log('🔢 OCR 결과: $busNumber', name: 'BusDetectorService');
+            onBusNumberFound?.call(busNumber);
+          }
+        }
+      } else {
+        // developer.log('⚠️ OCR 요청 실패: ${streamedResponse.statusCode}', name: 'BusDetectorService');
+      }
+    } catch (e) {
+      // developer.log('⚠️ OCR 오류: $e', name: 'BusDetectorService');
+    } finally {
+      // 약간의 딜레이 후 잠금 해제 (너무 잦은 요청 방지)
+      await Future.delayed(const Duration(milliseconds: 500));
+      _isSending = false;
     }
   }
 
@@ -173,6 +237,7 @@ class BusDetectorService {
     );
 
     _isActive = false;
+    _isSending = false;
 
     // EventChannel 구독 취소
     if (_detectionSubscription != null) {
