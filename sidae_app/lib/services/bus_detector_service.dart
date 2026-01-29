@@ -53,6 +53,7 @@ class BusDetectorService {
   Function(Uint8List croppedImage)? onBusCropped; // 현재 네이티브 모드에서 미지원
   Function(String status)? onStatusChanged;
   Function(String busNumber)? onBusNumberFound; // OCR 결과 콜백
+  Function(Uint8List fullImage)? onSnapshotCaptured; // 스냅샷 콜백
 
   // 상태
   bool get isActive => _isActive;
@@ -124,13 +125,50 @@ class BusDetectorService {
   void _subscribeToDetections() {
     _detectionSubscription = _eventChannel.receiveBroadcastStream().listen(
       (event) {
-        if (event is Map && event.containsKey('detections')) {
-          _handleDetections(event);
+        if (event is Map) {
+          if (event['type'] == 'snapshot') {
+            final imageBytes = event['image'] as Uint8List?;
+            if (imageBytes != null) {
+              developer.log(
+                '📸 [BusDetectorService] 스냅샷 수신 (${imageBytes.length} bytes)',
+                name: 'BusDetectorService',
+              );
+              onSnapshotCaptured?.call(imageBytes);
+            }
+          } else if (event.containsKey('detections')) {
+            _handleDetections(event);
+          }
         }
       },
       onError: (error) {
         _updateStatus('감지 오류: $error');
       },
+    );
+  }
+
+  /// 스냅샷 캡쳐 요청 (전체 화면)
+  Future<void> requestSnapshot() async {
+    if (!_isActive) return;
+    try {
+      await _channel.invokeMethod('captureSnapshot');
+    } catch (e) {
+      developer.log('❌ 스냅샷 요청 실패: $e', name: 'BusDetectorService');
+    }
+  }
+
+  /// VLM 서버 전송 시뮬레이션 (Dummy)
+  Future<void> sendToVlmDummy(Uint8List imageBytes) async {
+    developer.log(
+      '🚀 [VLM] 서버로 이미지 전송 중... (${imageBytes.length} bytes)',
+      name: 'BusDetectorService',
+    );
+
+    // 네트워킹 지연 시뮬레이션 (1~2초)
+    await Future.delayed(const Duration(milliseconds: 1500));
+
+    developer.log(
+      '✅ [VLM] 응답 수신: "태그기를 찾았습니다!" (Confidence: 0.98)',
+      name: 'BusDetectorService',
     );
   }
 
@@ -222,6 +260,16 @@ class BusDetectorService {
       // 약간의 딜레이 후 잠금 해제 (너무 잦은 요청 방지)
       await Future.delayed(const Duration(milliseconds: 500));
       _isSending = false;
+    }
+  }
+
+  /// YOLO 추론 중지 (카메라는 유지)
+  Future<void> stopInference() async {
+    try {
+      await _channel.invokeMethod('setInferenceEnabled', {'enabled': false});
+      developer.log('🧠 YOLO 추론 중지됨', name: 'BusDetectorService');
+    } catch (e) {
+      developer.log('❌ 추론 중지 실패: $e', name: 'BusDetectorService');
     }
   }
 

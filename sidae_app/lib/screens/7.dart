@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
@@ -165,6 +166,9 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         _matchStatus = 'MATCH';
       });
       _ttsService.speak("탑승할 버스입니다! ${widget.busNumber}번");
+
+      // 매칭 성공 시 추론 중지 (배터리 절약)
+      _busDetectorService.stopInference();
     } else {
       if (_matchStatus != 'MATCH') {
         setState(() {
@@ -173,6 +177,79 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         // _ttsService.speak("다른 버스입니다.");
       }
     }
+  }
+
+  /// 탑승 시뮬레이션 시작 (Debug)
+  Future<void> _startBoardingSimulation() async {
+    developer.log('🚀 탑승 시뮬레이션 시작', name: 'BusArrivalScreen');
+
+    setState(() {
+      _matchStatus = 'MATCH';
+    });
+
+    // 시뮬레이션 시작 시 추론 중지
+    await _busDetectorService.stopInference();
+
+    // 5초 대기 (탑승 준비)
+    for (int i = 5; i > 0; i--) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("탑승 준비 중... ${i}초"),
+          duration: const Duration(milliseconds: 800),
+        ),
+      );
+      await Future.delayed(const Duration(seconds: 1));
+    }
+
+    // 3회 루프 (태그기 인식 시도)
+    for (int i = 1; i <= 3; i++) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("태그기 찾는 중... ($i/3)"),
+          duration: const Duration(milliseconds: 800),
+        ),
+      );
+
+      // 캡쳐 요청 및 대기
+      final completer = Completer<Uint8List>();
+      _busDetectorService.onSnapshotCaptured = (image) {
+        if (!completer.isCompleted) completer.complete(image);
+      };
+
+      await _busDetectorService.requestSnapshot();
+
+      try {
+        // 3초 타임아웃
+        final image = await completer.future.timeout(
+          const Duration(seconds: 3),
+        );
+
+        // 캡쳐된 이미지를 화면에 표시 (크롭 이미지 뷰 재사용)
+        if (mounted) {
+          setState(() {
+            _croppedBusImage = image;
+          });
+        }
+
+        await _busDetectorService.sendToVlmDummy(image);
+      } catch (e) {
+        developer.log("❌ 캡쳐/전송 실패: $e", name: 'BusArrivalScreen');
+      }
+
+      // 약간의 간격
+      await Future.delayed(const Duration(seconds: 1));
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("✅ 탑승 완료! (시뮬레이션 종료)"),
+        backgroundColor: Colors.green,
+      ),
+    );
+    developer.log("✅ 탑승 시뮬레이션 종료", name: 'BusArrivalScreen');
   }
 
   /// 카메라 중지
@@ -333,6 +410,20 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
                 ),
               ),
             ),
+
+          // 7. DEBUG 버튼 (좌측 하단)
+          Positioned(
+            left: 16,
+            bottom: 140,
+            child: ElevatedButton(
+              onPressed: _startBoardingSimulation,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text("DEBUG: 매칭 성공"),
+            ),
+          ),
         ],
       ),
     );

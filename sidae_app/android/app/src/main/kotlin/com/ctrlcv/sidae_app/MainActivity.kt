@@ -80,6 +80,8 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     private var boundingBoxOverlayView: BoundingBoxOverlayView? = null
     private var camera: Camera? = null
     @Volatile private var isProcessing = false
+    @Volatile private var isInferenceEnabled = true // YOLO 추론 활성화 여부
+    @Volatile private var isSnapshotRequested = false
     @Volatile private var cameraWidth = 640
     @Volatile private var cameraHeight = 480
     
@@ -152,6 +154,8 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 "initialize" -> handleInitialize(call.arguments as? Map<*, *>, result)
                 "startCamera" -> handleStartCamera(result)
                 "stopCamera" -> handleStopCamera(result)
+                "setInferenceEnabled" -> handleSetInferenceEnabled(call, result)
+                "captureSnapshot" -> handleCaptureSnapshot(result)
                 "getFps" -> result.success(fps)
                 "startExitTracking" -> handleStartExitTracking(call, result)
                 "stopExitTracking" -> handleStopExitTracking(result)
@@ -289,6 +293,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         try {
             Log.d(TAG, "🛑 handleStopCamera 호출")
             isProcessing = false
+            isInferenceEnabled = true  // 카메라 중지 시 추론 활성화 초기화
             
             // 상태 변수 초기화 (중요: 재진입 시 오버레이 좌표 오차 방지)
             cameraWidth = 0
@@ -310,6 +315,26 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
             Log.e(TAG, "카메라 중지 실패", e)
             result.error("CAMERA_ERROR", e.message, null)
         }
+    }
+
+    private fun handleCaptureSnapshot(result: MethodChannel.Result) {
+        Log.d(TAG, "📸 handleCaptureSnapshot 호출")
+        isSnapshotRequested = true
+        result.success(true)
+    }
+
+    private fun handleSetInferenceEnabled(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        val enabled = call.argument<Boolean>("enabled") ?: true
+        isInferenceEnabled = enabled
+        Log.d(TAG, "🧠 추론 상태 변경 요청: $enabled")
+        
+        // 비활성화 시 즉시 오버레이 클리어
+        if (!enabled) {
+            mainHandler.post {
+                boundingBoxOverlayView?.clearDetections()
+            }
+        }
+        result.success(true)
     }
     
     private fun handleStartExitTracking(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
@@ -569,8 +594,12 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 }
                 
                 try {
-                    // YOLO 추론 실행
-                    val detections = yoloProcessor.runInference(image, imageProxy.width, imageProxy.height)
+                    // YOLO 추론 실행 (활성화된 경우에만)
+                    val detections: List<Map<String, Any>> = if (isInferenceEnabled) {
+                        yoloProcessor.runInference(image, imageProxy.width, imageProxy.height)
+                    } else {
+                        emptyList()
+                    }
                     
                     // 디버깅: 감지된 모든 객체 로그 출력
                     if (detections.isNotEmpty()) {
@@ -626,6 +655,32 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Crop 실패: ${e.message}")
+                    }
+
+                    // --- 스냅샷 요청 처리 (전체 화면 캡쳐) ---
+                    if (isSnapshotRequested) {
+                        try {
+                            Log.d(TAG, "📸 스냅샷 캡쳐 중...")
+                            val bitmap = imageProxyToBitmap(imageProxy)
+                            if (bitmap != null) {
+                                val stream = ByteArrayOutputStream()
+                                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream) // 품질 85
+                                val snapshotBytes = stream.toByteArray()
+                                
+                                // Flutter로 전송
+                                mainHandler.post {
+                                    eventSink?.success(mapOf(
+                                        "type" to "snapshot",
+                                        "image" to snapshotBytes
+                                    ))
+                                    Log.d(TAG, "✅ 스냅샷 전송 완료 (${snapshotBytes.size} bytes)")
+                                }
+                                isSnapshotRequested = false // 요청 초기화
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "스냅샷 캡쳐 실패: ${e.message}")
+                            isSnapshotRequested = false 
+                        }
                     }
                     
                     // FPS 업데이트
