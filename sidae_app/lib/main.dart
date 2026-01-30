@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:developer' as developer;
 import 'screens/splash_screen.dart';
+import 'theme/style.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized(); // 플러터 엔진 초기화
@@ -35,11 +36,8 @@ class SidaeApp extends StatelessWidget {
     return MaterialApp(
       title: '시대 (Sidae)',
       debugShowCheckedModeBanner: false, // 오른쪽 위 'DEBUG' 띠 제거 (선택)
-      theme: ThemeData(
-        // 시각장애인 배려: 고대비 및 큰 텍스트 위주
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.black,
-      ),
+      theme: AppTheme.highContrastTheme,
+
       home: const SplashScreen(),
     );
   }

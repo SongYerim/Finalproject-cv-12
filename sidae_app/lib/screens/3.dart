@@ -110,10 +110,10 @@ class _MapResultScreenState extends State<MapResultScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     "경로 안내",
                     style: TextStyle(
-                      color: Colors.yellow,
+                      color: Theme.of(context).primaryColor,
                       fontWeight: FontWeight.bold,
                       fontSize: 24,
                     ),
@@ -166,7 +166,7 @@ class _MapResultScreenState extends State<MapResultScreen> {
                       width: double.infinity, // 가로 꽉 차게
                       height: 80, // 버튼 높이 (터치하기 편하게 큼직하게)
                       decoration: BoxDecoration(
-                        color: Colors.yellow, // 눈에 잘 띄는 노란색
+                        color: Theme.of(context).primaryColor, // 눈에 잘 띄는 노란색
                         borderRadius: BorderRadius.circular(12),
                       ),
                       alignment: Alignment.center,
