@@ -55,8 +55,8 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       // source에 따라 mode 설정
       // 하차벨: 'stop_bell' -> mode: 'bell'
       // 교통카드 태그기: 'card_tagger' -> mode: 'tags_'
-      final mode = source == 'stop_bell' ? 'bell' : 'tags_';
-      
+      final mode = source == 'stop_bell' ? 'bell' : 'tag_';
+
       final result = await _channel.invokeMethod('captureAndUploadImage', {
         'uploadUrl': _getCaptureUploadUrl(),
         'jpegQuality': 90,
@@ -82,8 +82,8 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
             final normalized = bodyText.trim();
             _lastResponse =
                 normalized.isNotEmpty && normalized.toLowerCase() != 'null'
-                    ? normalized
-                    : 'No response';
+                ? normalized
+                : 'No response';
           });
         }
         _previewTimer?.cancel();
@@ -96,16 +96,16 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       }
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('업로드 완료: $result')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('업로드 완료: $result')));
       }
     } catch (e) {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('업로드 실패: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
       }
       if (mounted) {
         setState(() {
@@ -126,8 +126,9 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     final lng = widget.returnMidLng;
     if (lat == null || lng == null) return;
 
-    _exitDistanceSubscription =
-        _eventChannel.receiveBroadcastStream().listen((event) {
+    _exitDistanceSubscription = _eventChannel.receiveBroadcastStream().listen((
+      event,
+    ) {
       if (event is Map && event['type'] == 'exitDistance') {
         final reached = event['reached'] as bool? ?? false;
         if (reached) {
@@ -138,10 +139,9 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       }
     }, onError: (_) {});
 
-    _channel.invokeMethod('startExitTracking', {
-      'exitLat': lat,
-      'exitLng': lng,
-    }).catchError((_) {});
+    _channel
+        .invokeMethod('startExitTracking', {'exitLat': lat, 'exitLng': lng})
+        .catchError((_) {});
   }
 
   @override
@@ -199,7 +199,10 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   elevation: 2,
                 ),
                 child: const Row(
@@ -207,10 +210,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                   children: [
                     Icon(Icons.arrow_back, size: 20),
                     SizedBox(width: 6),
-                    Text(
-                      '뒤로가기',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
+                    Text('뒤로가기', style: TextStyle(fontWeight: FontWeight.w700)),
                   ],
                 ),
               ),
@@ -225,7 +225,10 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.7),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFFFD400), width: 2),
+                    border: Border.all(
+                      color: const Color(0xFFFFD400),
+                      width: 2,
+                    ),
                   ),
                   padding: const EdgeInsets.all(8),
                   child: ClipRRect(
@@ -233,10 +236,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.file(
-                          File(_lastImagePath!),
-                          fit: BoxFit.cover,
-                        ),
+                        Image.file(File(_lastImagePath!), fit: BoxFit.cover),
                         Positioned.fill(
                           child: Align(
                             alignment: Alignment.bottomCenter,
