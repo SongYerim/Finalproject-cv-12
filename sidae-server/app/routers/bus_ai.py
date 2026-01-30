@@ -3,12 +3,15 @@ import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from app.AI.vlm_service import request_vlm_prediction
 import json
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 로거 설정 (Cloud Run 로그에서 확인 용이)
 logger = logging.getLogger("uvicorn")
 
 router = APIRouter(
-    prefix="/bus-ai",
     tags=["Bus AI"]
 )
 
@@ -19,10 +22,22 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
         raise HTTPException(status_code=400, detail="이미지 파일만 업로드 가능합니다.")
 
     try:
-        # 2. 파일 바이트 읽기
+        target_endpoint_id = ""
+
+        if mode == "bus_number":
+            target_endpoint_id = os.getenv("ENDPOINT_ID_2B")
+        elif mode in["bell", "tag", "tag_"]:
+            target_endpoint_id = os.getenv("ENDPOINT_ID_4B")
+
+        if not target_endpoint_id:
+            raise HTTPException(status_code=500, detail=f"Model config missing for mode: {mode}")
+
         image_bytes = await file.read()
 
         prompt_data = PromptManager.get_prompt(mode)
+
+        system_instruction = prompt_data.get("system", "") 
+        user_instruction = prompt_data.get("user", "")
 
         # 3. Vertex AI 엔드포인트 호출
         logger.info(f"Vertex AI 요청 시작: 파일명={file.filename}, 크기={len(image_bytes)} bytes")
@@ -30,7 +45,9 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
         result = await request_vlm_prediction(
             image_bytes=image_bytes, 
             mime_type=file.content_type,
-            user_prompt=prompt_data["user"]
+            system_prompt=system_instruction,
+            user_prompt=user_instruction,
+            endpoint_id=target_endpoint_id
         )
         
         logger.info(f"Vertex AI 응답 수신: {result}")
@@ -48,7 +65,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
         final_data = {}
         
         try:
-            # 1. 마크다운 코드블록 제거 (```json … ```)
+            # 1. 마크다운 코드블록 제거 (```json ... ```)
             clean_text = raw_text_content.replace("```json", "").replace("```", "").strip()
             
             # 2. 문자열을 진짜 딕셔너리(객체)로 변환
