@@ -1,4 +1,4 @@
-from app.AI.prompts import PromptManager
+from app.AI.prompt import PromptManager
 import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from app.AI.vlm_service import request_vlm_prediction
