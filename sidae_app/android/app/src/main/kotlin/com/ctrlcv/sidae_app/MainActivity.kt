@@ -44,6 +44,12 @@ import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.io.BufferedInputStream
+import java.io.DataOutputStream
+import java.io.File
+import java.io.FileInputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 // 분리된 모듈 import
 import com.ctrlcv.sidae_app.yolo.YoloProcessor
@@ -164,6 +170,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 "updateNavigationTarget" -> handleUpdateNavigationTarget(call, result)
                 "startListening" -> handleStartListening(result)
                 "stopListening" -> handleStopListening(result)
+                "captureAndUploadImage" -> handleCaptureAndUploadImage(call, result)
                 // 공간음향 관련
                 "initializeSpatialAudio" -> handleInitializeSpatialAudio(result)
                 "startSpatialAudio" -> handleStartSpatialAudio(result)
@@ -181,9 +188,9 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 }
                 else -> result.notImplemented()
             }
+            }
         }
-    }
-    
+        
     /**
      * EventChannel 설정
      */
@@ -289,6 +296,177 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         }
     }
     
+    /**
+     * 단일 캡처 후 서버 업로드 (버스 전용 화면)
+     */
+    private fun handleCaptureAndUploadImage(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        val uploadUrl = call.argument<String>("uploadUrl")
+        if (uploadUrl.isNullOrBlank()) {
+            result.error("INVALID_ARGUMENTS", "uploadUrl is required", null)
+            return
+        }
+
+        val jpegQuality = call.argument<Int>("jpegQuality") ?: 90
+        val useFront = call.argument<Boolean>("useFront") ?: false
+        val metadata = call.argument<Map<String, String>>("metadata") ?: emptyMap()
+        val keepFile = call.argument<Boolean>("keepFile") ?: false
+
+        val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        scope.launch {
+            try {
+                val cameraProviderFuture: ListenableFuture<ProcessCameraProvider> =
+                    ProcessCameraProvider.getInstance(this@MainActivity)
+                val provider = cameraProviderFuture.await()
+
+                val imageCapture = ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setJpegQuality(jpegQuality)
+                    .build()
+
+                val selector = if (useFront) {
+                    CameraSelector.DEFAULT_FRONT_CAMERA
+                } else {
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                }
+
+                try {
+                    provider.unbindAll()
+                    provider.bindToLifecycle(this@MainActivity, selector, imageCapture)
+                } catch (e: Exception) {
+                    Log.e(TAG, "카메라 바인딩 실패", e)
+                    result.error("CAMERA_BIND_ERROR", e.message, null)
+                    return@launch
+                }
+
+                val photoFile = File(cacheDir, "bus_capture_${System.currentTimeMillis()}.jpg")
+                val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+                imageCapture.takePicture(
+                    outputOptions,
+                    cameraExecutor,
+                    object : ImageCapture.OnImageSavedCallback {
+                        override fun onError(exception: ImageCaptureException) {
+                            Log.e(TAG, "이미지 캡처 실패", exception)
+                    mainHandler.post {
+                                result.error("CAPTURE_ERROR", exception.message, null)
+                            }
+                        }
+
+                        override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                            CoroutineScope(Dispatchers.IO).launch {
+                                try {
+                                    val uploadResult = uploadImageFile(uploadUrl, photoFile, metadata)
+                                    withContext(Dispatchers.Main) {
+                                        result.success(
+                                            mapOf(
+                                                "success" to uploadResult.success,
+                                                "statusCode" to uploadResult.statusCode,
+                                                "body" to uploadResult.body,
+                                                "localPath" to photoFile.absolutePath
+                                            )
+                                        )
+                                    }
+                } catch (e: Exception) {
+                                    Log.e(TAG, "업로드 실패", e)
+                                    withContext(Dispatchers.Main) {
+                                        result.success(
+                                            mapOf(
+                                                "success" to false,
+                                                "statusCode" to -1,
+                                                "body" to (e.message ?: ""),
+                                                "localPath" to photoFile.absolutePath
+                                            )
+                                        )
+                                    }
+                                } finally {
+                                    // 업로드 완료 후 즉시 카메라 해제
+                                    try {
+                                        provider.unbindAll()
+                                        Log.d(TAG, "✅ 캡처/업로드 후 카메라 해제 완료")
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "카메라 해제 실패: ${e.message}")
+                                    }
+                                    if (!keepFile && photoFile.exists()) {
+                                        photoFile.delete()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "캡처/업로드 처리 실패", e)
+                result.error("CAPTURE_FLOW_ERROR", e.message, null)
+            }
+        }
+    }
+
+    private data class UploadResult(
+        val success: Boolean,
+        val statusCode: Int,
+        val body: String
+    )
+
+    private fun uploadImageFile(
+        uploadUrl: String,
+        photoFile: File,
+        metadata: Map<String, String>
+    ): UploadResult {
+        val boundary = "----SidaeBoundary${System.currentTimeMillis()}"
+        val lineEnd = "\r\n"
+        val twoHyphens = "--"
+
+        val url = URL(uploadUrl)
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            doInput = true
+            useCaches = false
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        }
+
+        DataOutputStream(connection.outputStream).use { outputStream ->
+            for ((key, value) in metadata) {
+                outputStream.writeBytes(twoHyphens + boundary + lineEnd)
+                outputStream.writeBytes("Content-Disposition: form-data; name=\"$key\"$lineEnd")
+                outputStream.writeBytes(lineEnd)
+                outputStream.writeBytes(value)
+                outputStream.writeBytes(lineEnd)
+            }
+
+            outputStream.writeBytes(twoHyphens + boundary + lineEnd)
+            outputStream.writeBytes(
+                "Content-Disposition: form-data; name=\"image\"; filename=\"capture.jpg\"$lineEnd"
+            )
+            outputStream.writeBytes("Content-Type: image/jpeg$lineEnd")
+            outputStream.writeBytes(lineEnd)
+
+            FileInputStream(photoFile).use { fileInput ->
+                BufferedInputStream(fileInput).use { bufferedInput ->
+                    val buffer = ByteArray(4096)
+                    var bytesRead: Int
+                    while (bufferedInput.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                    }
+                }
+            }
+
+            outputStream.writeBytes(lineEnd)
+            outputStream.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd)
+            outputStream.flush()
+        }
+
+        val statusCode = connection.responseCode
+        val responseStream = if (statusCode in 200..299) {
+            connection.inputStream
+        } else {
+            connection.errorStream
+        }
+
+        val body = responseStream?.bufferedReader()?.use { it.readText() } ?: ""
+        return UploadResult(statusCode in 200..299, statusCode, body)
+    }
+    
     private fun handleStopCamera(result: MethodChannel.Result) {
         try {
             Log.d(TAG, "🛑 handleStopCamera 호출")
@@ -361,7 +539,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     private fun handleStartNavigation(result: MethodChannel.Result) {
         if (navigationManager.start()) {
             result.success(true)
-        } else {
+            } else {
             result.error("PERMISSION_DENIED", "Location permission not granted", null)
         }
     }
@@ -429,8 +607,8 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                                     "type" to "heading",
                                     "heading" to heading
                                 ))
-                            }
-                        } catch (e: Exception) {
+                }
+            } catch (e: Exception) {
                             Log.w(TAG, "센서 데이터 처리 오류: ${e.message}")
                         }
                     }

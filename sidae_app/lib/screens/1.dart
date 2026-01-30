@@ -11,6 +11,7 @@ import 'package:sidae_app/screens/2.dart';
 import 'package:sidae_app/screens/3.dart';
 import 'package:sidae_app/screens/6.dart';
 import 'package:sidae_app/screens/7.dart';
+import 'package:sidae_app/screens/8.dart';
 import '../services/api_service.dart';
 import '../services/tts_service.dart';
 import '../models/route_model.dart';
@@ -454,6 +455,31 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+        // BusOnlyScreen 테스트 버튼 추가 (8.dart)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 6),
+          child: SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: _openBusOnlyTest,
+              child: const Text(
+                '테스트: 버스 전용 화면 (8.dart)',
+                style: TextStyle(
+                  color: Color(0xFFFFD400),
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ),
         const SizedBox(height: 24),
       ],
     );
@@ -546,6 +572,14 @@ class _HomeScreenState extends State<HomeScreen> {
           enableCamera: true, // 카메라 활성화
         ),
       ),
+    );
+  }
+
+  // BusOnlyScreen 테스트 열기 (8.dart)
+  void _openBusOnlyTest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const BusOnlyScreen()),
     );
   }
 
