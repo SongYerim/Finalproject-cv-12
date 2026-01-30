@@ -8,9 +8,6 @@ from dotenv import load_dotenv
 from PIL import Image
 import io
 
-from PIL import Image
-import io
-
 def resize_image_smart(
     image_bytes: bytes, 
     min_pixels: int = 256 * 256,
@@ -77,7 +74,7 @@ async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt
     PROJECT_ID = os.getenv("PROJECT_ID")
     REGION = os.getenv("REGION")
     ENDPOINT_ID = os.getenv("ENDPOINT_ID")
-    if not all([PROJECT_ID, REGION, endpoint_id]):
+    if not all([PROJECT_ID, REGION, ENDPOINT_ID]):
         raise HTTPException(status_code=500, detail="Server Configuration Error: Missing environment variables.")
 
     # rawPredict 엔드포인트 사용 (REST)
