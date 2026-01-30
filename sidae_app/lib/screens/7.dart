@@ -38,8 +38,9 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
   Uint8List? _croppedBusImage;
 
   // 매칭 상태
-  String _matchStatus = ''; // 'MATCH', 'MISMATCH', ''
+  String _matchStatus = ''; // 'MATCH', 'MISMATCH', 'CHECKING', ''
   String _lastOcrResult = '';
+  Timer? _mismatchTimer; // MISMATCH 상태 유지 타이머
 
   @override
   void initState() {
@@ -117,7 +118,8 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
       if (mounted) {
         setState(() {
           _croppedBusImage = croppedImage;
-          if (_matchStatus != 'MATCH') {
+          // MATCH나 MISMATCH 상태가 아닐 때만 CHECKING으로 변경
+          if (_matchStatus != 'MATCH' && _matchStatus != 'MISMATCH') {
             _matchStatus = 'CHECKING';
           }
         });
@@ -127,8 +129,18 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
     // OCR 결과 수신
     _busDetectorService.onBusNumberFound = (ocrResult) {
+      developer.log(
+        '🎯 [7.dart] OCR 콜백 수신: $ocrResult',
+        name: 'BusArrivalScreen',
+      );
       if (mounted) {
+        developer.log(
+          '  - mounted: true, _checkMatch 호출',
+          name: 'BusArrivalScreen',
+        );
         _checkMatch(ocrResult);
+      } else {
+        developer.log('  - mounted: false, 스킵', name: 'BusArrivalScreen');
       }
     };
 
@@ -145,10 +157,21 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
   // 매칭 로직
   void _checkMatch(String ocrResult) {
+    developer.log('🔍 [7.dart] _checkMatch 시작', name: 'BusArrivalScreen');
+    developer.log('  - ocrResult: $ocrResult', name: 'BusArrivalScreen');
+    developer.log(
+      '  - widget.busNumber: ${widget.busNumber}',
+      name: 'BusArrivalScreen',
+    );
+
     _lastOcrResult = ocrResult;
 
     // 1. 버스 번호 매칭 (문자열 포함 여부)
     bool isNumberMatch = ocrResult.contains(widget.busNumber);
+    developer.log(
+      '  - isNumberMatch: $isNumberMatch',
+      name: 'BusArrivalScreen',
+    );
 
     // 2. 번호판 매칭 (뒤 4자리)
     bool isPlateMatch = false;
@@ -159,9 +182,14 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
           ? plate.substring(plate.length - 4)
           : plate;
       isPlateMatch = ocrResult.contains(last4);
+      developer.log(
+        '  - plateNo: $plate, last4: $last4, isPlateMatch: $isPlateMatch',
+        name: 'BusArrivalScreen',
+      );
     }
 
     if (isNumberMatch || isPlateMatch) {
+      developer.log('✅ [7.dart] 매칭 성공!', name: 'BusArrivalScreen');
       setState(() {
         _matchStatus = 'MATCH';
       });
@@ -170,9 +198,20 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
       // 매칭 성공 시 추론 중지 (배터리 절약)
       _busDetectorService.stopInference();
     } else {
+      developer.log('❌ [7.dart] 매칭 실패', name: 'BusArrivalScreen');
       if (_matchStatus != 'MATCH') {
         setState(() {
           _matchStatus = 'MISMATCH';
+        });
+
+        // 5초 후 MISMATCH 상태 해제 (새로운 감지 허용)
+        _mismatchTimer?.cancel();
+        _mismatchTimer = Timer(const Duration(seconds: 5), () {
+          if (mounted && _matchStatus == 'MISMATCH') {
+            setState(() {
+              _matchStatus = '';
+            });
+          }
         });
         // _ttsService.speak("다른 버스입니다.");
       }
@@ -287,7 +326,12 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     _busDetectorService.onStatusChanged = null;
     _busDetectorService.onBusDetected = null;
     _busDetectorService.onBusCropped = null;
+    _busDetectorService.onBusNumberFound = null;
     _arrivalService.onArrivalUpdate = null;
+
+    // 타이머 정리
+    _mismatchTimer?.cancel();
+    _mismatchTimer = null;
 
     // 서비스 정리
     developer.log('  - 서비스 정리', name: 'BusArrivalScreen');

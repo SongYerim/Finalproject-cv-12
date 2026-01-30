@@ -216,16 +216,27 @@ class BusDetectorService {
     }
   }
 
-  /// 서버로 크롭된 이미지 전송 (OCR)
+  /// 서버로 크롭된 이미지 전송 (VLM)
   Future<void> _sendCroppedImage(Uint8List imageBytes) async {
-    if (_isSending) return; // 이미 전송 중이면 스킵
+    if (_isSending) {
+      developer.log('⏭️ VLM 요청 스킵 (이미 전송 중)', name: 'BusDetectorService');
+      return;
+    }
     _isSending = true;
 
     try {
       final baseUrl = ApiService.baseUrl;
-      final uri = Uri.parse('$baseUrl/ai/bus-recognition');
+      final uri = Uri.parse('$baseUrl/bus-ai/bus-recognition');
+
+      developer.log('🚀 VLM 요청 시작', name: 'BusDetectorService');
+      developer.log('  - URL: $uri', name: 'BusDetectorService');
+      developer.log(
+        '  - 이미지 크기: ${imageBytes.length} bytes',
+        name: 'BusDetectorService',
+      );
 
       final request = http.MultipartRequest('POST', uri)
+        ..fields['mode'] = 'bus_number'
         ..files.add(
           http.MultipartFile.fromBytes(
             'file',
@@ -235,31 +246,144 @@ class BusDetectorService {
           ),
         );
 
-      // 타임아웃 3초 (빠른 응답 필요)
+      developer.log('📤 HTTP 요청 전송 중...', name: 'BusDetectorService');
+
+      // 타임아웃 10초 (VLM 처리 시간 고려)
       final streamedResponse = await request.send().timeout(
-        const Duration(seconds: 3),
+        const Duration(seconds: 10),
+        onTimeout: () {
+          developer.log('⏱️ VLM 요청 타임아웃 (10초)', name: 'BusDetectorService');
+          throw TimeoutException('VLM request timeout');
+        },
+      );
+
+      developer.log(
+        '📥 응답 수신: ${streamedResponse.statusCode}',
+        name: 'BusDetectorService',
       );
 
       if (streamedResponse.statusCode == 200) {
         final response = await http.Response.fromStream(streamedResponse);
-        final jsonResponse = json.decode(utf8.decode(response.bodyBytes));
+        final responseBody = utf8.decode(response.bodyBytes);
+
+        developer.log('📄 응답 본문: $responseBody', name: 'BusDetectorService');
+
+        final jsonResponse = json.decode(responseBody);
+        developer.log('🔍 JSON 파싱 성공', name: 'BusDetectorService');
+        developer.log(
+          '  - status: ${jsonResponse['status']}',
+          name: 'BusDetectorService',
+        );
+        developer.log(
+          '  - mode: ${jsonResponse['mode']}',
+          name: 'BusDetectorService',
+        );
 
         if (jsonResponse['status'] == 'success') {
-          final busNumber = jsonResponse['bus_number'] as String?;
-          if (busNumber != null) {
-            developer.log('🔢 OCR 결과: $busNumber', name: 'BusDetectorService');
-            onBusNumberFound?.call(busNumber);
+          final result = jsonResponse['result'] as Map<String, dynamic>?;
+          developer.log('  - result: $result', name: 'BusDetectorService');
+
+          final busNumber = result?['bus_number'] as String?;
+          developer.log(
+            '  - bus_number: $busNumber',
+            name: 'BusDetectorService',
+          );
+
+          // raw_text 폴백 처리 (VLM이 잘못된 JSON을 반환한 경우)
+          String? extractedBusNumber = busNumber;
+          String? extractedCarNumber;
+
+          if ((busNumber == null || busNumber == 'null') && result != null) {
+            final rawText = result['raw_text'] as String?;
+            developer.log('  - raw_text: $rawText', name: 'BusDetectorService');
+
+            if (rawText != null && rawText.isNotEmpty) {
+              // {bus_num: 370, car_num: 5040} 형식에서 숫자 추출
+              final busNumPattern = RegExp(
+                r'bus_num:\s*(\d+)',
+                caseSensitive: false,
+              );
+              final busNumberPattern = RegExp(
+                r'bus_number:\s*(\d+)',
+                caseSensitive: false,
+              );
+              final carNumPattern = RegExp(
+                r'car_num:\s*(\d+)',
+                caseSensitive: false,
+              );
+
+              // 버스 번호 추출
+              var match = busNumPattern.firstMatch(rawText);
+              if (match == null) {
+                match = busNumberPattern.firstMatch(rawText);
+              }
+
+              if (match != null && match.groupCount >= 1) {
+                extractedBusNumber = match.group(1);
+                developer.log(
+                  '🔧 raw_text에서 버스 번호 추출: $extractedBusNumber',
+                  name: 'BusDetectorService',
+                );
+              }
+
+              // 차량 번호 추출
+              final carMatch = carNumPattern.firstMatch(rawText);
+              if (carMatch != null && carMatch.groupCount >= 1) {
+                extractedCarNumber = carMatch.group(1);
+                developer.log(
+                  '🔧 raw_text에서 차량 번호 추출: $extractedCarNumber',
+                  name: 'BusDetectorService',
+                );
+              }
+            }
           }
+
+          if (extractedBusNumber != null && extractedBusNumber != 'null') {
+            // 버스 번호와 차량 번호를 포함한 결과 문자열 생성
+            String resultText = '버스: $extractedBusNumber';
+            if (extractedCarNumber != null && extractedCarNumber != 'null') {
+              resultText += ' / 차량: $extractedCarNumber';
+            }
+
+            developer.log(
+              '✅ VLM OCR 성공: $resultText',
+              name: 'BusDetectorService',
+            );
+            developer.log(
+              '📞 콜백 호출: onBusNumberFound',
+              name: 'BusDetectorService',
+            );
+            onBusNumberFound?.call(resultText);
+
+            // 성공 시 2초 쿨다운
+            await Future.delayed(const Duration(seconds: 2));
+          } else {
+            developer.log('⚠️ 버스 번호 인식 실패 (null)', name: 'BusDetectorService');
+          }
+        } else {
+          developer.log(
+            '❌ VLM 응답 실패: ${jsonResponse['status']}',
+            name: 'BusDetectorService',
+          );
         }
       } else {
-        // developer.log('⚠️ OCR 요청 실패: ${streamedResponse.statusCode}', name: 'BusDetectorService');
+        final errorBody = await streamedResponse.stream.bytesToString();
+        developer.log(
+          '❌ HTTP 오류 ${streamedResponse.statusCode}: $errorBody',
+          name: 'BusDetectorService',
+        );
       }
-    } catch (e) {
-      // developer.log('⚠️ OCR 오류: $e', name: 'BusDetectorService');
+    } catch (e, stackTrace) {
+      developer.log(
+        '💥 VLM 오류: $e',
+        name: 'BusDetectorService',
+        error: e,
+        stackTrace: stackTrace,
+      );
     } finally {
-      // 약간의 딜레이 후 잠금 해제 (너무 잦은 요청 방지)
-      await Future.delayed(const Duration(milliseconds: 500));
+      // 응답 완료 후 플래그 해제
       _isSending = false;
+      developer.log('🔓 VLM 요청 잠금 해제', name: 'BusDetectorService');
     }
   }
 
