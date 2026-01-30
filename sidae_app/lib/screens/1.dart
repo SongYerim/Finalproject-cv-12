@@ -293,7 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
 
       // 화면 아무 곳이나 누르면 듣기 시작 (요구사항 유지)
       body: GestureDetector(
@@ -325,11 +325,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       children: [
         const SizedBox(height: 80),
-        const Text(
+        Text(
           '목적지를\n말해주세요.',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: Colors.black,
+            color: Theme.of(context).primaryColor,
             fontSize: 28,
             fontWeight: FontWeight.w700,
             height: 1.25,
@@ -340,8 +340,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: _micPanel(
-              panelColor: const Color(0xFFF1EFFE), // 연보라 박스
-              micColor: const Color(0xFF8B86B8), // 보라 마이크 원
+              panelColor: Colors.grey[900]!, // 어두운 배경
+              micColor: Theme.of(context).primaryColor, // 노란색 마이크
             ),
           ),
         ),
@@ -588,11 +588,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       children: [
         const SizedBox(height: 80),
-        const Text(
+        Text(
           '음성인식 중...',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: Colors.black,
+            color: Theme.of(context).primaryColor,
             fontSize: 26,
             fontWeight: FontWeight.w700,
           ),
@@ -602,8 +602,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: _micPanel(
-              panelColor: const Color(0xFFFFEAEA), // 연핑크 박스
-              micColor: const Color(0xFFD9534F), // 빨간 마이크 원
+              panelColor: Colors.grey[900]!,
+              micColor: Colors.redAccent,
             ),
           ),
         ),
@@ -618,17 +618,17 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         const SizedBox(height: 80),
         RichText(
-          text: const TextSpan(
+          text: TextSpan(
             style: TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.w700,
-              color: Colors.black,
+              color: Theme.of(context).primaryColor,
             ),
-            children: [
+            children: const [
               TextSpan(text: '음성인식 '),
               TextSpan(
                 text: '실패',
-                style: TextStyle(color: Colors.red),
+                style: TextStyle(color: Colors.redAccent),
               ),
             ],
           ),
@@ -638,8 +638,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: _micPanel(
-              panelColor: const Color(0xFFFFEAEA), // 연핑크
-              micColor: const Color(0xFFD9534F), // 빨강
+              panelColor: Colors.grey[900]!,
+              micColor: Colors.redAccent,
             ),
           ),
         ),
@@ -655,17 +655,17 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 60),
 
         RichText(
-          text: const TextSpan(
+          text: TextSpan(
             style: TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.w700,
-              color: Colors.black,
+              color: Theme.of(context).primaryColor,
             ),
-            children: [
+            children: const [
               TextSpan(text: '음성인식 '),
               TextSpan(
                 text: '완료',
-                style: TextStyle(color: Colors.green),
+                style: TextStyle(color: Colors.greenAccent),
               ),
             ],
           ),
@@ -678,14 +678,15 @@ class _HomeScreenState extends State<HomeScreen> {
           margin: const EdgeInsets.symmetric(horizontal: 28),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.grey.shade300,
+            color: Colors.grey[900],
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Theme.of(context).primaryColor),
           ),
           child: Align(
             alignment: Alignment.centerLeft,
             child: Text(
               '목적지 : ${_recognizedDestination.isEmpty ? "(없음)" : _recognizedDestination}',
-              style: const TextStyle(fontSize: 16),
+              style: TextStyle(fontSize: 16, color: Colors.white),
             ),
           ),
         ),
@@ -698,8 +699,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Container(
               width: double.infinity,
               decoration: BoxDecoration(
-                color: const Color(0xFFE7F7E7), // 연녹색
+                color: Colors.black,
                 borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white),
               ),
               padding: const EdgeInsets.all(18),
               child: Column(
@@ -759,7 +761,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 70,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFB3B3),
+                        backgroundColor: Colors.redAccent,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
@@ -775,14 +777,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: const [
-                          Icon(Icons.mic, color: Colors.white, size: 26),
+                          Icon(Icons.mic, color: Colors.black, size: 26),
                           SizedBox(width: 10),
                           Text(
                             '다시 말하기',
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                              color: Colors.black,
                             ),
                           ),
                         ],

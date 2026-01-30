@@ -145,16 +145,24 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
           // 1) 상단 아이콘 3개 (도보/버스/지하철)
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              Icon(Icons.directions_walk, size: 28, color: Colors.black87),
-              SizedBox(width: 26),
+            children: [
+              Icon(
+                Icons.directions_walk,
+                size: 28,
+                color: Theme.of(context).primaryColor,
+              ),
+              const SizedBox(width: 26),
               Icon(
                 Icons.directions_bus_filled,
                 size: 28,
-                color: Colors.black87,
+                color: Theme.of(context).primaryColor,
               ),
-              SizedBox(width: 26),
-              Icon(Icons.train, size: 28, color: Colors.black87),
+              const SizedBox(width: 26),
+              Icon(
+                Icons.train,
+                size: 28,
+                color: Theme.of(context).primaryColor,
+              ),
             ],
           ),
 
@@ -165,9 +173,13 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
             decoration: BoxDecoration(
-              // 이미지의 "연한 보라색 카드" 느낌
-              color: const Color(0xFFEDEBFF),
+              // 이미지의 "연한 보라색 카드" 느낌 -> 고대비 테마박스
+              color: Colors.black,
               borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: Theme.of(context).primaryColor,
+                width: 2,
+              ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -175,10 +187,10 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
                 // 출발: 내 위치 (강조)
                 RichText(
                   textAlign: TextAlign.center,
-                  text: const TextSpan(
-                    style: TextStyle(color: Colors.black87),
+                  text: TextSpan(
+                    style: const TextStyle(color: Colors.white),
                     children: [
-                      TextSpan(
+                      const TextSpan(
                         text: "출발: ",
                         style: TextStyle(
                           fontSize: 16,
@@ -190,6 +202,7 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
                         style: TextStyle(
                           fontSize: 26,
                           fontWeight: FontWeight.w800,
+                          color: Theme.of(context).primaryColor,
                         ),
                       ),
                     ],
@@ -202,7 +215,7 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
                 RichText(
                   textAlign: TextAlign.center,
                   text: TextSpan(
-                    style: const TextStyle(color: Colors.black87),
+                    style: const TextStyle(color: Colors.white),
                     children: [
                       const TextSpan(
                         text: "도착: ",
@@ -213,9 +226,10 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
                       ),
                       TextSpan(
                         text: widget.destinationName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w800,
+                          color: Theme.of(context).primaryColor,
                         ),
                       ),
                     ],
@@ -244,8 +258,10 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
               // 좀 더 “두꺼운 링” 느낌
               strokeWidth: 9,
               // 기본 테마 색을 쓰고 싶으면 Theme.colorScheme.primary로도 가능
-              valueColor: AlwaysStoppedAnimation(Color(0xFF8E7CFF)),
-              backgroundColor: Color(0xFFE0DDF9),
+              valueColor: AlwaysStoppedAnimation(
+                Theme.of(context).primaryColor,
+              ),
+              backgroundColor: Colors.grey[800],
             ),
           ),
 
