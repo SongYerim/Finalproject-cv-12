@@ -13,7 +13,7 @@ router = APIRouter(
 )
 
 @router.post("/bus-recognition")
-async def identify_bus(file: UploadFile = File(…), mode: str = Form(…)):
+async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
     # 1. 파일 확장자 검증
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="이미지 파일만 업로드 가능합니다.")
