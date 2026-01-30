@@ -24,7 +24,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
 
         system_instruction = prompt_data.get("system", "") 
         user_instruction = prompt_data.get("user", "")
-
+        token_limit = prompt_data.get("max_tokens", 300)
         # 3. Vertex AI 엔드포인트 호출
         logger.info(f"Vertex AI 요청 시작: 파일명={file.filename}, 크기={len(image_bytes)} bytes")
         
@@ -32,7 +32,8 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
             image_bytes=image_bytes, 
             mime_type=file.content_type,
             system_prompt=system_instruction,
-            user_prompt=user_instruction
+            user_prompt=user_instruction,
+            token_limit = token_limit
         )
         
         logger.info(f"Vertex AI 응답 수신: {result}")

@@ -9,6 +9,7 @@ class PromptManager:
     _PROMPTS = {
         # 상황 1: 버스 번호 인식
         "bus_number": {
+            "max_tokens": 32,
             "system": """
                 다음 규칙을 반드시 지키세요.
                 출력은 한 문장만 생성하세요.
@@ -24,6 +25,7 @@ class PromptManager:
         
         # 상황 2: 하차벨 위치 찾기
         "bell": {
+            "max_tokens": 128,
             "user": """
             당신은 시각장애인을 위한 버스 하차 안내 시스템입니다.
             이 이미지는 사용자의 가슴 높이에 장착된 카메라 촬영된 장면입니다.
@@ -59,6 +61,7 @@ class PromptManager:
         },
         # 상황 3: 하차 태그
         "tag": {
+            "max_tokens": 128,
             "user": """
             당신은 시각장애인을 위한 버스 승하차 안내 시스템입니다.
             이 이미지는 사용자의 가슴 높이에 장착된 카메라로 촬영된 장면입니다.
@@ -95,6 +98,7 @@ class PromptManager:
         },
         # 상황 3: 승차 태그
         "tag_": {
+            "max_tokens": 50,
             "system" :
             """
             역할: 당신은 빨간색 하차벨 버튼 탐지기입니다.

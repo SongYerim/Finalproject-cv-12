@@ -70,7 +70,7 @@ def get_access_token():
         creds.refresh(auth_req)
     return creds.token
 
-async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt: str, system_prompt: str=""):
+async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt: str, system_prompt: str="", max_tokens= int):
     PROJECT_ID = os.getenv("PROJECT_ID")
     REGION = os.getenv("REGION")
     ENDPOINT_ID = os.getenv("ENDPOINT_ID")
@@ -108,6 +108,7 @@ async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt
 
     payload = {
         "messages": messages,
+        "max_tokens": max_tokens
     }
 
     try:
