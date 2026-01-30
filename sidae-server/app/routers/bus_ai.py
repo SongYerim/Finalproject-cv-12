@@ -7,13 +7,7 @@ import json
 # 로거 설정 (Cloud Run 로그에서 확인 용이)
 logger = logging.getLogger("uvicorn")
 
-<<<<<<< HEAD
 router = APIRouter(tags=["Bus AI"])
-=======
-router = APIRouter(
-    tags=["Bus AI"]
-)
->>>>>>> 27bacad4495aa58bfd2b446b219bbef0166ee537
 
 @router.post("/bus-recognition")
 async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
