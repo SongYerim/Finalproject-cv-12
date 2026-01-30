@@ -10,16 +10,8 @@ class PromptManager:
         # 상황 1: 버스 번호 인식
         "bus_number": {
             "max_tokens": 32,
-            "system": """
-                다음 규칙을 반드시 지키세요.
-                출력은 한 문장만 생성하세요.
-                출력은 15단어 이내로 작성하세요.
-                출력 형식-> {버스 번호: 영어 또는 숫자, 차량 번호판: 한글 또는 숫자}
-                영문, 특수문자, 설명 문장은 절대 포함하지 마세요.
-                확인할 수 없으면 해당 항목을 "확인 불가"로 출력하세요.
-            """,
             "user": """
-            버스 사진에서 ocr해줘 출력은 {버스 번호: , 차량 번호판: "숫자" or "확인 불가"}
+            Read  the text in the image. output format {bus_num:  , car_num: #### or unknown} #Only 4 digits 0-9 are allowed. 
             """
         },
         
