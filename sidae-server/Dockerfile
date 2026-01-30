@@ -3,6 +3,8 @@ FROM python:3.12.10-slim
 # 로그가 실시간으로 출력되도록 설정
 ENV PYTHONUNBUFFERED=1
 
+ENV PORT=8001
+
 # 컨테이너 기본 경로 설정
 WORKDIR /sidae-server
 
@@ -17,4 +19,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # FastAPI 실행
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
