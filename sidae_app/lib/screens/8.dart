@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class BusOnlyScreen extends StatefulWidget {
   final double? returnMidLat;
@@ -34,9 +35,13 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
   );
 
   String _getCaptureUploadUrl() {
-    return Platform.isAndroid
-        ? 'http://10.0.2.2:8000/bus/capture'
-        : 'http://127.0.0.1:8000/bus/capture';
+    // .env에서 SIDAE_SERVER_CLOUD_URL 불러오기
+    final baseUrl = dotenv.env['SIDAE_SERVER_CLOUD_URL'];
+    if (baseUrl == null || baseUrl.isEmpty) {
+      throw Exception('SIDAE_SERVER_CLOUD_URL이 .env 파일에 설정되지 않았습니다.');
+    }
+    // baseUrl/bus-ai/bus-recognition 엔드포인트
+    return '$baseUrl/bus-ai/bus-recognition';
   }
 
   Future<void> _captureAndUpload(BuildContext context, String source) async {
@@ -47,10 +52,18 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         });
       }
 
+      // source에 따라 mode 설정
+      // 하차벨: 'stop_bell' -> mode: 'bell'
+      // 교통카드 태그기: 'card_tagger' -> mode: 'tags_'
+      final mode = source == 'stop_bell' ? 'bell' : 'tags_';
+      
       final result = await _channel.invokeMethod('captureAndUploadImage', {
         'uploadUrl': _getCaptureUploadUrl(),
         'jpegQuality': 90,
-        'metadata': {'source': source},
+        'metadata': {
+          'source': source,
+          'mode': mode, // source에 따라 mode 설정
+        },
         'keepFile': true,
       });
 

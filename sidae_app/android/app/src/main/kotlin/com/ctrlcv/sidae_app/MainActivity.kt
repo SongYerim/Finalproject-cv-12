@@ -412,6 +412,22 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         photoFile: File,
         metadata: Map<String, String>
     ): UploadResult {
+        // 파일 존재 및 크기 확인
+        if (!photoFile.exists()) {
+            Log.e(TAG, "❌ 파일이 존재하지 않음: ${photoFile.absolutePath}")
+            return UploadResult(false, -1, "File does not exist: ${photoFile.absolutePath}")
+        }
+        
+        val fileSize = photoFile.length()
+        if (fileSize == 0L) {
+            Log.e(TAG, "❌ 파일 크기가 0: ${photoFile.absolutePath}")
+            return UploadResult(false, -1, "File is empty: ${photoFile.absolutePath}")
+        }
+        
+        Log.d(TAG, "📤 파일 업로드 시작: ${photoFile.name}, 크기: $fileSize bytes")
+        Log.d(TAG, "📤 업로드 URL: $uploadUrl")
+        Log.d(TAG, "📤 메타데이터: $metadata")
+        
         val boundary = "----SidaeBoundary${System.currentTimeMillis()}"
         val lineEnd = "\r\n"
         val twoHyphens = "--"
@@ -436,24 +452,30 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
 
             outputStream.writeBytes(twoHyphens + boundary + lineEnd)
             outputStream.writeBytes(
-                "Content-Disposition: form-data; name=\"image\"; filename=\"capture.jpg\"$lineEnd"
+                "Content-Disposition: form-data; name=\"file\"; filename=\"capture.jpg\"$lineEnd"
             )
             outputStream.writeBytes("Content-Type: image/jpeg$lineEnd")
             outputStream.writeBytes(lineEnd)
 
+            var totalBytesWritten = 0L
             FileInputStream(photoFile).use { fileInput ->
                 BufferedInputStream(fileInput).use { bufferedInput ->
                     val buffer = ByteArray(4096)
                     var bytesRead: Int
                     while (bufferedInput.read(buffer).also { bytesRead = it } != -1) {
                         outputStream.write(buffer, 0, bytesRead)
+                        totalBytesWritten += bytesRead
                     }
                 }
             }
+            
+            Log.d(TAG, "✅ 파일 데이터 전송 완료: $totalBytesWritten bytes")
 
             outputStream.writeBytes(lineEnd)
             outputStream.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd)
             outputStream.flush()
+            
+            Log.d(TAG, "✅ Multipart form-data 전송 완료")
         }
 
         val statusCode = connection.responseCode
@@ -464,6 +486,12 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         }
 
         val body = responseStream?.bufferedReader()?.use { it.readText() } ?: ""
+        Log.d(TAG, "📥 서버 응답: statusCode=$statusCode, body=$body")
+        
+        if (statusCode !in 200..299) {
+            Log.e(TAG, "❌ 업로드 실패: $body")
+        }
+        
         return UploadResult(statusCode in 200..299, statusCode, body)
     }
     
