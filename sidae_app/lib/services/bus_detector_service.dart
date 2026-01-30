@@ -78,7 +78,7 @@ class BusDetectorService {
       _updateStatus('카메라 초기화 중...');
 
       // 1. 모델과 라벨 로드 (6.dart와 동일하게)
-      const modelPath = 'assets/yolo11n_float16.tflite';
+      const modelPath = 'assets/yolo11s_float16.tflite';
       developer.log('  - 모델 로드: $modelPath', name: 'BusDetectorService');
       final modelBytes = await rootBundle.load(modelPath);
       final labelsData = await rootBundle.loadString('assets/coco_labels.txt');
