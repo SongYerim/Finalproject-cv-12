@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /sidae-server
 
 # 컨테이너 사용 포트
-EXPOSE 8000
+EXPOSE 8001
 
 # 라이브러리 설치
 COPY requirements.txt .
