@@ -40,6 +40,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
   // 매칭 상태
   String _matchStatus = ''; // 'MATCH', 'MISMATCH', 'CHECKING', ''
   String _lastOcrResult = '';
+  int? _lastResponseTimeMs; // VLM 응답 시간
   Timer? _mismatchTimer; // MISMATCH 상태 유지 타이머
 
   @override
@@ -128,9 +129,9 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     };
 
     // OCR 결과 수신
-    _busDetectorService.onBusNumberFound = (ocrResult) {
+    _busDetectorService.onBusNumberFound = (ocrResult, responseTimeMs) {
       developer.log(
-        '🎯 [7.dart] OCR 콜백 수신: $ocrResult',
+        '🎯 [7.dart] OCR 콜백 수신: $ocrResult (응답시간: ${responseTimeMs}ms)',
         name: 'BusArrivalScreen',
       );
       if (mounted) {
@@ -138,6 +139,9 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
           '  - mounted: true, _checkMatch 호출',
           name: 'BusArrivalScreen',
         );
+        setState(() {
+          _lastResponseTimeMs = responseTimeMs;
+        });
         _checkMatch(ocrResult);
       } else {
         developer.log('  - mounted: false, 스킵', name: 'BusArrivalScreen');
@@ -447,9 +451,27 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
                     vertical: 10,
                   ),
                   color: Colors.red.withOpacity(0.8),
-                  child: Text(
-                    "다른 버스입니다 ($_lastOcrResult)",
-                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "다른 버스입니다 ($_lastOcrResult)",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                      ),
+                      if (_lastResponseTimeMs != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          "응답 시간: ${_lastResponseTimeMs}ms",
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),

@@ -24,6 +24,7 @@ class BusOnlyScreen extends StatefulWidget {
 class _BusOnlyScreenState extends State<BusOnlyScreen> {
   String? _lastImagePath;
   String _lastResponse = 'No response';
+  int? _responseTimeMs; // 응답 시간 (밀리초)
   Timer? _previewTimer;
   StreamSubscription? _exitDistanceSubscription;
 
@@ -45,10 +46,14 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
   }
 
   Future<void> _captureAndUpload(BuildContext context, String source) async {
+    // 시작 시간 측정
+    final stopwatch = Stopwatch()..start();
+
     try {
       if (mounted) {
         setState(() {
           _lastResponse = 'No response';
+          _responseTimeMs = null; // 이전 시간 초기화
         });
       }
 
@@ -71,6 +76,9 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
 
       if (result is Map) {
+        stopwatch.stop(); // 응답 받은 시점에 타이머 중지
+        final responseTime = stopwatch.elapsedMilliseconds;
+
         final path = result['localPath'];
         final body = result['body'];
         if (mounted) {
@@ -84,6 +92,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                 normalized.isNotEmpty && normalized.toLowerCase() != 'null'
                 ? normalized
                 : 'No response';
+            _responseTimeMs = responseTime; // 응답 시간 저장
           });
         }
         _previewTimer?.cancel();
@@ -266,6 +275,30 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                             ),
                           ),
                         ),
+                        // 응답 시간 표시 (우상단)
+                        if (_responseTimeMs != null)
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFD400),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '응답 시간: ${_responseTimeMs}ms',
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),

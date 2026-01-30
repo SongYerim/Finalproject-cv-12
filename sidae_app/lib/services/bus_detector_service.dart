@@ -52,7 +52,8 @@ class BusDetectorService {
   Function(BusDetection detection)? onBusDetected;
   Function(Uint8List croppedImage)? onBusCropped; // 현재 네이티브 모드에서 미지원
   Function(String status)? onStatusChanged;
-  Function(String busNumber)? onBusNumberFound; // OCR 결과 콜백
+  Function(String busNumber, int responseTimeMs)?
+  onBusNumberFound; // OCR 결과 + 응답시간 콜백
   Function(Uint8List fullImage)? onSnapshotCaptured; // 스냅샷 콜백
 
   // 상태
@@ -224,6 +225,9 @@ class BusDetectorService {
     }
     _isSending = true;
 
+    // 시작 시간 측정
+    final stopwatch = Stopwatch()..start();
+
     try {
       final baseUrl = ApiService.baseUrl;
       final uri = Uri.parse('$baseUrl/bus-ai/bus-recognition');
@@ -339,6 +343,9 @@ class BusDetectorService {
           }
 
           if (extractedBusNumber != null && extractedBusNumber != 'null') {
+            stopwatch.stop(); // 응답 수신 시점
+            final responseTime = stopwatch.elapsedMilliseconds;
+
             // 버스 번호와 차량 번호를 포함한 결과 문자열 생성
             String resultText = '버스: $extractedBusNumber';
             if (extractedCarNumber != null && extractedCarNumber != 'null') {
@@ -346,14 +353,14 @@ class BusDetectorService {
             }
 
             developer.log(
-              '✅ VLM OCR 성공: $resultText',
+              '✅ VLM OCR 성공: $resultText (응답시간: ${responseTime}ms)',
               name: 'BusDetectorService',
             );
             developer.log(
               '📞 콜백 호출: onBusNumberFound',
               name: 'BusDetectorService',
             );
-            onBusNumberFound?.call(resultText);
+            onBusNumberFound?.call(resultText, responseTime);
 
             // 성공 시 2초 쿨다운
             await Future.delayed(const Duration(seconds: 2));
