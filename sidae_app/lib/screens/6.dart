@@ -338,8 +338,8 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
                 icon: const Icon(Icons.settings),
                 label: const Text("설정으로 이동"),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
+                  backgroundColor: Theme.of(context).primaryColor,
+                  foregroundColor: Colors.black,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 32,
                     vertical: 16,

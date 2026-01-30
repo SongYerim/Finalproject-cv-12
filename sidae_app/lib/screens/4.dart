@@ -208,7 +208,6 @@ class _Screen4State extends State<Screen4> {
     );
   }
 
-
   // 버스 도착 오버레이 닫기
   void _closeBusArrivalOverlay() {
     _busArrivalService.stopTracking();
@@ -228,9 +227,9 @@ class _Screen4State extends State<Screen4> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.9),
+          color: Colors.black,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.blue.withValues(alpha: 0.5)),
+          border: Border.all(color: Theme.of(context).primaryColor, width: 2),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -242,8 +241,8 @@ class _Screen4State extends State<Screen4> {
               children: [
                 Text(
                   _busStationName ?? '버스 정류장',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: Theme.of(context).primaryColor,
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                   ),
@@ -266,13 +265,13 @@ class _Screen4State extends State<Screen4> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.blue,
+                      color: Theme.of(context).primaryColor,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       _busArrival!.busNumber,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: Colors.black,
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
                       ),
@@ -650,8 +649,8 @@ class _Screen4State extends State<Screen4> {
             icon: const Icon(Icons.map),
             label: const Text("경로 추적 지도 보기"),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blueAccent,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Colors.black,
               padding: const EdgeInsets.symmetric(vertical: 16),
               textStyle: const TextStyle(
                 fontSize: 18,

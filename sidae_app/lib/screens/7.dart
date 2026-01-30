@@ -542,13 +542,13 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.blue,
+                    color: Theme.of(context).primaryColor,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     widget.busNumber,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: Colors.black,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),

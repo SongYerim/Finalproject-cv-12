@@ -50,23 +50,21 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE8EAED), // 로고 배경색과 유사한 연한 파란 회색
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // SIDAE 로고 이미지 - 가로 꽉 차게
-            SizedBox(
+            Container(
+              color: Colors.white, // 로고가 투명이 아닐 수 있으므로 배경 흰색 박스 추가
+              padding: const EdgeInsets.all(20),
               width: double.infinity,
               child: Image.asset('assets/sidae_logo.png', fit: BoxFit.fitWidth),
             ),
             const SizedBox(height: 30),
             // 로딩 인디케이터
-            const CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(
-                Color(0xFF4A5568),
-              ), // 다크 블루 그레이
-            ),
+            CircularProgressIndicator(color: Theme.of(context).primaryColor),
           ],
         ),
       ),
