@@ -73,15 +73,15 @@ def get_access_token():
         creds.refresh(auth_req)
     return creds.token
 
-async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt: str, endpoint_id: str, system_prompt: str=""):
+async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt: str, system_prompt: str=""):
     PROJECT_ID = os.getenv("PROJECT_ID")
     REGION = os.getenv("REGION")
-    
+    ENDPOINT_ID = os.getenv("ENDPOINT_ID")
     if not all([PROJECT_ID, REGION, endpoint_id]):
         raise HTTPException(status_code=500, detail="Server Configuration Error: Missing environment variables.")
 
     # rawPredict 엔드포인트 사용 (REST)
-    url = f"https://{REGION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{REGION}/endpoints/{endpoint_id}:rawPredict"
+    url = f"https://{REGION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{REGION}/endpoints/{ENDPOINT_ID}:rawPredict"
     optimized_image_bytes = resize_image_smart(image_bytes, min_pixels=147456, max_pixels=262144)
     base64_image = base64.b64encode(optimized_image_bytes).decode("utf-8")
     messages = []

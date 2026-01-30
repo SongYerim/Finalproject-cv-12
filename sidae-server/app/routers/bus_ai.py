@@ -3,10 +3,6 @@ import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from app.AI.vlm_service import request_vlm_prediction
 import json
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # 로거 설정 (Cloud Run 로그에서 확인 용이)
 logger = logging.getLogger("uvicorn")
@@ -22,16 +18,6 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
         raise HTTPException(status_code=400, detail="이미지 파일만 업로드 가능합니다.")
 
     try:
-        target_endpoint_id = ""
-
-        if mode == "bus_number":
-            target_endpoint_id = os.getenv("ENDPOINT_ID_2B")
-        elif mode in["bell", "tag", "tag_"]:
-            target_endpoint_id = os.getenv("ENDPOINT_ID_4B")
-
-        if not target_endpoint_id:
-            raise HTTPException(status_code=500, detail=f"Model config missing for mode: {mode}")
-
         image_bytes = await file.read()
 
         prompt_data = PromptManager.get_prompt(mode)
@@ -46,8 +32,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
             image_bytes=image_bytes, 
             mime_type=file.content_type,
             system_prompt=system_instruction,
-            user_prompt=user_instruction,
-            endpoint_id=target_endpoint_id
+            user_prompt=user_instruction
         )
         
         logger.info(f"Vertex AI 응답 수신: {result}")
