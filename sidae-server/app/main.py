@@ -38,6 +38,7 @@ async def log_requests(request: Request, call_next):
 app.include_router(search.router, prefix="/search")
 app.include_router(route.router, prefix="/route")
 app.include_router(bus.router, prefix="/bus")
+app.include_router(bus_ai.router, prefix="/bus-ai")
 
 @app.get("/")
 def read_root():
