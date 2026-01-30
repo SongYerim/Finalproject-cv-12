@@ -7,3 +7,4 @@ requests>=2.31.0              # Sync HTTP Client (In case sync calls are needed)
 google-auth>=2.27.0           # Google Cloud Authentication
 google-auth-oauthlib>=1.0.0   # Google OAuth2.0 Authentication
 google-auth-httplib2>=0.1.0   # Google HTTP Client
+Pillow>=10.0.0                # Image Processing (For image resizing)
