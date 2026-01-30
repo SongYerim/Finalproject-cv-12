@@ -8,7 +8,7 @@ import json
 logger = logging.getLogger("uvicorn")
 
 router = APIRouter(
-    prefix="/ai",
+    prefix="/bus-ai",
     tags=["Bus AI"]
 )
 
