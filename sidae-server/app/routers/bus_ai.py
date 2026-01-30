@@ -33,7 +33,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
             mime_type=file.content_type,
             system_prompt=system_instruction,
             user_prompt=user_instruction,
-            token_limit = token_limit
+            max_tokens = token_limit
         )
         
         logger.info(f"Vertex AI 응답 수신: {result}")
