@@ -460,6 +460,9 @@ class YoloProcessor(private val context: Context) {
             if (maxScore < confidenceThreshold) continue
             if (classId < 0 || classId >= labels.size) continue
             
+            // 버스만 탐지 (COCO 데이터셋에서 bus는 classId 5)
+            if (classId != 5) continue
+            
             var cx = outputArray[0 * columns + c]
             var cy = outputArray[1 * columns + c]
             var w = outputArray[2 * columns + c]
