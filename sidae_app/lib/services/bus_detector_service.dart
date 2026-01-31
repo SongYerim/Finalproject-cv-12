@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer' as developer;
-import 'dart:typed_data';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart'; // MediaType
-import '../services/api_service.dart';
+import 'ocr_service.dart';
+import 'vlm_service.dart';
+
+// TagRecognitionResult를 vlm_service.dart에서 re-export
+export 'vlm_service.dart' show TagRecognitionResult;
 
 /// 버스 감지 결과
 class BusDetection {
@@ -32,19 +32,6 @@ class BusDetection {
       'BusDetection($label, ${(confidence * 100).toStringAsFixed(1)}%, bbox: $bbox)';
 }
 
-/// 태그 인식 결과
-class TagRecognitionResult {
-  final Uint8List imageBytes;
-  final String response;
-  final bool success;
-
-  TagRecognitionResult({
-    required this.imageBytes,
-    required this.response,
-    required this.success,
-  });
-}
-
 /// 버스 인식 서비스
 ///
 /// 네이티브 YOLO + EventChannel을 통해 버스를 감지합니다.
@@ -59,7 +46,10 @@ class BusDetectorService {
 
   StreamSubscription? _detectionSubscription;
   bool _isActive = false;
-  bool _isSending = false; // OCR 요청 중복 방지 플래그
+
+  // OCR 및 VLM 서비스 인스턴스
+  final OcrService _ocrService = OcrService.instance;
+  final VlmService _vlmService = VlmService.instance;
 
   // 콜백
   Function(BusDetection detection)? onBusDetected;
@@ -170,23 +160,12 @@ class BusDetectorService {
     }
   }
 
-  /// VLM 서버 전송 시뮬레이션 (Dummy)
+  /// VLM 서버 전송 시뮬레이션 (Dummy) - VlmService로 위임
   Future<void> sendToVlmDummy(Uint8List imageBytes) async {
-    developer.log(
-      '🚀 [VLM] 서버로 이미지 전송 중... (${imageBytes.length} bytes)',
-      name: 'BusDetectorService',
-    );
-
-    // 네트워킹 지연 시뮬레이션 (1~2초)
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    developer.log(
-      '✅ [VLM] 응답 수신: "태그기를 찾았습니다!" (Confidence: 0.98)',
-      name: 'BusDetectorService',
-    );
+    await _vlmService.sendToVlmDummy(imageBytes);
   }
 
-  /// 태그 인식 요청 (mode: tag_)
+  /// 태그 인식 요청 (mode: tag_) - VlmService로 위임
   ///
   /// 현재 카메라 프레임을 캡처하여 API 서버로 전송합니다.
   /// Returns: TagRecognitionResult (이미지, 응답, 성공 여부)
@@ -199,112 +178,9 @@ class BusDetectorService {
       return null;
     }
 
-    try {
-      developer.log(
-        '🏷️ [BusDetectorService] 태그 인식 시작',
-        name: 'BusDetectorService',
-      );
-
-      final baseUrl = ApiService.baseUrl;
-      final uri = Uri.parse('$baseUrl/bus-ai/bus-recognition');
-
-      // 네이티브에서 현재 프레임 캡처 (스냅샷 사용)
-      developer.log('📸 스냅샷 캡처 요청...', name: 'BusDetectorService');
-
-      // 스냅샷을 캡처하고 콜백으로 받기 위한 Completer 사용
-      final completer = Completer<Uint8List?>();
-
-      // 일시적으로 콜백 변경
-      final originalCallback = onSnapshotCaptured;
-      onSnapshotCaptured = (imageBytes) {
-        developer.log(
-          '📸 스냅샷 수신 (${imageBytes.length} bytes)',
-          name: 'BusDetectorService',
-        );
-        if (!completer.isCompleted) {
-          completer.complete(imageBytes);
-        }
-      };
-
-      // 스냅샷 요청
-      await _channel.invokeMethod('captureSnapshot');
-
-      // 최대 5초 대기
-      final imageBytes = await completer.future.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {
-          developer.log('⏱️ 스냅샷 캡처 타임아웃', name: 'BusDetectorService');
-          return null;
-        },
-      );
-
-      // 콜백 복원
-      onSnapshotCaptured = originalCallback;
-
-      if (imageBytes == null) {
-        developer.log('❌ 이미지 데이터 없음', name: 'BusDetectorService');
-        return null;
-      }
-
-      developer.log(
-        '📸 프레임 캡처 완료 (${imageBytes.length} bytes)',
-        name: 'BusDetectorService',
-      );
-
-      // API 서버로 전송
-      final request = http.MultipartRequest('POST', uri)
-        ..fields['mode'] = 'tag_'
-        ..files.add(
-          http.MultipartFile.fromBytes(
-            'file',
-            imageBytes,
-            filename: 'tag_recognition.jpg',
-            contentType: MediaType('image', 'jpeg'),
-          ),
-        );
-
-      developer.log('📤 태그 인식 요청 전송...', name: 'BusDetectorService');
-
-      final streamedResponse = await request.send().timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          developer.log('⏱️ 태그 인식 타임아웃', name: 'BusDetectorService');
-          throw TimeoutException('Tag recognition timeout');
-        },
-      );
-
-      developer.log(
-        '📥 응답 수신: ${streamedResponse.statusCode}',
-        name: 'BusDetectorService',
-      );
-
-      if (streamedResponse.statusCode == 200) {
-        final response = await http.Response.fromStream(streamedResponse);
-        final responseBody = utf8.decode(response.bodyBytes);
-        developer.log('✅ 태그 인식 성공: $responseBody', name: 'BusDetectorService');
-
-        return TagRecognitionResult(
-          imageBytes: imageBytes,
-          response: responseBody,
-          success: true,
-        );
-      } else {
-        final errorMsg = '서버 오류: ${streamedResponse.statusCode}';
-        developer.log(
-          '❌ 태그 인식 실패: ${streamedResponse.statusCode}',
-          name: 'BusDetectorService',
-        );
-
-        return TagRecognitionResult(
-          imageBytes: imageBytes,
-          response: errorMsg,
-          success: false,
-        );
-      }
-    } catch (e) {
-      developer.log('❌ 태그 인식 오류: $e', name: 'BusDetectorService');
-      return null;
-    }
+    return _vlmService.sendTagRecognition(
+      currentSnapshotCallback: onSnapshotCaptured,
+    );
   }
 
   /// 감지 결과 처리
@@ -318,8 +194,8 @@ class BusDetectorService {
       // );
       onBusCropped?.call(croppedImage);
 
-      // OCR 서버 전송
-      _sendCroppedImage(croppedImage);
+      // OCR 서버 전송 - OcrService로 위임
+      _sendCroppedImageViaOcrService(croppedImage);
     }
 
     // 2. 감지된 객체 처리
@@ -351,180 +227,16 @@ class BusDetectorService {
     }
   }
 
-  /// 서버로 크롭된 이미지 전송 (VLM)
-  Future<void> _sendCroppedImage(Uint8List imageBytes) async {
-    if (_isSending) {
-      developer.log('⏭️ VLM 요청 스킵 (이미 전송 중)', name: 'BusDetectorService');
-      return;
-    }
-    _isSending = true;
+  /// 서버로 크롭된 이미지 전송 (OCR) - OcrService로 위임
+  Future<void> _sendCroppedImageViaOcrService(Uint8List imageBytes) async {
+    final result = await _ocrService.sendOcrRequest(imageBytes);
 
-    // 시작 시간 측정
-    final stopwatch = Stopwatch()..start();
-
-    try {
-      final baseUrl = ApiService.baseUrl;
-      final uri = Uri.parse('$baseUrl/bus-ai/bus-recognition');
-
-      developer.log('🚀 VLM 요청 시작', name: 'BusDetectorService');
-      developer.log('  - URL: $uri', name: 'BusDetectorService');
+    if (result != null) {
       developer.log(
-        '  - 이미지 크기: ${imageBytes.length} bytes',
+        '✅ OCR 성공: ${result.displayText} (${result.responseTimeMs}ms)',
         name: 'BusDetectorService',
       );
-
-      final request = http.MultipartRequest('POST', uri)
-        ..fields['mode'] = 'bus_number'
-        ..files.add(
-          http.MultipartFile.fromBytes(
-            'file',
-            imageBytes,
-            filename: 'bus_crop.jpg',
-            contentType: MediaType('image', 'jpeg'),
-          ),
-        );
-
-      developer.log('📤 HTTP 요청 전송 중...', name: 'BusDetectorService');
-
-      // 타임아웃 10초 (VLM 처리 시간 고려)
-      final streamedResponse = await request.send().timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          developer.log('⏱️ VLM 요청 타임아웃 (10초)', name: 'BusDetectorService');
-          throw TimeoutException('VLM request timeout');
-        },
-      );
-
-      developer.log(
-        '📥 응답 수신: ${streamedResponse.statusCode}',
-        name: 'BusDetectorService',
-      );
-
-      if (streamedResponse.statusCode == 200) {
-        final response = await http.Response.fromStream(streamedResponse);
-        final responseBody = utf8.decode(response.bodyBytes);
-
-        developer.log('📄 응답 본문: $responseBody', name: 'BusDetectorService');
-
-        final jsonResponse = json.decode(responseBody);
-        developer.log('🔍 JSON 파싱 성공', name: 'BusDetectorService');
-        developer.log(
-          '  - status: ${jsonResponse['status']}',
-          name: 'BusDetectorService',
-        );
-        developer.log(
-          '  - mode: ${jsonResponse['mode']}',
-          name: 'BusDetectorService',
-        );
-
-        if (jsonResponse['status'] == 'success') {
-          final result = jsonResponse['result'] as Map<String, dynamic>?;
-          developer.log('  - result: $result', name: 'BusDetectorService');
-
-          final busNumber = result?['bus_number'] as String?;
-          developer.log(
-            '  - bus_number: $busNumber',
-            name: 'BusDetectorService',
-          );
-
-          // raw_text 폴백 처리 (VLM이 잘못된 JSON을 반환한 경우)
-          String? extractedBusNumber = busNumber;
-          String? extractedCarNumber;
-
-          if ((busNumber == null || busNumber == 'null') && result != null) {
-            final rawText = result['raw_text'] as String?;
-            developer.log('  - raw_text: $rawText', name: 'BusDetectorService');
-
-            if (rawText != null && rawText.isNotEmpty) {
-              // {bus_num: 370, car_num: 5040} 형식에서 숫자 추출
-              final busNumPattern = RegExp(
-                r'bus_num:\s*(\d+)',
-                caseSensitive: false,
-              );
-              final busNumberPattern = RegExp(
-                r'bus_number:\s*(\d+)',
-                caseSensitive: false,
-              );
-              final carNumPattern = RegExp(
-                r'car_num:\s*(\d+)',
-                caseSensitive: false,
-              );
-
-              // 버스 번호 추출
-              var match = busNumPattern.firstMatch(rawText);
-              if (match == null) {
-                match = busNumberPattern.firstMatch(rawText);
-              }
-
-              if (match != null && match.groupCount >= 1) {
-                extractedBusNumber = match.group(1);
-                developer.log(
-                  '🔧 raw_text에서 버스 번호 추출: $extractedBusNumber',
-                  name: 'BusDetectorService',
-                );
-              }
-
-              // 차량 번호 추출
-              final carMatch = carNumPattern.firstMatch(rawText);
-              if (carMatch != null && carMatch.groupCount >= 1) {
-                extractedCarNumber = carMatch.group(1);
-                developer.log(
-                  '🔧 raw_text에서 차량 번호 추출: $extractedCarNumber',
-                  name: 'BusDetectorService',
-                );
-              }
-            }
-          }
-
-          if (extractedBusNumber != null && extractedBusNumber != 'null') {
-            stopwatch.stop(); // 응답 수신 시점
-            final responseTime = stopwatch.elapsedMilliseconds;
-
-            // 버스 번호와 차량 번호를 포함한 결과 문자열 생성
-            String resultText = '버스: $extractedBusNumber';
-            if (extractedCarNumber != null && extractedCarNumber != 'null') {
-              resultText += ' / 차량: $extractedCarNumber';
-            }
-
-            developer.log(
-              '✅ VLM OCR 성공: $resultText (응답시간: ${responseTime}ms)',
-              name: 'BusDetectorService',
-            );
-            developer.log(
-              '📞 콜백 호출: onBusNumberFound',
-              name: 'BusDetectorService',
-            );
-            onBusNumberFound?.call(resultText, responseTime);
-
-            // 성공 시 2초 쿨다운
-            await Future.delayed(const Duration(seconds: 2));
-          } else {
-            developer.log('⚠️ 버스 번호 인식 실패 (null)', name: 'BusDetectorService');
-          }
-        } else {
-          developer.log(
-            '❌ VLM 응답 실패: ${jsonResponse['status']}',
-            name: 'BusDetectorService',
-          );
-        }
-      } else {
-        final errorBody = await streamedResponse.stream.bytesToString();
-        developer.log(
-          '❌ HTTP 오류 ${streamedResponse.statusCode}: $errorBody',
-          name: 'BusDetectorService',
-        );
-      }
-    } catch (e, stackTrace) {
-      developer.log(
-        '💥 VLM 오류: $e',
-        name: 'BusDetectorService',
-        error: e,
-        stackTrace: stackTrace,
-      );
-    } finally {
-      // 응답 완료 후 플래그 해제
-      _isSending = false;
-      developer.log('🔓 VLM 요청 잠금 해제', name: 'BusDetectorService');
+      onBusNumberFound?.call(result.displayText, result.responseTimeMs);
     }
   }
 
@@ -550,7 +262,6 @@ class BusDetectorService {
     );
 
     _isActive = false;
-    _isSending = false;
 
     // EventChannel 구독 취소
     if (_detectionSubscription != null) {

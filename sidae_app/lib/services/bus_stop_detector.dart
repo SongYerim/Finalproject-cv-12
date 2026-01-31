@@ -1,5 +1,6 @@
 import 'package:geolocator/geolocator.dart';
 import '../models/route_model.dart';
+import 'proximity_detector.dart';
 
 /// 버스 정류장 감지 정보
 class BusStopInfo {
@@ -17,16 +18,19 @@ class BusStopInfo {
 }
 
 /// 버스 정류장 근접 감지 서비스
-class BusStopDetector {
-  static const double proximityThreshold = 20.0; // 20m 이내
-
+///
+/// ProximityDetector를 상속받아 버스 정류장 근접 감지 기능을 제공합니다.
+class BusStopDetector extends ProximityDetector<BusStopInfo> {
   List<RouteSegment> routes = [];
   Function(BusStopInfo)? onBusStopDetected;
 
-  // 이미 감지된 정류장 추적 (중복 감지 방지)
-  static final Set<String> _detectedStops = {};
+  BusStopDetector({required this.routes, this.onBusStopDetected})
+    : super(proximityThreshold: 20.0); // 20m 이내
 
-  BusStopDetector({required this.routes, this.onBusStopDetected});
+  @override
+  String getItemId(BusStopInfo item) {
+    return ProximityUtils.createCoordinateId(item.lat, item.lng);
+  }
 
   /// GPS 위치 업데이트 시 호출
   void checkBusStopProximity(Position position) {
@@ -45,38 +49,25 @@ class BusStopDetector {
 
       final startStation = segment.stations.first;
 
-      // 현재 위치와 정류장 위치 간의 거리 계산
-      double distance = Geolocator.distanceBetween(
-        position.latitude,
-        position.longitude,
-        startStation.lat,
-        startStation.lng,
+      // 현재 위치와 정류장 위치 간의 거리 확인
+      if (!isWithinProximity(position, startStation.lat, startStation.lng)) {
+        continue;
+      }
+
+      // 버스 정류장 정보 생성
+      final busStopInfo = BusStopInfo(
+        busNumber: busNumber,
+        stationName: stationName,
+        lat: startStation.lat,
+        lng: startStation.lng,
       );
 
-      // 20m 이내 근접 시
-      if (distance <= proximityThreshold) {
-        String stopId = '${startStation.lat}_${startStation.lng}';
-
-        // 이미 감지된 정류장이 아니면 콜백 호출
-        if (!_detectedStops.contains(stopId)) {
-          _detectedStops.add(stopId);
-
-          final busStopInfo = BusStopInfo(
-            busNumber: busNumber,
-            stationName: stationName,
-            lat: startStation.lat,
-            lng: startStation.lng,
-          );
-
-          onBusStopDetected?.call(busStopInfo);
-          return; // 한 번에 하나만 처리
-        }
+      // 이미 감지된 정류장이 아니면 콜백 호출
+      if (!isAlreadyDetected(busStopInfo)) {
+        markAsDetected(busStopInfo);
+        onBusStopDetected?.call(busStopInfo);
+        return; // 한 번에 하나만 처리
       }
     }
-  }
-
-  /// 감지 기록 초기화
-  void reset() {
-    _detectedStops.clear();
   }
 }
