@@ -9,6 +9,7 @@ import '../services/route_tracker.dart';
 import '../services/crosswalk_detector.dart';
 import '../services/bus_stop_detector.dart';
 import '../services/bus_arrival_service.dart';
+import '../services/bus_popup_state_service.dart';
 import '../services/tts_service.dart';
 import '../services/navigation_service.dart';
 import '../widgets/progress_indicator_widget.dart';
@@ -34,19 +35,14 @@ class _Screen4State extends State<Screen4> {
   final RouteTracker _tracker = RouteTracker.instance;
   final NavigationService _navService = NavigationService();
   final TtsService _ttsService = TtsService.instance;
+  final BusPopupStateService _popupState = BusPopupStateService.instance;
+  final BusArrivalService _busArrivalService = BusArrivalService.instance;
   CrosswalkDetector? _crosswalkDetector;
   BusStopDetector? _busStopDetector;
   bool _isNavigatingToCrosswalk = false; // 카메라 중복 실행 방지 플래그
-  bool _isNavigatingToBusStop = false; // 버스 정류장 화면 중복 실행 방지 플래그
 
   double _distanceToTarget = 0.0;
   DateTime _lastVibrationTime = DateTime.now();
-
-  // 버스 도착 정보 오버레이
-  final BusArrivalService _busArrivalService = BusArrivalService();
-  bool _showBusArrivalOverlay = false;
-  BusArrival? _busArrival;
-  String? _busStationName;
 
   // 360-0 wrap-around 처리를 위한 이전 각도
   double _prevTargetAngle = 0.0;
@@ -73,6 +69,13 @@ class _Screen4State extends State<Screen4> {
     _navService.onBearingUpdate = () {
       if (mounted) {
         setState(() {}); // 센서 데이터 변경 시 즉시 UI 갱신
+      }
+    };
+
+    // 팝업 상태 변경 리스너 등록
+    _popupState.onStateChanged = () {
+      if (mounted) {
+        setState(() {}); // 팝업 상태 변경 시 UI 갱신
       }
     };
 
@@ -144,7 +147,7 @@ class _Screen4State extends State<Screen4> {
 
   // 버스 정류장 근접 감지
   void _checkBusStop(Position position) {
-    if (_isNavigatingToBusStop) return;
+    if (_popupState.isNavigatingToBusStop) return;
     if (_busStopDetector == null) return;
     _busStopDetector!.checkBusStopProximity(position);
   }
@@ -154,29 +157,24 @@ class _Screen4State extends State<Screen4> {
     _busStopDetector = BusStopDetector(
       routes: widget.routes,
       onBusStopDetected: (BusStopInfo busStopInfo) async {
-        if (_isNavigatingToBusStop) return;
-        _isNavigatingToBusStop = true;
+        if (_popupState.isNavigatingToBusStop) return;
 
         if (!mounted) return;
         await _ttsService.speak("버스 정류장에 도착했습니다.");
         HapticFeedback.vibrate();
 
-        // 버스 도착 정보 오버레이 표시
-        setState(() {
-          _showBusArrivalOverlay = true;
-          _busStationName = busStopInfo.stationName;
-        });
+        // 버스 도착 정보 오버레이 표시 (전역 상태)
+        _popupState.openPopup(busStopInfo.stationName);
 
         // 버스 도착 정보 조회 시작
         _busArrivalService.onArrivalUpdate = (arrival) {
           if (!mounted) return;
-          setState(() {
-            _busArrival = arrival;
+          // BusPopupStateService로 데이터 업데이트 (모든 화면에서 공유)
+          _popupState.updateBusArrival(arrival);
+          if (arrival != null) {
             // 응답이 올 때마다 오버레이 다시 표시 (사용자가 닫아도 자동으로 다시 켜짐)
-            if (arrival != null) {
-              _showBusArrivalOverlay = true;
-            }
-          });
+            _popupState.openPopup(busStopInfo.stationName);
+          }
           if (arrival != null) {
             _ttsService.speak("${arrival.busNumber}번 버스, ${arrival.statusMsg}");
 
@@ -194,7 +192,7 @@ class _Screen4State extends State<Screen4> {
                 ),
               ).then((_) {
                 if (mounted) {
-                  _isNavigatingToBusStop = false;
+                  _popupState.closePopup();
                 }
               });
             }
@@ -211,11 +209,7 @@ class _Screen4State extends State<Screen4> {
   // 버스 도착 오버레이 닫기
   void _closeBusArrivalOverlay() {
     _busArrivalService.stopTracking();
-    setState(() {
-      _showBusArrivalOverlay = false;
-      _busArrival = null;
-      _isNavigatingToBusStop = false;
-    });
+    _popupState.closePopup();
   }
 
   // 버스 도착 정보 오버레이 위젯 (간소화)
@@ -240,7 +234,7 @@ class _Screen4State extends State<Screen4> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  _busStationName ?? '버스 정류장',
+                  _popupState.busStationName ?? '버스 정류장',
                   style: TextStyle(
                     color: Theme.of(context).primaryColor,
                     fontSize: 14,
@@ -255,7 +249,7 @@ class _Screen4State extends State<Screen4> {
                 ),
               ],
             ),
-            if (_busArrival != null) ...[
+            if (_popupState.busArrival != null) ...[
               // 버스 번호 + 남은 시간 (한 줄로)
               Row(
                 children: [
@@ -269,7 +263,7 @@ class _Screen4State extends State<Screen4> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      _busArrival!.busNumber,
+                      _popupState.busArrival!.busNumber,
                       style: const TextStyle(
                         color: Colors.black,
                         fontSize: 14,
@@ -279,7 +273,7 @@ class _Screen4State extends State<Screen4> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    _busArrival!.statusMsg,
+                    _popupState.busArrival!.statusMsg,
                     style: const TextStyle(
                       color: Colors.orange,
                       fontSize: 14,
@@ -619,7 +613,7 @@ class _Screen4State extends State<Screen4> {
             ],
           ),
           // 버스 도착 정보 오버레이
-          if (_showBusArrivalOverlay) _buildBusArrivalOverlay(),
+          if (_popupState.showPopup) _buildBusArrivalOverlay(),
         ],
       ),
       bottomNavigationBar: Container(

@@ -36,11 +36,18 @@ class BusArrival {
 
 /// 버스 도착 정보 조회 서비스
 class BusArrivalService {
+  // Singleton 패턴
+  static final BusArrivalService _instance = BusArrivalService._internal();
+  factory BusArrivalService() => _instance;
+  static BusArrivalService get instance => _instance;
+  BusArrivalService._internal();
+
   static String? baseUrl = dotenv.env['SIDAE_SERVER_CLOUD_URL'];
   Timer? _refreshTimer;
   Function(BusArrival?)? onArrivalUpdate;
   String? _currentBusNumber;
   String? _currentStationName;
+  BusArrival? _lastArrival; // 마지막 조회 결과 캐싱
 
   /// 버스 도착 정보 조회
   Future<BusArrival?> getBusArrival(
@@ -77,6 +84,22 @@ class BusArrivalService {
       name: 'BusArrivalService',
     );
 
+    // 이미 동일한 버스/정류장을 추적 중이면 중복 호출 방지
+    if (_currentBusNumber == busNumber &&
+        _currentStationName == stationName &&
+        _refreshTimer != null) {
+      developer.log(
+        '⏭️ [BusArrivalService] 이미 추적 중 - 중복 호출 스킵',
+        name: 'BusArrivalService',
+      );
+      // 기존 캐시된 데이터가 있으면 즉시 콜백 호출
+      if (_lastArrival != null) {
+        developer.log('  - 캐시된 데이터 반환', name: 'BusArrivalService');
+        onArrivalUpdate?.call(_lastArrival);
+      }
+      return;
+    }
+
     // 이전 추적 중지 (Timer 확실히 정리)
     if (_refreshTimer != null) {
       developer.log('  - 이전 Timer 취소 중...', name: 'BusArrivalService');
@@ -89,6 +112,7 @@ class BusArrivalService {
     // 즉시 첫 조회
     developer.log('  - 첫 조회 시작', name: 'BusArrivalService');
     final arrival = await getBusArrival(busNumber, stationName);
+    _lastArrival = arrival; // 캐싱
     onArrivalUpdate?.call(arrival);
 
     // 1분마다 자동 갱신
@@ -100,6 +124,7 @@ class BusArrivalService {
         _currentBusNumber!,
         _currentStationName!,
       );
+      _lastArrival = arrival; // 캐싱
       onArrivalUpdate?.call(arrival);
     });
 
@@ -130,6 +155,7 @@ class BusArrivalService {
     _refreshTimer = null;
     _currentBusNumber = null;
     _currentStationName = null;
+    _lastArrival = null; // 캐시 초기화
     developer.log(
       '✅ [BusArrivalService] stopTracking 완료',
       name: 'BusArrivalService',
