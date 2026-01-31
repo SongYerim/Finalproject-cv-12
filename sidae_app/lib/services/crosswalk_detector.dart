@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/route_model.dart';
+import 'proximity_detector.dart';
 
 /// 횡단보도 정보 (감지된 횡단보도 + 반대편 좌표)
 class CrosswalkInfo {
@@ -16,16 +17,19 @@ class CrosswalkInfo {
 }
 
 /// 횡단보도 감지 서비스
-class CrosswalkDetector {
-  static const double proximityThreshold = 10.0; // 10m 이내
-
+///
+/// ProximityDetector를 상속받아 횡단보도 근접 감지 기능을 제공합니다.
+class CrosswalkDetector extends ProximityDetector<RouteStep> {
   List<RouteSegment> routes = [];
   Function(CrosswalkInfo)? onCrosswalkDetected;
 
-  // 이미 감지된 횡단보도 추적 (중복 감지 방지) - static으로 모든 인스턴스가 공유
-  static final Set<String> _detectedCrosswalks = {};
+  CrosswalkDetector({required this.routes, this.onCrosswalkDetected})
+    : super(proximityThreshold: 10.0); // 10m 이내
 
-  CrosswalkDetector({required this.routes, this.onCrosswalkDetected});
+  @override
+  String getItemId(RouteStep item) {
+    return ProximityUtils.createCoordinateId(item.lat, item.lng);
+  }
 
   /// GPS 위치 업데이트 시 호출
   void checkCrosswalkProximity(Position position) {
@@ -57,72 +61,73 @@ class CrosswalkDetector {
 
         if (step.isCrosswalk) {
           totalCrosswalks++;
-          // 현재 위치와 횡단보도 위치 간의 거리 계산
-          double distance = Geolocator.distanceBetween(
-            position.latitude,
-            position.longitude,
-            step.lat,
-            step.lng,
-          );
 
-          String crosswalkId = '${step.lat}_${step.lng}';
-          bool alreadyDetected = _detectedCrosswalks.contains(crosswalkId);
+          // 현재 위치와 횡단보도 위치 간의 거리 확인
+          final distance = calculateDistance(position, step.lat, step.lng);
+          final alreadyDetected = isAlreadyDetected(step);
 
           debugPrint(
             '🚶 [CrosswalkDetector] 횡단보도 발견! 거리=${distance.toStringAsFixed(1)}m, 임계값=${proximityThreshold}m, 이미감지=$alreadyDetected',
           );
 
-          // 10m 이내 근접 시
-          if (distance <= proximityThreshold) {
-            // 이미 감지된 횡단보도가 아니면 콜백 호출
-            if (!alreadyDetected) {
-              _detectedCrosswalks.add(crosswalkId);
+          // 근접 범위 내 & 이미 감지되지 않은 경우
+          if (distance <= proximityThreshold && !alreadyDetected) {
+            markAsDetected(step);
 
-              debugPrint('✅ [CrosswalkDetector] 횡단보도 감지됨! 콜백 호출');
+            debugPrint('✅ [CrosswalkDetector] 횡단보도 감지됨! 콜백 호출');
 
-              // 횡단보도 반대편 좌표 계산
-              double exitLat = step.lat;
-              double exitLng = step.lng;
+            // 횡단보도 반대편 좌표 계산
+            final exitCoords = _calculateExitCoordinates(step, segment.steps);
 
-              // 1순위: path의 마지막 점 사용 (횡단보도 반대편)
-              if (step.path.isNotEmpty && step.path.length >= 2) {
-                final lastPoint = step.path.last;
-                exitLat = lastPoint[0]; // lat
-                exitLng = lastPoint[1]; // lng
-                debugPrint(
-                  '✅ [CrosswalkDetector] exit 좌표 (path 사용): ($exitLat, $exitLng)',
-                );
-              }
-              // 2순위 (폴백): 다음 step 좌표 사용
-              else {
-                int stepIndex = segment.steps.indexOf(step);
-                if (stepIndex >= 0 && stepIndex + 1 < segment.steps.length) {
-                  final nextStep = segment.steps[stepIndex + 1];
-                  exitLat = nextStep.lat;
-                  exitLng = nextStep.lng;
-                  debugPrint(
-                    '✅ [CrosswalkDetector] exit 좌표 (다음 step 사용): ($exitLat, $exitLng)',
-                  );
-                }
-              }
+            final crosswalkInfo = CrosswalkInfo(
+              step: step,
+              exitLat: exitCoords.$1,
+              exitLng: exitCoords.$2,
+            );
 
-              final crosswalkInfo = CrosswalkInfo(
-                step: step,
-                exitLat: exitLat,
-                exitLng: exitLng,
-              );
-
-              onCrosswalkDetected?.call(crosswalkInfo);
-              return; // 한 번에 하나만 처리
-            } else {
-              debugPrint('⚠️ [CrosswalkDetector] 이미 감지된 횡단보도입니다');
-            }
+            onCrosswalkDetected?.call(crosswalkInfo);
+            return; // 한 번에 하나만 처리
+          } else if (alreadyDetected) {
+            debugPrint('⚠️ [CrosswalkDetector] 이미 감지된 횡단보도입니다');
           }
         }
       }
     }
 
     debugPrint('🔍 [CrosswalkDetector] 총 횡단보도 수: $totalCrosswalks');
+  }
+
+  /// 횡단보도 반대편 좌표 계산
+  (double, double) _calculateExitCoordinates(
+    RouteStep step,
+    List<RouteStep> steps,
+  ) {
+    double exitLat = step.lat;
+    double exitLng = step.lng;
+
+    // 1순위: path의 마지막 점 사용 (횡단보도 반대편)
+    if (step.path.isNotEmpty && step.path.length >= 2) {
+      final lastPoint = step.path.last;
+      exitLat = lastPoint[0]; // lat
+      exitLng = lastPoint[1]; // lng
+      debugPrint(
+        '✅ [CrosswalkDetector] exit 좌표 (path 사용): ($exitLat, $exitLng)',
+      );
+    }
+    // 2순위 (폴백): 다음 step 좌표 사용
+    else {
+      int stepIndex = steps.indexOf(step);
+      if (stepIndex >= 0 && stepIndex + 1 < steps.length) {
+        final nextStep = steps[stepIndex + 1];
+        exitLat = nextStep.lat;
+        exitLng = nextStep.lng;
+        debugPrint(
+          '✅ [CrosswalkDetector] exit 좌표 (다음 step 사용): ($exitLat, $exitLng)',
+        );
+      }
+    }
+
+    return (exitLat, exitLng);
   }
 
   /// 모든 횡단보도 위치 가져오기
@@ -146,12 +151,7 @@ class CrosswalkDetector {
 
       for (var step in segment.steps) {
         if (step.isCrosswalk) {
-          double distance = Geolocator.distanceBetween(
-            position.latitude,
-            position.longitude,
-            step.lat,
-            step.lng,
-          );
+          final distance = calculateDistance(position, step.lat, step.lng);
 
           if (distance < minDistance) {
             minDistance = distance;
@@ -162,10 +162,5 @@ class CrosswalkDetector {
     }
 
     return nearest;
-  }
-
-  /// 감지 기록 초기화
-  void reset() {
-    _detectedCrosswalks.clear();
   }
 }
