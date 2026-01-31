@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../services/bus_arrival_service.dart';
 import '../services/bus_detector_service.dart';
 import '../services/tts_service.dart';
+import '../utils/bus_utils.dart' as bus_utils;
 import '8.dart';
 
 class BusArrivalScreen extends StatefulWidget {
@@ -80,7 +81,8 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         _ttsService.speak("${arrival.busNumber}번 버스, ${arrival.statusMsg}");
 
         // "곧 도착" 상태 감지 → 카메라 활성화
-        if (_isBusApproachingStatus(arrival.statusMsg) && !_cameraActive) {
+        if (bus_utils.isBusApproachingStatus(arrival.statusMsg) &&
+            !_cameraActive) {
           _isBusApproaching = true;
           _startCamera();
         }
@@ -90,13 +92,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     await _arrivalService.startTracking(widget.busNumber, widget.stationName);
   }
 
-  /// "곧 도착" 상태인지 확인
-  bool _isBusApproachingStatus(String statusMsg) {
-    return statusMsg.contains('곧 도착') ||
-        statusMsg.contains('잠시 후') ||
-        statusMsg.contains('1분') ||
-        statusMsg.contains('2분');
-  }
+  // bus_utils.isBusApproachingStatus -> bus_utils.isBusApproachingStatus 로 이동됨
 
   /// 카메라 시작
   Future<void> _startCamera() async {
@@ -820,7 +816,10 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
                         Text(
                           _arrival!.statusMsg,
                           style: TextStyle(
-                            color: _isBusApproachingStatus(_arrival!.statusMsg)
+                            color:
+                                bus_utils.isBusApproachingStatus(
+                                  _arrival!.statusMsg,
+                                )
                                 ? Colors.orange
                                 : Colors.white,
                             fontSize: 16,

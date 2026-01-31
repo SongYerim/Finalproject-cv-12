@@ -92,4 +92,52 @@ class RouteTracker {
     int passedCount = pointsPassed.where((passed) => passed).length;
     return passedCount / allPathPoints.length;
   }
+
+  /// 현재 위치에서 가장 가까운 점을 찾아 업데이트
+  ///
+  /// [latitude], [longitude]: 현재 위치
+  /// [distanceCalculator]: 두 좌표 간 거리 계산 함수 (Geolocator.distanceBetween)
+  /// [passThreshold]: 통과로 인정하는 거리 (미터, 기본값 15.0)
+  ///
+  /// 반환값: 업데이트가 발생했으면 true, 아니면 false
+  bool findClosestPointAndUpdate(
+    double latitude,
+    double longitude,
+    double Function(double lat1, double lon1, double lat2, double lon2)
+    distanceCalculator, {
+    double passThreshold = 15.0,
+  }) {
+    if (allPathPoints.isEmpty) return false;
+
+    // 현재 목표부터 끝까지 모든 점들을 스캔하여 가장 가까운 점 찾기
+    int closestIndex = -1;
+    double closestDistance = double.infinity;
+
+    for (int i = currentTargetIndex; i < allPathPoints.length; i++) {
+      double distance = distanceCalculator(
+        latitude,
+        longitude,
+        allPathPoints[i].latitude,
+        allPathPoints[i].longitude,
+      );
+
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = i;
+      }
+    }
+
+    // 가장 가까운 점이 임계값 이내면 해당 점까지 모두 통과 처리
+    if (closestIndex >= 0 && closestDistance <= passThreshold) {
+      // 가장 가까운 점까지의 모든 점을 통과 처리
+      markAllPassedUpTo(closestIndex);
+      // 다음 목표를 가장 가까운 점 다음으로 설정
+      if (closestIndex + 1 < allPathPoints.length) {
+        currentTargetIndex = closestIndex + 1;
+      }
+      return true;
+    }
+
+    return false;
+  }
 }

@@ -13,6 +13,9 @@ import '../services/bus_popup_state_service.dart';
 import '../services/tts_service.dart';
 import '../services/navigation_service.dart';
 import '../widgets/progress_indicator_widget.dart';
+import '../widgets/bus_arrival_overlay.dart';
+import '../utils/bus_utils.dart' as bus_utils;
+import '../utils/math_utils.dart' as math_utils;
 import '5.dart';
 import '6.dart';
 import '7.dart';
@@ -48,13 +51,7 @@ class _Screen4State extends State<Screen4> {
   double _prevTargetAngle = 0.0;
   double _prevCurrentAngle = 0.0;
 
-  /// "곧 도착" 상태인지 확인
-  bool _isBusApproachingStatus(String statusMsg) {
-    return statusMsg.contains('곧 도착') ||
-        statusMsg.contains('잠시 후') ||
-        statusMsg.contains('1분') ||
-        statusMsg.contains('2분');
-  }
+  // _isBusApproachingStatus -> bus_utils.isBusApproachingStatus 로 이동됨
 
   @override
   void initState() {
@@ -189,7 +186,7 @@ class _Screen4State extends State<Screen4> {
             _ttsService.speak("${arrival.busNumber}번 버스, ${arrival.statusMsg}");
 
             // "곧 도착" 상태 감지 시 BusArrivalScreen으로 화면 전환
-            if (_isBusApproachingStatus(arrival.statusMsg)) {
+            if (bus_utils.isBusApproachingStatus(arrival.statusMsg)) {
               // 곧 도착 상태일 때 추적 종료
               _busArrivalService.stopTracking();
               _closeBusArrivalOverlay();
@@ -231,130 +228,23 @@ class _Screen4State extends State<Screen4> {
     _popupState.closePopup();
   }
 
-  // 버스 도착 정보 오버레이 위젯 (간소화)
+  // 버스 도착 정보 오버레이 위젯 -> BusArrivalOverlay로 이동됨
   Widget _buildBusArrivalOverlay() {
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: 100,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Theme.of(context).primaryColor, width: 2),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 간소화된 헤더
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _popupState.busStationName ?? '버스 정류장',
-                  style: TextStyle(
-                    color: Theme.of(context).primaryColor,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.grey, size: 20),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: _closeBusArrivalOverlay,
-                ),
-              ],
-            ),
-            if (_popupState.busArrival != null) ...[
-              // 버스 번호 + 남은 시간 (한 줄로)
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      _popupState.busArrival!.busNumber,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _popupState.busArrival!.statusMsg,
-                    style: const TextStyle(
-                      color: Colors.orange,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ] else
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(8),
-                  child: CircularProgressIndicator(
-                    color: Colors.blue,
-                    strokeWidth: 2,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
+    return BusArrivalOverlay(
+      popupState: _popupState,
+      onClose: _closeBusArrivalOverlay,
     );
   }
 
-  // 현재 위치를 기준으로 지나간 점들을 체크
+  // 현재 위치를 기준으로 지나간 점들을 체크 -> RouteTracker로 로직 이동
   void _checkAndUpdatePassedPoints(Position position) {
-    if (_tracker.allPathPoints.isEmpty) return;
-
-    const double passThreshold = 15.0;
-
-    // 현재 목표부터 끝까지 모든 점들을 스캔하여 가장 가까운 점 찾기
-    int closestIndex = -1;
-    double closestDistance = double.infinity;
-
-    for (
-      int i = _tracker.currentTargetIndex;
-      i < _tracker.allPathPoints.length;
-      i++
-    ) {
-      double distance = Geolocator.distanceBetween(
-        position.latitude,
-        position.longitude,
-        _tracker.allPathPoints[i].latitude,
-        _tracker.allPathPoints[i].longitude,
-      );
-
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestIndex = i;
-      }
-    }
-
-    // 가장 가까운 점이 임계값 이내면 해당 점까지 모두 통과 처리
-    if (closestIndex >= 0 && closestDistance <= passThreshold) {
-      setState(() {
-        // 가장 가까운 점까지의 모든 점을 통과 처리
-        _tracker.markAllPassedUpTo(closestIndex);
-        // 다음 목표를 가장 가까운 점 다음으로 설정
-        if (closestIndex + 1 < _tracker.allPathPoints.length) {
-          _tracker.currentTargetIndex = closestIndex + 1;
-        }
-      });
+    final updated = _tracker.findClosestPointAndUpdate(
+      position.latitude,
+      position.longitude,
+      Geolocator.distanceBetween,
+    );
+    if (updated) {
+      setState(() {});
     }
   }
 
@@ -376,17 +266,7 @@ class _Screen4State extends State<Screen4> {
     }
   }
 
-  // 각도 정규화: 360도 wrap-around 시 짧은 경로로 회전
-  double _normalizeAngle(double newAngle, double prevAngle) {
-    double diff = newAngle - prevAngle;
-    // 180도 이상 차이나면 반대 방향이 더 짧음
-    if (diff > math.pi) {
-      newAngle -= 2 * math.pi; // 360도 빼기
-    } else if (diff < -math.pi) {
-      newAngle += 2 * math.pi; // 360도 더하기
-    }
-    return newAngle;
-  }
+  // _normalizeAngle -> math_utils.normalizeAngle 로 이동됨
 
   // 방향 위젯 빌더
   Widget _buildDirectionWidget({
@@ -444,8 +324,8 @@ class _Screen4State extends State<Screen4> {
     double currentAngle = currentDirection * (math.pi / 180);
 
     // 360-0 wrap-around 처리 (짧은 경로로 회전)
-    targetAngle = _normalizeAngle(targetAngle, _prevTargetAngle);
-    currentAngle = _normalizeAngle(currentAngle, _prevCurrentAngle);
+    targetAngle = math_utils.normalizeAngle(targetAngle, _prevTargetAngle);
+    currentAngle = math_utils.normalizeAngle(currentAngle, _prevCurrentAngle);
 
     // 다음 프레임을 위해 저장
     _prevTargetAngle = targetAngle;
