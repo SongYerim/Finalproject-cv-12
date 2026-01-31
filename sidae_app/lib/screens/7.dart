@@ -412,10 +412,18 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
               child: _buildCroppedImagePreview(),
             ),
 
-          // 5. 감지 상태 표시 (좌측 상단)
-          Positioned(top: 100, left: 16, child: _buildDetectionStatusBadge()),
+          // 5. 타야할 버스 정보 표시 (좌측 상단)
+          Positioned(top: 100, left: 16, child: _buildTargetBusInfo()),
 
-          // 6. 매칭 결과 텍스트 (중앙 상단)
+          // 6. 감지 상태 표시 (좌측 상단, 타야할 버스 정보 아래)
+          if (_cameraActive)
+            Positioned(
+              top: _arrival != null && _arrival!.plateNo.isNotEmpty ? 200 : 170,
+              left: 16,
+              child: _buildDetectionStatusBadge(),
+            ),
+
+          // 7. 매칭 결과 텍스트 (중앙 상단)
           if (_matchStatus == 'MATCH')
             Positioned(
               top: 150,
@@ -477,7 +485,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
               ),
             ),
 
-          // 7. DEBUG 버튼 (좌측 하단)
+          // 8. DEBUG 버튼 (좌측 하단)
           Positioned(
             left: 16,
             bottom: 140,
@@ -650,6 +658,107 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
             // 라벨
           ],
         ),
+      ),
+    );
+  }
+
+  /// 타야할 버스 정보 표시
+  Widget _buildTargetBusInfo() {
+    // 차량 번호 뒤 4자리 추출
+    String? plateDisplay;
+    if (_arrival != null && _arrival!.plateNo.isNotEmpty) {
+      String plate = _arrival!.plateNo;
+      plateDisplay = plate.length >= 4
+          ? plate.substring(plate.length - 4)
+          : plate;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 제목
+          const Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.white, size: 16),
+              SizedBox(width: 6),
+              Text(
+                '타야할 버스',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 버스 번호
+          Row(
+            children: [
+              const Text(
+                '번호: ',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              Text(
+                widget.busNumber,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          // 차량 번호 (있는 경우만)
+          if (plateDisplay != null) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Text(
+                  '차량: ',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                Text(
+                  plateDisplay,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          // OCR 결과 표시 (있는 경우만)
+          if (_lastOcrResult.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Divider(color: Colors.white38, height: 1),
+            const SizedBox(height: 8),
+            const Text(
+              'OCR 결과:',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _lastOcrResult,
+              style: TextStyle(
+                color: _matchStatus == 'MATCH'
+                    ? Colors.greenAccent
+                    : Colors.orange,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
