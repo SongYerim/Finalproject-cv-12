@@ -33,7 +33,7 @@ class RouteTrackingMapScreen extends StatefulWidget {
 class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   NaverMapController? _mapController;
   final RouteTracker _tracker = RouteTracker.instance;
-  final NavigationService _navService = NavigationService();
+  final NavigationService _navService = NavigationService.instance;
   final TtsService _ttsService = TtsService.instance;
   final BusPopupStateService _popupState = BusPopupStateService.instance;
   final BusArrivalService _busArrivalService = BusArrivalService.instance;
@@ -78,6 +78,9 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         setState(() {}); // 팝업 상태 변경 시 UI 갱신
       }
     };
+
+    // GPS 위치 추적 시작
+    _navService.startLocationTracking(onUpdate: _onPositionUpdate);
   }
 
   void _initCrosswalkDetector() {
@@ -113,7 +116,8 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
   @override
   void dispose() {
-    _navService.dispose();
+    // NavigationService는 싱글톤 인스턴스로 dispose 하면 안 됨
+    // _navService.dispose(); 제거
     super.dispose();
   }
 

@@ -33,7 +33,7 @@ class Screen4 extends StatefulWidget {
 
 class _Screen4State extends State<Screen4> {
   final RouteTracker _tracker = RouteTracker.instance;
-  final NavigationService _navService = NavigationService();
+  final NavigationService _navService = NavigationService.instance;
   final TtsService _ttsService = TtsService.instance;
   final BusPopupStateService _popupState = BusPopupStateService.instance;
   final BusArrivalService _busArrivalService = BusArrivalService.instance;
@@ -116,7 +116,16 @@ class _Screen4State extends State<Screen4> {
             ),
           ),
         ).then((_) {
-          if (mounted) _isNavigatingToCrosswalk = false; // 카메라에서 돌아오면 플래그 해제
+          // 카메라에서 돌아오면 콜백 재등록
+          if (mounted) {
+            _isNavigatingToCrosswalk = false;
+            // 센서 방향 업데이트 콜백 재등록
+            _navService.onBearingUpdate = () {
+              if (mounted) {
+                setState(() {});
+              }
+            };
+          }
         });
       },
     );
@@ -134,7 +143,8 @@ class _Screen4State extends State<Screen4> {
 
   @override
   void dispose() {
-    _navService.dispose();
+    // NavigationService는 싱글톤 인스턴스로 dispose 하면 안 됨
+    // _navService.dispose(); 제거
     super.dispose();
   }
 
@@ -193,8 +203,15 @@ class _Screen4State extends State<Screen4> {
                   ),
                 ),
               ).then((_) {
+                // 버스 탑승 화면에서 돌아오면 콜백 재등록
                 if (mounted) {
                   _popupState.closePopup();
+                  // 센서 방향 업데이트 콜백 재등록
+                  _navService.onBearingUpdate = () {
+                    if (mounted) {
+                      setState(() {});
+                    }
+                  };
                 }
               });
             }
@@ -634,8 +651,15 @@ class _Screen4State extends State<Screen4> {
                   ),
                 ),
               ).then((_) {
-                // Screen5에서 돌아오면 GPS 추적 재개
+                // Screen5에서 돌아오면 콜백 재등록
                 if (mounted) {
+                  // 센서 방향 업데이트 콜백 재등록
+                  _navService.onBearingUpdate = () {
+                    if (mounted) {
+                      setState(() {});
+                    }
+                  };
+                  // GPS 추적 재개
                   _navService.startLocationTracking(
                     onUpdate: _onPositionUpdate,
                   );

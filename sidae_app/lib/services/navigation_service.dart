@@ -5,8 +5,15 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import '../services/route_tracker.dart';
 
-/// GPS 및 센서 기반 네비게이션 서비스 (하이브리드: 센서=네이티브, GPS=Geolocator)
+/// GPS 및 센서 기반 네비게이션 서비스 (싱글톤)
 class NavigationService {
+  // 싱글톤 인스턴스
+  static final NavigationService _instance = NavigationService._internal();
+  static NavigationService get instance => _instance;
+
+  // private 생성자
+  NavigationService._internal();
+
   // 네이티브 채널
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
@@ -26,16 +33,23 @@ class NavigationService {
   double routeBearing = -1.0;
   double travelingBearing = -1.0;
 
-  // GPS 기반 방향 계산용
-  List<Position> _recentPositions = [];
-  static const double _minDistanceForBearing = 1.0;
+  // GPS 기반 방향 계산 제거 (센서 사용)
 
   // 콜백 함수들
   Function(Position)? onPositionUpdate;
   Function()? onBearingUpdate;
 
+  // 초기화 상태 플래그
+  bool _sensorInitialized = false;
+
   /// 센서 초기화 (네이티브 Magnetometer 사용)
   void initSensor() {
+    // 이미 초기화되었으면 스킵
+    if (_sensorInitialized) {
+      print('✅ 센서 이미 초기화됨 - 스킵');
+      return;
+    }
+    _sensorInitialized = true;
     _startNativeNavigation();
     _startNativeEventListening();
   }
@@ -56,7 +70,8 @@ class NavigationService {
       (result) {
         if (result is Map && result['type'] == 'navigation') {
           deviceHeading = (result['deviceHeading'] as num?)?.toDouble() ?? 0.0;
-          // routeBearing과 travelingBearing은 Flutter에서 계산 (기존 로직 유지)
+          // 진행 방향 = 디바이스 방향 (센서 기반)
+          travelingBearing = deviceHeading;
           onBearingUpdate?.call();
         }
       },
@@ -66,65 +81,32 @@ class NavigationService {
     );
   }
 
-  /// GPS 위치 추적 시작 (Geolocator 사용 - 기존 호환성 유지)
+  /// GPS 위치 추적 시작 (위치와 경로 방향만 계산)
   void startLocationTracking({required Function(Position) onUpdate}) {
     onPositionUpdate = onUpdate;
 
-    _positionSubscription =
-        Stream.periodic(const Duration(milliseconds: 500), (count) => count)
-            .asyncMap((_) async {
-              return await Geolocator.getCurrentPosition(
-                desiredAccuracy: LocationAccuracy.high,
-              );
-            })
-            .listen((Position position) {
-              _updateRecentPositions(position);
-              _calculateTravelingBearing();
-              _updateRouteBearing(position);
-              onPositionUpdate?.call(position);
-            });
+    // 이미 추적 중이면 콜백만 갱신
+    if (_positionSubscription != null) {
+      print('✅ GPS 추적 이미 진행 중 - 콜백만 갱신');
+      return;
+    }
+
+    _positionSubscription = Stream.periodic(const Duration(milliseconds: 500))
+        .asyncMap((_) async {
+          return await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+          );
+        })
+        .listen((Position position) {
+          _updateRouteBearing(position);
+          onPositionUpdate?.call(position);
+        });
   }
 
   /// GPS 위치 추적 중지 (센서는 유지)
   void stopLocationTracking() {
     _positionSubscription?.cancel();
     _positionSubscription = null;
-    _recentPositions.clear();
-  }
-
-  /// 최근 GPS 좌표 저장
-  void _updateRecentPositions(Position position) {
-    _recentPositions.add(position);
-    if (_recentPositions.length > 2) {
-      _recentPositions.removeAt(0);
-    }
-  }
-
-  /// 진행 방향 계산 (GPS 기반)
-  void _calculateTravelingBearing() {
-    if (_recentPositions.length < 2) return;
-
-    final prev = _recentPositions[0];
-    final curr = _recentPositions[1];
-
-    double distance = Geolocator.distanceBetween(
-      prev.latitude,
-      prev.longitude,
-      curr.latitude,
-      curr.longitude,
-    );
-
-    if (distance < _minDistanceForBearing) return;
-
-    double bearing = Geolocator.bearingBetween(
-      prev.latitude,
-      prev.longitude,
-      curr.latitude,
-      curr.longitude,
-    );
-    if (bearing < 0) bearing += 360;
-
-    travelingBearing = bearing;
   }
 
   /// 경로상 가야 할 방향 계산
