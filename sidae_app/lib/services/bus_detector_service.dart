@@ -32,6 +32,19 @@ class BusDetection {
       'BusDetection($label, ${(confidence * 100).toStringAsFixed(1)}%, bbox: $bbox)';
 }
 
+/// 태그 인식 결과
+class TagRecognitionResult {
+  final Uint8List imageBytes;
+  final String response;
+  final bool success;
+
+  TagRecognitionResult({
+    required this.imageBytes,
+    required this.response,
+    required this.success,
+  });
+}
+
 /// 버스 인식 서비스
 ///
 /// 네이티브 YOLO + EventChannel을 통해 버스를 감지합니다.
@@ -171,6 +184,127 @@ class BusDetectorService {
       '✅ [VLM] 응답 수신: "태그기를 찾았습니다!" (Confidence: 0.98)',
       name: 'BusDetectorService',
     );
+  }
+
+  /// 태그 인식 요청 (mode: tag_)
+  ///
+  /// 현재 카메라 프레임을 캡처하여 API 서버로 전송합니다.
+  /// Returns: TagRecognitionResult (이미지, 응답, 성공 여부)
+  Future<TagRecognitionResult?> sendTagRecognition() async {
+    if (!_isActive) {
+      developer.log(
+        '⚠️ [BusDetectorService] 카메라가 활성화되지 않음',
+        name: 'BusDetectorService',
+      );
+      return null;
+    }
+
+    try {
+      developer.log(
+        '🏷️ [BusDetectorService] 태그 인식 시작',
+        name: 'BusDetectorService',
+      );
+
+      final baseUrl = ApiService.baseUrl;
+      final uri = Uri.parse('$baseUrl/bus-ai/bus-recognition');
+
+      // 네이티브에서 현재 프레임 캡처 (스냅샷 사용)
+      developer.log('📸 스냅샷 캡처 요청...', name: 'BusDetectorService');
+
+      // 스냅샷을 캡처하고 콜백으로 받기 위한 Completer 사용
+      final completer = Completer<Uint8List?>();
+
+      // 일시적으로 콜백 변경
+      final originalCallback = onSnapshotCaptured;
+      onSnapshotCaptured = (imageBytes) {
+        developer.log(
+          '📸 스냅샷 수신 (${imageBytes.length} bytes)',
+          name: 'BusDetectorService',
+        );
+        if (!completer.isCompleted) {
+          completer.complete(imageBytes);
+        }
+      };
+
+      // 스냅샷 요청
+      await _channel.invokeMethod('captureSnapshot');
+
+      // 최대 5초 대기
+      final imageBytes = await completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          developer.log('⏱️ 스냅샷 캡처 타임아웃', name: 'BusDetectorService');
+          return null;
+        },
+      );
+
+      // 콜백 복원
+      onSnapshotCaptured = originalCallback;
+
+      if (imageBytes == null) {
+        developer.log('❌ 이미지 데이터 없음', name: 'BusDetectorService');
+        return null;
+      }
+
+      developer.log(
+        '📸 프레임 캡처 완료 (${imageBytes.length} bytes)',
+        name: 'BusDetectorService',
+      );
+
+      // API 서버로 전송
+      final request = http.MultipartRequest('POST', uri)
+        ..fields['mode'] = 'tag_'
+        ..files.add(
+          http.MultipartFile.fromBytes(
+            'file',
+            imageBytes,
+            filename: 'tag_recognition.jpg',
+            contentType: MediaType('image', 'jpeg'),
+          ),
+        );
+
+      developer.log('📤 태그 인식 요청 전송...', name: 'BusDetectorService');
+
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          developer.log('⏱️ 태그 인식 타임아웃', name: 'BusDetectorService');
+          throw TimeoutException('Tag recognition timeout');
+        },
+      );
+
+      developer.log(
+        '📥 응답 수신: ${streamedResponse.statusCode}',
+        name: 'BusDetectorService',
+      );
+
+      if (streamedResponse.statusCode == 200) {
+        final response = await http.Response.fromStream(streamedResponse);
+        final responseBody = utf8.decode(response.bodyBytes);
+        developer.log('✅ 태그 인식 성공: $responseBody', name: 'BusDetectorService');
+
+        return TagRecognitionResult(
+          imageBytes: imageBytes,
+          response: responseBody,
+          success: true,
+        );
+      } else {
+        final errorMsg = '서버 오류: ${streamedResponse.statusCode}';
+        developer.log(
+          '❌ 태그 인식 실패: ${streamedResponse.statusCode}',
+          name: 'BusDetectorService',
+        );
+
+        return TagRecognitionResult(
+          imageBytes: imageBytes,
+          response: errorMsg,
+          success: false,
+        );
+      }
+    } catch (e) {
+      developer.log('❌ 태그 인식 오류: $e', name: 'BusDetectorService');
+      return null;
+    }
   }
 
   /// 감지 결과 처리

@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import '../services/bus_arrival_service.dart';
 import '../services/bus_detector_service.dart';
 import '../services/tts_service.dart';
+import '8.dart';
 
 class BusArrivalScreen extends StatefulWidget {
   final String busNumber;
@@ -42,6 +44,13 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
   String _lastOcrResult = '';
   int? _lastResponseTimeMs; // VLM 응답 시간
   Timer? _mismatchTimer; // MISMATCH 상태 유지 타이머
+
+  // 태그 인식 상태
+  int _tagRecognitionCount = 0;
+  bool _isRecognizingTag = false;
+  String _tagStatus = '';
+  Uint8List? _tagCapturedImage; // 태그 인식용 캐처 이미지
+  String? _tagResponse; // 태그 인식 서버 응답
 
   @override
   void initState() {
@@ -194,13 +203,20 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
     if (isNumberMatch || isPlateMatch) {
       developer.log('✅ [7.dart] 매칭 성공!', name: 'BusArrivalScreen');
-      setState(() {
-        _matchStatus = 'MATCH';
-      });
-      _ttsService.speak("탑승할 버스입니다! ${widget.busNumber}번");
 
-      // 매칭 성공 시 추론 중지 (배터리 절약)
-      _busDetectorService.stopInference();
+      // 중복 실행 방지
+      if (_matchStatus != 'MATCH') {
+        setState(() {
+          _matchStatus = 'MATCH';
+        });
+        _ttsService.speak("탑승할 버스입니다! ${widget.busNumber}번");
+
+        // 매칭 성공 시 추론 중지 (배터리 절약)
+        _busDetectorService.stopInference();
+
+        // 태그 인식 시작
+        _startTagRecognition();
+      }
     } else {
       developer.log('❌ [7.dart] 매칭 실패', name: 'BusArrivalScreen');
       if (_matchStatus != 'MATCH') {
@@ -220,6 +236,133 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         // _ttsService.speak("다른 버스입니다.");
       }
     }
+  }
+
+  /// 태그 인식 시작
+  Future<void> _startTagRecognition() async {
+    setState(() {
+      _isRecognizingTag = true;
+      _tagRecognitionCount = 0;
+    });
+
+    // 버스 탑승을 위해 5초 대기
+    developer.log('⏰ [태그 인식] 5초 후 시작...', name: 'BusArrivalScreen');
+    _ttsService.speak('5초 후 태그 인식을 시작합니다');
+    await Future.delayed(const Duration(seconds: 5));
+
+    developer.log('🏷️ [태그 인식] 시작', name: 'BusArrivalScreen');
+    _ttsService.speak('태그 인식 시작');
+    await _recognizeTagSequentially();
+  }
+
+  /// 태그 인식 순차 실행
+  Future<void> _recognizeTagSequentially() async {
+    if (_tagRecognitionCount >= 3) {
+      // 3번 완료 → 8.dart로 이동
+      developer.log('🏷️ [태그 인식] 3번 완료 - 8.dart로 이동', name: 'BusArrivalScreen');
+      _navigateToBusOnlyScreen();
+      return;
+    }
+
+    _tagRecognitionCount++;
+    setState(() {
+      _tagStatus = '태그 인식 중... ($_tagRecognitionCount/3)';
+    });
+    developer.log(
+      '🏷️ [태그 인식] 시도 $_tagRecognitionCount/3 시작',
+      name: 'BusArrivalScreen',
+    );
+
+    // API 서버로 전송 (mode: tag_)
+    final result = await _busDetectorService.sendTagRecognition();
+
+    if (result != null) {
+      String displayText = '';
+      String ttsText = '';
+
+      // JSON 파싱하여 result 추출
+      try {
+        final jsonResponse = json.decode(result.response);
+        final resultData = jsonResponse['result'];
+
+        if (resultData != null) {
+          // found 필드 확인
+          final found = resultData['found'];
+          if (found == false || resultData['error'] != null) {
+            displayText = '승차태그를 찾을 수 없습니다';
+            ttsText = '승차태그를 찾을 수 없습니다';
+          } else {
+            // result 데이터를 문자열로 변환
+            final resultStr = resultData.toString();
+            displayText = resultStr;
+
+            // TTS용으로 간결하게 변환
+            if (resultData is Map) {
+              final parts = <String>[];
+              resultData.forEach((key, value) {
+                if (key != 'found' && key != 'error') {
+                  parts.add('$key: $value');
+                }
+              });
+              ttsText = parts.join(', ');
+            } else {
+              ttsText = resultStr;
+            }
+          }
+        } else {
+          displayText = result.response;
+          ttsText = '태그 인식 실패';
+        }
+      } catch (e) {
+        // JSON 파싱 실패 시 원본 표시
+        developer.log('JSON 파싱 실패: $e', name: 'BusArrivalScreen');
+        displayText = result.response;
+        ttsText = '태그 인식 실패';
+      }
+
+      setState(() {
+        _tagCapturedImage = result.imageBytes;
+        _tagResponse = displayText;
+      });
+
+      if (result.success) {
+        developer.log(
+          '✅ [태그 인식] $_tagRecognitionCount/3 성공: $displayText',
+          name: 'BusArrivalScreen',
+        );
+        // TTS로 응답 읽어주기
+        _ttsService.speak('태그 $_tagRecognitionCount번: $ttsText');
+      } else {
+        developer.log(
+          '⚠️ [태그 인식] $_tagRecognitionCount/3 실패: $displayText',
+          name: 'BusArrivalScreen',
+        );
+        _ttsService.speak('태그 인식 실패');
+      }
+    } else {
+      developer.log(
+        '⚠️ [태그 인식] $_tagRecognitionCount/3 실패 (계속 진행)',
+        name: 'BusArrivalScreen',
+      );
+      _ttsService.speak('태그 인식 실패');
+    }
+
+    // 다음 시도까지 1초 대기 (디버깅 용이성)
+    developer.log('⏰ [태그 인식] 1초 대기 후 다음 시도...', name: 'BusArrivalScreen');
+    await Future.delayed(const Duration(seconds: 1));
+
+    // 서버 응답 받은 후 다음 전송
+    await _recognizeTagSequentially();
+  }
+
+  /// 8.dart(BusOnlyScreen)로 이동
+  void _navigateToBusOnlyScreen() {
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const BusOnlyScreen()),
+    );
   }
 
   /// 탑승 시뮬레이션 시작 (Debug)
@@ -481,6 +624,90 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
                       ],
                     ],
                   ),
+                ),
+              ),
+            ),
+
+          // 태그 인식 결과 표시
+          if (_isRecognizingTag && _tagCapturedImage != null)
+            Positioned(
+              bottom: 100,
+              left: 16,
+              right: 16,
+              child: Container(
+                height: 250,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFFFD400), width: 2),
+                ),
+                child: Column(
+                  children: [
+                    // 헤더
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFFFD400),
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(14),
+                          topRight: Radius.circular(14),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.credit_card, color: Colors.black),
+                          const SizedBox(width: 8),
+                          Text(
+                            _tagStatus,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // 이미지와 응답
+                    Expanded(
+                      child: Row(
+                        children: [
+                          // 캡처된 이미지
+                          Expanded(
+                            flex: 2,
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.memory(
+                                  _tagCapturedImage!,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                          ),
+                          // 서버 응답
+                          Expanded(
+                            flex: 3,
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Center(
+                                child: Text(
+                                  _tagResponse ?? '응답 대기 중...',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

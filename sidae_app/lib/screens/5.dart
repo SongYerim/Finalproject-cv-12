@@ -191,6 +191,8 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
             // "곧 도착" 상태 감지 시 BusArrivalScreen으로 화면 전환
             if (_isBusApproachingStatus(arrival.statusMsg)) {
+              // 곧 도착 상태일 때 추적 종료
+              _busArrivalService.stopTracking();
               _closeBusArrivalOverlay();
               Navigator.push(
                 context,
@@ -217,9 +219,9 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
     );
   }
 
-  // 버스 도착 오버레이 닫기
+  // 버스 도착 오버레이 닫기 (추적은 계속)
   void _closeBusArrivalOverlay() {
-    _busArrivalService.stopTracking();
+    // stopTracking() 호출 제거 - 팝업 닫어도 백그라운드에서 계속 갱신
     _popupState.closePopup();
   }
 
