@@ -56,7 +56,7 @@ class _ArrivalScreenState extends State<ArrivalScreen>
   Future<void> _playArrivalFeedback() async {
     // 강한 햅틱 피드백 (3회 연속)
     for (int i = 0; i < 3; i++) {
-      HapticFeedback.heavyImpact();
+      HapticFeedback.vibrate();
       await Future.delayed(const Duration(milliseconds: 200));
     }
 
@@ -69,7 +69,7 @@ class _ArrivalScreenState extends State<ArrivalScreen>
 
   /// 홈으로 돌아가기
   void _goHome() {
-    HapticFeedback.mediumImpact();
+    HapticFeedback.heavyImpact();
 
     // RouteTracker 상태 초기화
     RouteTracker.instance.reset();

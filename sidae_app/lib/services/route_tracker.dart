@@ -320,7 +320,10 @@ class RouteTracker {
     }
   }
 
-  /// RouteStep들의 path 범위를 기반으로 현재 단계 찾기
+  /// RouteStep들의 시작점 좌표 기반으로 현재 단계 찾기
+  ///
+  /// 핵심 로직: 현재 위치가 어떤 step의 시작점(lat/lng)에 도달하면
+  /// 해당 step으로 전환하여 description이 시작점에서 안내되도록 함
   int _findStepIndexByPosition(RouteSegment segment, int pointInSegment) {
     // steps 배열이 비어있으면 stepDescription 기반으로 fallback
     if (segment.steps.isEmpty) {
@@ -341,50 +344,56 @@ class RouteTracker {
       return stepIndex;
     }
 
-    // 현재 좌표가 도착 step의 좌표와 일치하는지 확인
-    if (segment.steps.isNotEmpty &&
-        pointInSegment >= 0 &&
-        pointInSegment < segment.pathCoordinates.length) {
-      final lastStep = segment.steps.last;
-      // 도착 step은 보통 path가 비어있고 lat/lng만 있음
-      if (lastStep.path.isEmpty) {
-        final currentCoord = segment.pathCoordinates[pointInSegment];
-        // 좌표가 도착 지점과 일치하면 도착 단계 반환
-        if (_coordsMatch(
-          currentCoord.latitude,
-          currentCoord.longitude,
-          lastStep.lat,
-          lastStep.lng,
-        )) {
-          return segment.steps.length - 1;
-        }
+    // 현재 좌표 가져오기
+    if (pointInSegment < 0 ||
+        pointInSegment >= segment.pathCoordinates.length) {
+      return 0;
+    }
+    final currentCoord = segment.pathCoordinates[pointInSegment];
+
+    // [핵심] 각 step의 시작점(lat/lng)과 현재 좌표를 비교
+    // 뒤에서부터 검사하여 가장 최근에 지나친 step 시작점 찾기
+    for (int stepIdx = segment.steps.length - 1; stepIdx >= 0; stepIdx--) {
+      final step = segment.steps[stepIdx];
+
+      // 현재 좌표가 이 step의 시작점과 일치하면 해당 step 반환
+      if (_coordsMatch(
+        currentCoord.latitude,
+        currentCoord.longitude,
+        step.lat,
+        step.lng,
+      )) {
+        return stepIdx;
       }
     }
 
-    // RouteStep들의 누적 path 범위로 현재 단계 찾기
+    // 정확히 일치하는 시작점이 없으면: 누적 path 범위로 판단
+    // 단, 현재 위치 이후의 step 시작점을 찾아 하나 전 step 반환
     int accumulatedPathPoints = 0;
-    int lastValidStepIdx = 0;
-
     for (int stepIdx = 0; stepIdx < segment.steps.length; stepIdx++) {
       final step = segment.steps[stepIdx];
       final stepPathCount = step.path.length;
 
-      // 현재 포인트가 이 step의 범위 안에 있는지 확인
+      // step의 path 시작 인덱스
+      final stepStartIdx = accumulatedPathPoints;
+
+      // 현재 포인트가 이 step의 path 범위 시작 이전이면 이전 step
+      if (stepIdx > 0 && pointInSegment < stepStartIdx) {
+        return stepIdx - 1;
+      }
+
+      // 현재 포인트가 이 step의 범위 안에 있으면 이 step 반환
       if (stepPathCount > 0 &&
-          pointInSegment < accumulatedPathPoints + stepPathCount) {
+          pointInSegment >= stepStartIdx &&
+          pointInSegment < stepStartIdx + stepPathCount) {
         return stepIdx;
       }
 
-      // path가 있는 마지막 step 기록 (도착 전 단계)
-      if (stepPathCount > 0) {
-        lastValidStepIdx = stepIdx;
-      }
       accumulatedPathPoints += stepPathCount;
     }
 
-    // 모든 step의 path 범위를 초과했지만 도착 좌표가 아닌 경우:
-    // 마지막 유효 단계(도착 직전 단계)를 반환
-    return lastValidStepIdx;
+    // 모든 범위를 초과한 경우: 마지막 step (도착) 반환
+    return segment.steps.length - 1;
   }
 
   /// 두 좌표가 일치하는지 확인 (부동소수점 비교)

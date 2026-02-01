@@ -219,10 +219,10 @@ class _HomeScreenState extends State<HomeScreen>
         _recognizedDestination = "";
       });
 
-      // 진동 피드백 (기획서 3.5: 중요 액션에 진동)
-      HapticFeedback.mediumImpact();
+      // 진동 피드백 (기획서 3.5: 중요 액션에 진동) - heavyImpact로 상향
+      HapticFeedback.heavyImpact();
 
-      // ✅ TTS 안내 추가 (짧게)
+      // ✅ TTS 안내 추가
       await _speak("말씀하세요");
 
       // ✅ 펀스 애니메이션 & 주기적 진동 시작
@@ -253,13 +253,13 @@ class _HomeScreenState extends State<HomeScreen>
     // 펀스 애니메이션 시작 (반복)
     _pulseController.repeat(reverse: true);
 
-    // 주기적 진동 (1.5초마다 가벼운 진동)
+    // 주기적 진동 (1.5초마다) - light -> medium으로 상향
     _hapticTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
       if (!_isListening) {
         timer.cancel();
         return;
       }
-      HapticFeedback.lightImpact();
+      HapticFeedback.mediumImpact();
     });
   }
 
@@ -286,22 +286,21 @@ class _HomeScreenState extends State<HomeScreen>
           setState(() {
             _step = SttStep.ready;
           });
-          return; // 여기서 함수 종료 (에러 방지)
+          return;
         }
       }
 
-      // 2. 권한이 '영구적으로' 거부된 상태라면 (설정 앱 유도)
+      // 2. 권한이 '영구적으로' 거부된 상태라면
       if (permission == LocationPermission.deniedForever) {
         _speak("위치 권한이 꺼져 있습니다. 스마트폰 설정에서 권한을 켜주세요.");
         if (!mounted) return;
         setState(() {
           _step = SttStep.ready;
         });
-
-        // (선택) 설정 화면으로 바로 보내주는 코드
         await Geolocator.openAppSettings();
         return;
       }
+
       // 1) 현재 위치(GPS) 가져오기
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -323,8 +322,7 @@ class _HomeScreenState extends State<HomeScreen>
       double endLng = placeData['longitude'];
       String placeName = placeData['name'];
 
-      // 3) 경로 탐색 (내 위치 -> 목적지 좌표)
-      // 이 단계는 2.dart(RouteSearchScreen)에서 수행합니다.
+      // 3) 경로 탐색 화면으로 이동
       if (!mounted) return;
 
       Navigator.push(
@@ -340,7 +338,6 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       );
     } catch (e) {
-      // 에러 핸들링
       if (!mounted) return;
       _speak("오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
       setState(() {
@@ -363,15 +360,15 @@ class _HomeScreenState extends State<HomeScreen>
             now.difference(_lastBackPressTime!) > const Duration(seconds: 3)) {
           // 첫 번째 뒤로가기
           _lastBackPressTime = now;
-          HapticFeedback.mediumImpact();
+          // medium -> heavy로 상향
+          HapticFeedback.heavyImpact();
 
-          // 시각적 피드백: SnackBar 표시
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Row(
                   children: [
-                    Icon(Icons.exit_to_app, color: Colors.white),
+                    const Icon(Icons.exit_to_app, color: Colors.white),
                     const SizedBox(width: 12),
                     const Text(
                       '종료하려면 한 번 더 눌러주세요',
@@ -392,27 +389,24 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             );
           }
-
           await _speak("종료하려면 한 번 더 눌러주세요");
         } else {
-          // 3초 이내 두 번째 뒤로가기 - 종료
+          // 두 번째 뒤로가기 - 종료
           if (context.mounted) {
             ScaffoldMessenger.of(context).clearSnackBars();
           }
-          HapticFeedback.heavyImpact();
+          // heavy -> vibrate로 상향
+          HapticFeedback.vibrate();
           await _speak("앱을 종료합니다");
-          // 앱 완전 종료
           SystemNavigator.pop();
         }
       },
       child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-
-        // 화면 아무 곳이나 누르면 듣기 시작 (요구사항 유지)
+        // 화면 아무 곳이나 누르면 듣기 시작
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () {
-            // ready 화면에서만 시작하도록(2/3화면에서 오작동 방지)
             if (_step == SttStep.ready) _listen();
           },
           child: SafeArea(child: _buildByStep()),

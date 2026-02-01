@@ -100,6 +100,19 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       );
     };
 
+    // 도착 완료 콜백 등록
+    _tracker.onRouteCompleted = () {
+      if (!mounted) return;
+      HapticFeedback.vibrate();
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              ArrivalScreen(destinationName: widget.destinationName),
+        ),
+      );
+    };
+
     // GPS 위치 추적 시작
     _navService.startLocationTracking(onUpdate: _onPositionUpdate);
   }

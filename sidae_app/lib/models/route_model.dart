@@ -151,18 +151,72 @@ class RouteSegment {
           .toList();
     }
 
+    // [데이터 보정] BUS인데 정보가 없으면 description에서 파싱 ("역전우체국에서 588 승차")
+    String? transportName = json['transport_name'];
+    String? startStation = json['start_station'];
+    String? endStation = json['end_station'];
+    final moveType = json['move_type'] as String? ?? "WALK";
+    final description = json['description'] as String? ?? "";
+
+    if (moveType == 'BUS' && (transportName == null || startStation == null)) {
+      // 정규식: "(장소)에서 (번호) 승차"
+      final regex = RegExp(r'(.*?)에서 (.*?) 승차');
+      final match = regex.firstMatch(description);
+      if (match != null) {
+        startStation ??= match.group(1); // "뉴서울3차아파트"
+        transportName ??= match.group(2); // "588"
+      }
+    }
+
+    // [데이터 보정] stations가 비어있는데 BUS이고 path_coordinates가 있으면 가상 정류장 생성
+    // (BusStopDetector가 stations.first를 사용하므로 필수)
+    if (stationsList.isEmpty && moveType == 'BUS' && coords.isNotEmpty) {
+      if (startStation != null) {
+        // 승차 정류장 (path의 시작점)
+        stationsList.add(
+          BusStation(
+            index: 0,
+            name: startStation,
+            lat: coords.first.latitude,
+            lng: coords.first.longitude,
+          ),
+        );
+      }
+      if (endStation != null) {
+        // 하차 정류장 (path의 끝점)
+        stationsList.add(
+          BusStation(
+            index: 1,
+            name: endStation,
+            lat: coords.last.latitude,
+            lng: coords.last.longitude,
+          ),
+        );
+      } else if (stationsList.isNotEmpty) {
+        // 하차 정류장 이름을 모르면 "하차 정류장"으로 추가
+        stationsList.add(
+          BusStation(
+            index: 1,
+            name: "하차 정류장",
+            lat: coords.last.latitude,
+            lng: coords.last.longitude,
+          ),
+        );
+      }
+    }
+
     return RouteSegment(
       segmentIndex: json['segment_index'],
-      moveType: json['move_type'],
-      description: json['description'],
+      moveType: moveType,
+      description: description,
       stepDescription: stepDesc,
       steps: stepsList,
       distance: json['distance'] ?? 0,
       duration: json['duration'] ?? 0,
       pathCoordinates: coords,
-      transportName: json['transport_name'],
-      startStation: json['start_station'],
-      endStation: json['end_station'],
+      transportName: transportName,
+      startStation: startStation,
+      endStation: endStation,
       stations: stationsList,
     );
   }

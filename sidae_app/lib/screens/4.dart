@@ -11,6 +11,7 @@ import '../services/bus_stop_detector.dart';
 import '../services/bus_arrival_service.dart';
 import '../services/bus_popup_state_service.dart';
 import '../services/tts_service.dart';
+import '9.dart';
 import '../services/navigation_service.dart';
 import '../widgets/progress_indicator_widget.dart';
 import '../widgets/bus_arrival_overlay.dart';
@@ -20,7 +21,6 @@ import '../utils/math_utils.dart' as math_utils;
 import '5.dart';
 import '6.dart';
 import '7.dart';
-import '9.dart';
 
 class Screen4 extends StatefulWidget {
   final List<RouteSegment> routes;
@@ -89,8 +89,7 @@ class _Screen4State extends State<Screen4> {
     // 도착 완료 콜백 등록
     _tracker.onRouteCompleted = () {
       if (!mounted) return;
-
-      // 도착 화면으로 이동 (스택 교체)
+      HapticFeedback.vibrate();
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -290,7 +289,7 @@ class _Screen4State extends State<Screen4> {
 
     if (diff < 15 &&
         DateTime.now().difference(_lastVibrationTime).inSeconds >= 1) {
-      HapticFeedback.heavyImpact();
+      HapticFeedback.vibrate();
       _lastVibrationTime = DateTime.now();
     }
   }

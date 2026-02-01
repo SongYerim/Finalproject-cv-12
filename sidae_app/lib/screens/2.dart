@@ -66,7 +66,7 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
       }
 
       // 경로 찾음 - 바로 화면 전환
-      HapticFeedback.heavyImpact();
+      HapticFeedback.vibrate();
 
       if (!mounted) return;
 
