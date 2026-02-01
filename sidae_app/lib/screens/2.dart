@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sidae_app/screens/3.dart';
 import '../services/api_service.dart';
-import '../services/tts_service.dart';
 import '../models/route_model.dart';
 
 class RouteSearchScreen extends StatefulWidget {
@@ -27,7 +26,6 @@ class RouteSearchScreen extends StatefulWidget {
 
 class _RouteSearchScreenState extends State<RouteSearchScreen> {
   final ApiService _apiService = ApiService();
-  final TtsService _ttsService = TtsService.instance;
 
   bool _loading = true;
   String? _errorText;
@@ -35,18 +33,12 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
   @override
   void initState() {
     super.initState();
-    _ttsService.initialize();
     _fetchRoute();
   }
 
   @override
   void dispose() {
-    _ttsService.stop();
     super.dispose();
-  }
-
-  Future<void> _speak(String text) async {
-    await _ttsService.speak(text);
   }
 
   Future<void> _fetchRoute() async {
@@ -66,7 +58,6 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
 
       // 서버가 빈 리스트를 반환할 수 있으므로 방어
       if (routes.isEmpty) {
-        await _speak("경로를 찾을 수 없습니다.");
         setState(() {
           _loading = false;
           _errorText = "경로를 찾을 수 없습니다.";
@@ -74,29 +65,12 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
         return;
       }
 
-      // 4) 결과 안내
-      // 첫 번째 구간의 안내를 대표로 보여주고, 전체 구간 수를 요약으로 안내합니다.
-      final RouteSegment firstStep = routes[0];
-
-      String summary =
-          "총 ${routes.length}개의 구간이 있습니다. "
-          "첫 번째 안내: ${firstStep.description}.";
-
-      setState(() {
-        _loading = false;
-      });
-
-      // 접근성/피드백 유지: 진동 + 음성 안내
+      // 경로 찾음 - 바로 화면 전환
       HapticFeedback.heavyImpact();
-      await _speak("경로를 찾았습니다. $summary 지도로 안내를 시작합니다.");
-
-      // 안내가 너무 급하게 넘어가지 않도록 약간의 딜레이
-      await Future.delayed(const Duration(seconds: 1));
 
       if (!mounted) return;
 
-      // 5) 지도 결과 화면으로 이동
-      Navigator.push(
+      Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (_) => MapResultScreen(
@@ -112,8 +86,6 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
         _loading = false;
         _errorText = "경로 탐색 중 오류가 발생했습니다.\n$e";
       });
-
-      await _speak("오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
     }
   }
 
