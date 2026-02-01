@@ -14,6 +14,7 @@ import '../services/tts_service.dart';
 import '../services/navigation_service.dart';
 import '../widgets/progress_indicator_widget.dart';
 import '../widgets/bus_arrival_overlay.dart';
+import '../widgets/route_timeline_widget.dart';
 import '../utils/bus_utils.dart' as bus_utils;
 import '../utils/math_utils.dart' as math_utils;
 import '6.dart';
@@ -76,6 +77,14 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       }
     };
 
+    // 단계 변경 TTS 콜백 등록
+    _tracker.onStepChanged = (segmentIndex, stepIndex, description) {
+      if (mounted) {
+        _ttsService.speak(description);
+        setState(() {});
+      }
+    };
+
     // GPS 위치 추적 시작
     _navService.startLocationTracking(onUpdate: _onPositionUpdate);
   }
@@ -130,8 +139,8 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       allPathPoints.addAll(route.pathCoordinates);
     }
 
-    // RouteTracker에 경로 초기화
-    _tracker.initialize(allPathPoints);
+    // RouteTracker에 경로 초기화 (구간 정보 포함)
+    _tracker.initialize(allPathPoints, routeSegments: widget.routes);
   }
 
   void _startLocationTracking() {
@@ -403,18 +412,23 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
             ),
           ),
 
-          // 범례
+          // 하단: 현재 구간 정보 (타임라인 컴팩트 버전)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(16),
             color: Colors.grey.shade900,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildLegendItem(Colors.grey, "지나간 지점"),
-                _buildLegendItem(Colors.yellowAccent, "현재 목표"),
-                _buildLegendItem(Colors.blueAccent, "다음 지점"),
-              ],
+            child: SafeArea(
+              top: false,
+              child: RouteTimelineWidget(
+                routes: widget.routes,
+                currentSegmentIndex: _tracker.currentSegmentIndex,
+                currentStepIndex: _tracker.currentStepIndex,
+                compact: true,
+                onSegmentTap: (index) {
+                  // 해당 세그먼트로 이동
+                  _tracker.moveToSegment(index);
+                  setState(() {});
+                },
+              ),
             ),
           ),
         ],
@@ -559,24 +573,6 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildLegendItem(Color color, String label) {
-    return Row(
-      children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
-      ],
     );
   }
 }
