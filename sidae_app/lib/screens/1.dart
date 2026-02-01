@@ -26,7 +26,8 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
   // 1. 네이티브 STT를 위한 MethodChannel/EventChannel
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
@@ -53,9 +54,26 @@ class _HomeScreenState extends State<HomeScreen> {
   // STT 에러 처리 중복 방지
   bool _handlingSttError = false;
 
+  // 펀스 애니메이션 컨트롤러
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  // 주기적 진동 피드백 타이머
+  Timer? _hapticTimer;
+
   @override
   void initState() {
     super.initState();
+
+    // 펀스 애니메이션 초기화
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
     _setupSystem(); // 이 함수 내부에서 권한 요청, TTS 설정, STT 초기화 모두 수행
 
     // 첫 화면 진입 후 안내 TTS
@@ -119,6 +137,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void _handleSttResult(String text) {
     if (!mounted) return;
 
+    // 피드백 중지
+    _stopListeningFeedback();
+
     setState(() {
       _isListening = false;
       _step = SttStep.done;
@@ -134,6 +155,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _stopListeningFeedback();
+    _pulseController.dispose();
     _sttSubscription?.cancel();
     super.dispose();
   }
@@ -148,6 +171,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _handlingSttError = true;
 
     try {
+      // 피드백 중지
+      _stopListeningFeedback();
+
       try {
         await _channel.invokeMethod('stopListening');
       } catch (_) {}
@@ -192,6 +218,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // 진동 피드백 (기획서 3.5: 중요 액션에 진동)
       HapticFeedback.mediumImpact();
+
+      // ✅ TTS 안내 추가 (짧게)
+      await _speak("말씀하세요");
+
+      // ✅ 펀스 애니메이션 & 주기적 진동 시작
+      _startListeningFeedback();
+
       try {
         // 네이티브 MethodChannel로 음성인식 시작
         await _channel.invokeMethod('startListening');
@@ -201,6 +234,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } else {
       // 이미 듣고 있는 상태면 stop 처리
+      _stopListeningFeedback();
       try {
         await _channel.invokeMethod('stopListening');
       } catch (_) {}
@@ -209,6 +243,29 @@ class _HomeScreenState extends State<HomeScreen> {
         _step = SttStep.ready;
       });
     }
+  }
+
+  /// 음성인식 중 피드백 시작 (펀스 애니메이션 + 주기적 진동)
+  void _startListeningFeedback() {
+    // 펀스 애니메이션 시작 (반복)
+    _pulseController.repeat(reverse: true);
+
+    // 주기적 진동 (1.5초마다 가벼운 진동)
+    _hapticTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
+      if (!_isListening) {
+        timer.cancel();
+        return;
+      }
+      HapticFeedback.lightImpact();
+    });
+  }
+
+  /// 음성인식 피드백 중지
+  void _stopListeningFeedback() {
+    _pulseController.stop();
+    _pulseController.reset();
+    _hapticTimer?.cancel();
+    _hapticTimer = null;
   }
 
   // 4. 서버 통신 및 경로 처리 로직
@@ -802,30 +859,46 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 공통 마이크 패널(중복 최소화)
+  // 공통 마이크 패널(중복 최소화) - 펀스 애니메이션 적용
   Widget _micPanel({required Color panelColor, required Color micColor}) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
         color: panelColor,
         borderRadius: BorderRadius.circular(32),
+        // 음성인식 중일 때 빨간색 테두리 추가
+        border: _isListening
+            ? Border.all(color: Colors.redAccent, width: 3)
+            : null,
       ),
       child: Center(
-        child: Container(
-          width: 92,
-          height: 92,
-          decoration: BoxDecoration(
-            color: micColor,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-                color: Colors.black.withValues(alpha: 0.12),
+        // 펀스 애니메이션 적용
+        child: AnimatedBuilder(
+          animation: _pulseController,
+          builder: (context, child) {
+            final scale = _isListening ? _pulseAnimation.value : 1.0;
+            return Transform.scale(
+              scale: scale,
+              child: Container(
+                width: 92,
+                height: 92,
+                decoration: BoxDecoration(
+                  color: micColor,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      blurRadius: _isListening ? 28 : 18,
+                      offset: const Offset(0, 8),
+                      color: _isListening
+                          ? micColor.withValues(alpha: 0.5)
+                          : Colors.black.withValues(alpha: 0.12),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.mic, size: 44, color: Colors.white),
               ),
-            ],
-          ),
-          child: const Icon(Icons.mic, size: 44, color: Colors.white),
+            );
+          },
         ),
       ),
     );
