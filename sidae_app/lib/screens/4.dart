@@ -14,6 +14,7 @@ import '../services/tts_service.dart';
 import '../services/navigation_service.dart';
 import '../widgets/progress_indicator_widget.dart';
 import '../widgets/bus_arrival_overlay.dart';
+import '../widgets/route_timeline_widget.dart';
 import '../utils/bus_utils.dart' as bus_utils;
 import '../utils/math_utils.dart' as math_utils;
 import '5.dart';
@@ -76,7 +77,20 @@ class _Screen4State extends State<Screen4> {
       }
     };
 
+    // 단계 변경 TTS 콜백 등록
+    _tracker.onStepChanged = (segmentIndex, stepIndex, description) {
+      if (mounted) {
+        _ttsService.speak(description);
+        setState(() {});
+      }
+    };
+
     _navService.startLocationTracking(onUpdate: _onPositionUpdate);
+
+    // 초기 안내 (화면 진입 시)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _tracker.announceInitialStep();
+    });
   }
 
   void _initializePathPoints() {
@@ -88,7 +102,7 @@ class _Screen4State extends State<Screen4> {
       allPathPoints.addAll(route.pathCoordinates);
     }
     if (allPathPoints.isNotEmpty) {
-      _tracker.initialize(allPathPoints);
+      _tracker.initialize(allPathPoints, routeSegments: widget.routes);
     }
   }
 
@@ -403,7 +417,7 @@ class _Screen4State extends State<Screen4> {
               ),
 
               // ---------------------------------------------------------
-              // 2. 하단 절반: 상세 경로 단계 리스트 (Steps List)
+              // 2. 하단 절반: 타임라인 형태 경로 안내
               // ---------------------------------------------------------
               Expanded(
                 flex: 1,
@@ -437,73 +451,40 @@ class _Screen4State extends State<Screen4> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            Icon(
-                              Icons.format_list_numbered,
-                              color: Colors.grey.shade400,
+                            // 현재 구간 표시
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.yellowAccent,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                "${_tracker.currentSegmentIndex + 1}/${widget.routes.length}",
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ],
                         ),
                       ),
 
-                      // 실제 리스트 (스크롤 가능)
+                      // 타임라인 위젯
                       Expanded(
-                        child: widget.routes.isEmpty
-                            ? const Center(
-                                child: Text(
-                                  "경로 정보가 없습니다.",
-                                  style: TextStyle(color: Colors.grey),
-                                ),
-                              )
-                            : ListView.separated(
-                                padding: const EdgeInsets.all(20),
-                                // 첫 번째 경로 세그먼트의 stepDescription 사용
-                                itemCount:
-                                    widget.routes[0].stepDescription.length,
-                                separatorBuilder: (context, index) =>
-                                    Divider(color: Colors.grey.shade800),
-                                itemBuilder: (context, index) {
-                                  final stepDesc =
-                                      widget.routes[0].stepDescription[index];
-
-                                  return Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      // 노란색 번호 원
-                                      Container(
-                                        width: 28,
-                                        height: 28,
-                                        alignment: Alignment.center,
-                                        decoration: const BoxDecoration(
-                                          color: Colors.yellowAccent,
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Text(
-                                          "${index + 1}",
-                                          style: const TextStyle(
-                                            color: Colors.black,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 15),
-
-                                      // 설명 텍스트
-                                      Expanded(
-                                        child: Text(
-                                          stepDesc,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 18,
-                                            height: 1.4,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              ),
+                        child: RouteTimelineWidget(
+                          routes: widget.routes,
+                          currentSegmentIndex: _tracker.currentSegmentIndex,
+                          currentStepIndex: _tracker.currentStepIndex,
+                          onSegmentTap: (index) {
+                            _tracker.moveToSegment(index);
+                            setState(() {});
+                          },
+                        ),
                       ),
                     ],
                   ),
@@ -539,6 +520,16 @@ class _Screen4State extends State<Screen4> {
                       setState(() {});
                     }
                   };
+
+                  // 단계 변경 TTS 콜백 재등록
+                  _tracker.onStepChanged =
+                      (segmentIndex, stepIndex, description) {
+                        if (mounted) {
+                          _ttsService.speak(description);
+                          setState(() {});
+                        }
+                      };
+
                   // GPS 추적 재개
                   _navService.startLocationTracking(
                     onUpdate: _onPositionUpdate,

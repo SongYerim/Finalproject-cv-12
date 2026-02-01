@@ -1,5 +1,6 @@
 // lib/services/route_tracker.dart
 import 'package:flutter_naver_map/flutter_naver_map.dart';
+import '../models/route_model.dart';
 
 /// 4.dart와 5.dart가 공유하는 경로 추적 상태 관리 클래스
 class RouteTracker {
@@ -19,8 +20,29 @@ class RouteTracker {
   // 초기화 여부 플래그
   bool _isInitialized = false;
 
+  // ========== 구간/단계 추적 (NEW) ==========
+
+  // 전체 경로 세그먼트 (도보/버스 구간)
+  List<RouteSegment> routes = [];
+
+  // 현재 진행 중인 구간 인덱스 (도보/버스 세그먼트)
+  int currentSegmentIndex = 0;
+
+  // 현재 구간 내 단계 인덱스
+  int currentStepIndex = 0;
+
+  // 콜백: 구간/단계 변경 시 알림 (TTS 안내용)
+  Function(int segmentIndex, int stepIndex, String description)? onStepChanged;
+
+  // 이전에 안내한 단계 (중복 안내 방지)
+  int _lastAnnouncedSegment = -1;
+  int _lastAnnouncedStep = -1;
+
   /// 경로 초기화 (이미 초기화되어 있으면 건너뜀)
-  void initialize(List<NLatLng> pathPoints) {
+  void initialize(
+    List<NLatLng> pathPoints, {
+    List<RouteSegment>? routeSegments,
+  }) {
     // 이미 같은 경로가 로드되어 있으면 초기화하지 않음
     if (_isInitialized && _isSameRoute(pathPoints)) {
       return;
@@ -29,6 +51,16 @@ class RouteTracker {
     allPathPoints = pathPoints;
     pointsPassed = List.filled(pathPoints.length, false);
     currentTargetIndex = 0;
+
+    // 세그먼트 정보 저장
+    if (routeSegments != null) {
+      routes = routeSegments;
+      currentSegmentIndex = 0;
+      currentStepIndex = 0;
+      _lastAnnouncedSegment = -1;
+      _lastAnnouncedStep = -1;
+    }
+
     _isInitialized = true;
   }
 
@@ -83,6 +115,11 @@ class RouteTracker {
     allPathPoints = [];
     pointsPassed = [];
     currentTargetIndex = 0;
+    routes = [];
+    currentSegmentIndex = 0;
+    currentStepIndex = 0;
+    _lastAnnouncedSegment = -1;
+    _lastAnnouncedStep = -1;
     _isInitialized = false;
   }
 
@@ -91,6 +128,70 @@ class RouteTracker {
     if (allPathPoints.isEmpty) return 0.0;
     int passedCount = pointsPassed.where((passed) => passed).length;
     return passedCount / allPathPoints.length;
+  }
+
+  /// 현재 구간 가져오기
+  RouteSegment? getCurrentSegment() {
+    if (routes.isEmpty || currentSegmentIndex >= routes.length) return null;
+    return routes[currentSegmentIndex];
+  }
+
+  /// 다음 단계로 이동 (TTS 안내 트리거)
+  void moveToNextStep() {
+    if (routes.isEmpty) return;
+
+    final currentSegment = routes[currentSegmentIndex];
+
+    // 현재 구간 내 단계 이동
+    if (currentStepIndex < currentSegment.stepDescription.length - 1) {
+      currentStepIndex++;
+      _announceCurrentStep();
+    }
+    // 다음 구간으로 이동
+    else if (currentSegmentIndex < routes.length - 1) {
+      currentSegmentIndex++;
+      currentStepIndex = 0;
+      _announceCurrentStep();
+    }
+  }
+
+  /// 구간 인덱스로 직접 이동
+  void moveToSegment(int segmentIndex) {
+    if (segmentIndex >= 0 && segmentIndex < routes.length) {
+      currentSegmentIndex = segmentIndex;
+      currentStepIndex = 0;
+      _announceCurrentStep();
+    }
+  }
+
+  /// 현재 단계 안내 (중복 방지)
+  void _announceCurrentStep() {
+    if (_lastAnnouncedSegment == currentSegmentIndex &&
+        _lastAnnouncedStep == currentStepIndex) {
+      return; // 이미 안내함
+    }
+
+    _lastAnnouncedSegment = currentSegmentIndex;
+    _lastAnnouncedStep = currentStepIndex;
+
+    final segment = getCurrentSegment();
+    if (segment == null) return;
+
+    String description;
+    if (segment.stepDescription.isNotEmpty &&
+        currentStepIndex < segment.stepDescription.length) {
+      description = segment.stepDescription[currentStepIndex];
+    } else {
+      description = segment.description;
+    }
+
+    onStepChanged?.call(currentSegmentIndex, currentStepIndex, description);
+  }
+
+  /// 초기 구간 안내 (화면 진입 시)
+  void announceInitialStep() {
+    if (routes.isEmpty) return;
+    _announceCurrentStep();
   }
 
   /// 현재 위치에서 가장 가까운 점을 찾아 업데이트
@@ -135,9 +236,121 @@ class RouteTracker {
       if (closestIndex + 1 < allPathPoints.length) {
         currentTargetIndex = closestIndex + 1;
       }
+
+      // 구간 업데이트 (경로 점과 구간을 매핑)
+      _updateSegmentFromPointIndex(closestIndex);
+
       return true;
     }
 
     return false;
+  }
+
+  /// 경로 점 인덱스로부터 구간 및 단계 업데이트
+  void _updateSegmentFromPointIndex(int pointIndex) {
+    if (routes.isEmpty) return;
+
+    // 각 구간의 경로 점 개수를 누적해서 현재 구간 찾기
+    int accumulatedPoints = 0;
+    for (int i = 0; i < routes.length; i++) {
+      final segment = routes[i];
+      final segmentPointCount = segment.pathCoordinates.length;
+
+      if (pointIndex < accumulatedPoints + segmentPointCount) {
+        // 구간 내 상대 인덱스
+        final pointInSegment = pointIndex - accumulatedPoints;
+
+        // 단계 인덱스 계산: RouteStep의 path 범위 기반
+        int newStepIndex = _findStepIndexByPosition(segment, pointInSegment);
+
+        // 구간 또는 단계 변경 감지
+        final bool segmentChanged = currentSegmentIndex != i;
+        final bool stepChanged = currentStepIndex != newStepIndex;
+
+        if (segmentChanged) {
+          currentSegmentIndex = i;
+          currentStepIndex = newStepIndex;
+          _announceCurrentStep();
+        } else if (stepChanged) {
+          currentStepIndex = newStepIndex;
+          _announceCurrentStep();
+        }
+        return;
+      }
+      accumulatedPoints += segmentPointCount;
+    }
+  }
+
+  /// RouteStep들의 path 범위를 기반으로 현재 단계 찾기
+  int _findStepIndexByPosition(RouteSegment segment, int pointInSegment) {
+    // steps 배열이 비어있으면 stepDescription 기반으로 fallback
+    if (segment.steps.isEmpty) {
+      if (segment.stepDescription.isEmpty) return 0;
+
+      // stepDescription 개수로 균등 분할 (기존 로직)
+      final segmentPointCount = segment.pathCoordinates.length;
+      final progressInSegment = segmentPointCount > 1
+          ? pointInSegment / (segmentPointCount - 1)
+          : 0.0;
+
+      int stepIndex = (progressInSegment * segment.stepDescription.length)
+          .floor();
+
+      if (stepIndex >= segment.stepDescription.length) {
+        stepIndex = segment.stepDescription.length - 1;
+      }
+      return stepIndex;
+    }
+
+    // 현재 좌표가 도착 step의 좌표와 일치하는지 확인
+    if (segment.steps.isNotEmpty &&
+        pointInSegment >= 0 &&
+        pointInSegment < segment.pathCoordinates.length) {
+      final lastStep = segment.steps.last;
+      // 도착 step은 보통 path가 비어있고 lat/lng만 있음
+      if (lastStep.path.isEmpty) {
+        final currentCoord = segment.pathCoordinates[pointInSegment];
+        // 좌표가 도착 지점과 일치하면 도착 단계 반환
+        if (_coordsMatch(
+          currentCoord.latitude,
+          currentCoord.longitude,
+          lastStep.lat,
+          lastStep.lng,
+        )) {
+          return segment.steps.length - 1;
+        }
+      }
+    }
+
+    // RouteStep들의 누적 path 범위로 현재 단계 찾기
+    int accumulatedPathPoints = 0;
+    int lastValidStepIdx = 0;
+
+    for (int stepIdx = 0; stepIdx < segment.steps.length; stepIdx++) {
+      final step = segment.steps[stepIdx];
+      final stepPathCount = step.path.length;
+
+      // 현재 포인트가 이 step의 범위 안에 있는지 확인
+      if (stepPathCount > 0 &&
+          pointInSegment < accumulatedPathPoints + stepPathCount) {
+        return stepIdx;
+      }
+
+      // path가 있는 마지막 step 기록 (도착 전 단계)
+      if (stepPathCount > 0) {
+        lastValidStepIdx = stepIdx;
+      }
+      accumulatedPathPoints += stepPathCount;
+    }
+
+    // 모든 step의 path 범위를 초과했지만 도착 좌표가 아닌 경우:
+    // 마지막 유효 단계(도착 직전 단계)를 반환
+    return lastValidStepIdx;
+  }
+
+  /// 두 좌표가 일치하는지 확인 (부동소수점 비교)
+  bool _coordsMatch(double lat1, double lng1, double lat2, double lng2) {
+    const double epsilon = 0.0000001; // 약 1cm 정도의 오차 허용
+    return (lat1 - lat2).abs() < epsilon && (lng1 - lng2).abs() < epsilon;
   }
 }
