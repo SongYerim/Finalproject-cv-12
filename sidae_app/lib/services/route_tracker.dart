@@ -1,6 +1,7 @@
 // lib/services/route_tracker.dart
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import '../models/route_model.dart';
+import '../constants.dart';
 
 /// 4.dart와 5.dart가 공유하는 경로 추적 상태 관리 클래스
 class RouteTracker {
@@ -237,7 +238,7 @@ class RouteTracker {
   ///
   /// [latitude], [longitude]: 현재 위치
   /// [distanceCalculator]: 두 좌표 간 거리 계산 함수 (Geolocator.distanceBetween)
-  /// [passThreshold]: 통과로 인정하는 거리 (미터, 기본값 15.0)
+  /// [passThreshold]: 통과로 인정하는 거리 (미터, 기본값 kProximityThreshold)
   ///
   /// 반환값: 업데이트가 발생했으면 true, 아니면 false
   bool findClosestPointAndUpdate(
@@ -245,7 +246,7 @@ class RouteTracker {
     double longitude,
     double Function(double lat1, double lon1, double lat2, double lon2)
     distanceCalculator, {
-    double passThreshold = 15.0,
+    double passThreshold = kProximityThreshold,
   }) {
     if (allPathPoints.isEmpty) return false;
 

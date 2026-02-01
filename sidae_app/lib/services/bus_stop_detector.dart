@@ -1,5 +1,6 @@
 import 'package:geolocator/geolocator.dart';
 import '../models/route_model.dart';
+import '../constants.dart';
 import 'proximity_detector.dart';
 
 /// 버스 정류장 감지 정보
@@ -25,7 +26,7 @@ class BusStopDetector extends ProximityDetector<BusStopInfo> {
   Function(BusStopInfo)? onBusStopDetected;
 
   BusStopDetector({required this.routes, this.onBusStopDetected})
-    : super(proximityThreshold: 20.0); // 20m 이내
+    : super(proximityThreshold: kProximityThreshold);
 
   @override
   String getItemId(BusStopInfo item) {

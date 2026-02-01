@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/route_model.dart';
+import '../constants.dart';
 import 'proximity_detector.dart';
 
 /// 횡단보도 정보 (감지된 횡단보도 + 반대편 좌표)
@@ -24,7 +25,7 @@ class CrosswalkDetector extends ProximityDetector<RouteStep> {
   Function(CrosswalkInfo)? onCrosswalkDetected;
 
   CrosswalkDetector({required this.routes, this.onCrosswalkDetected})
-    : super(proximityThreshold: 10.0); // 10m 이내
+    : super(proximityThreshold: kProximityThreshold);
 
   @override
   String getItemId(RouteStep item) {

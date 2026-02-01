@@ -17,6 +17,7 @@ import '../widgets/bus_arrival_overlay.dart';
 import '../widgets/route_timeline_widget.dart';
 import '../utils/bus_utils.dart' as bus_utils;
 import '../utils/math_utils.dart' as math_utils;
+import '../constants.dart';
 import '6.dart';
 import '7.dart';
 import '9.dart';
@@ -45,7 +46,6 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   CrosswalkDetector? _crosswalkDetector;
   BusStopDetector? _busStopDetector;
   Position? _currentPosition;
-  static const double _passThreshold = 15.0;
   bool _isNavigatingToCrosswalk = false; // 화면 이동 중복 방지
   double _distanceToTarget = 0.0;
 
@@ -277,7 +277,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       position.latitude,
       position.longitude,
       Geolocator.distanceBetween,
-      passThreshold: _passThreshold,
+      passThreshold: kProximityThreshold,
     );
     if (updated) {
       setState(() {});
