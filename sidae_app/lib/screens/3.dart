@@ -3,6 +3,7 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import '../models/route_model.dart';
+import '../services/tts_service.dart';
 import '4.dart'; // 4.dart 파일 임포트 (파일 경로 확인 필요)
 
 class MapResultScreen extends StatefulWidget {
@@ -23,11 +24,65 @@ class _MapResultScreenState extends State<MapResultScreen> {
   NaverMapController? _mapController;
   StreamSubscription<Position>? _positionSubscription;
   NMarker? _currentLocationMarker;
+  final TtsService _ttsService = TtsService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _ttsService.initialize();
+    // 화면 로드 후 경로 요약 TTS
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _announceRouteSummary();
+    });
+  }
 
   @override
   void dispose() {
+    _ttsService.stop();
     _positionSubscription?.cancel();
     super.dispose();
+  }
+
+  /// 경로 요약 TTS 안내
+  Future<void> _announceRouteSummary() async {
+    if (widget.routes.isEmpty) return;
+
+    final segments = widget.routes;
+    final segmentCount = segments.length;
+
+    // 각 구간 설명 생성
+    List<String> segmentDescriptions = [];
+    for (final segment in segments) {
+      if (segment.moveType == "WALK") {
+        // 도보 구간: 시간만 표시
+        final minutes = (segment.duration / 60).ceil();
+        segmentDescriptions.add("도보 ${minutes}분");
+      } else {
+        // 버스/지하철 구간: 노선번호 + 정거장 수 + 하차 정류장
+        final transportName = segment.transportName ?? "버스";
+        final stationCount = segment.stations.length;
+        final endStation = segment.endStation;
+
+        if (stationCount > 0 && endStation != null) {
+          segmentDescriptions.add(
+            "$transportName번 ${stationCount}정거장, $endStation 하차",
+          );
+        } else if (stationCount > 0) {
+          segmentDescriptions.add("$transportName번 ${stationCount}정거장");
+        } else if (endStation != null) {
+          segmentDescriptions.add("$transportName번, $endStation 하차");
+        } else {
+          final minutes = (segment.duration / 60).ceil();
+          segmentDescriptions.add("$transportName번 ${minutes}분");
+        }
+      }
+    }
+
+    // TTS 메시지 생성
+    final summary = segmentDescriptions.join(", ");
+    final message = "목적지까지 총 $segmentCount개 구간입니다. $summary. 안내 시작 버튼을 눌러주세요.";
+
+    await _ttsService.speak(message);
   }
 
   void _initLocationTracking() {
@@ -120,28 +175,20 @@ class _MapResultScreenState extends State<MapResultScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // 설명 텍스트 (남은 공간을 차지하도록 Expanded 사용)
+                  // 타임라인 형태 경로 표시
                   Expanded(
                     child: SingleChildScrollView(
-                      child: Text(
-                        widget.routes.isNotEmpty
-                            ? widget.routes
-                                  .map((route) {
-                                    // 각 Segment 안에 있는 stepDescription(["설명1", "설명2"...])를
-                                    // 줄바꿈(\n)으로 합쳐서 문자열로 만듭니다.
-                                    return route.stepDescription.join('\n');
-                                  })
-                                  .join(
-                                    '\n\n',
-                                  ) // 각 Segment(덩어리) 사이에는 두 줄을 띄웁니다.
-                            : "안내 정보를 불러오는 중...",
-
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          height: 1.5, // 줄 간격 넉넉하게
-                        ),
-                      ),
+                      child: widget.routes.isNotEmpty
+                          ? _buildRouteTimeline()
+                          : const Center(
+                              child: Text(
+                                "안내 정보를 불러오는 중...",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                ),
+                              ),
+                            ),
                     ),
                   ),
 
@@ -259,5 +306,289 @@ class _MapResultScreenState extends State<MapResultScreen> {
       );
       _mapController!.updateCamera(cameraUpdate);
     }
+  }
+
+  /// 타임라인 형태로 경로 표시
+  Widget _buildRouteTimeline() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 출발 지점
+        _buildTimelinePoint("출발", isStart: true),
+
+        // 각 구간 표시
+        for (int i = 0; i < widget.routes.length; i++) ...[
+          _buildTimelineSegment(
+            widget.routes[i],
+            isLast: i == widget.routes.length - 1,
+          ),
+        ],
+
+        // 도착 지점
+        _buildTimelinePoint("도착", isEnd: true),
+      ],
+    );
+  }
+
+  /// 타임라인 시작/끝 지점
+  Widget _buildTimelinePoint(
+    String label, {
+    bool isStart = false,
+    bool isEnd = false,
+  }) {
+    return Row(
+      children: [
+        // 원형 포인트
+        Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isStart ? Colors.green : (isEnd ? Colors.red : Colors.grey),
+            border: Border.all(color: Colors.white, width: 2),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 타임라인 구간 (도보/버스)
+  Widget _buildTimelineSegment(RouteSegment segment, {bool isLast = false}) {
+    final isWalk = segment.moveType == "WALK";
+    final color = isWalk ? Colors.green : Colors.blue;
+    final icon = isWalk ? Icons.directions_walk : Icons.directions_bus;
+    final label = isWalk ? "도보" : "버스 ${segment.transportName ?? ''}";
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 왼쪽: 세로 라인 + 아이콘
+          SizedBox(
+            width: 20,
+            child: Column(
+              children: [
+                // 세로 라인 (위쪽)
+                Expanded(child: Container(width: 3, color: color)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // 오른쪽: 구간 정보 카드
+          Expanded(
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: color, width: 2),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 구간 헤더 (아이콘 + 라벨)
+                  Row(
+                    children: [
+                      Icon(icon, color: color, size: 24),
+                      const SizedBox(width: 8),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (segment.description.isNotEmpty) ...[
+                        const Spacer(),
+                        Text(
+                          segment.description,
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+
+                  // 버스/지하철인 경우 승하차 정류장 표시
+                  if (!isWalk &&
+                      (segment.startStation != null ||
+                          segment.endStation != null)) ...[
+                    const SizedBox(height: 12),
+                    // 승차 정류장
+                    if (segment.startStation != null)
+                      _buildStationRow(
+                        icon: Icons.arrow_circle_up,
+                        label: "승차",
+                        stationName: segment.startStation!,
+                        color: Colors.green,
+                      ),
+                    const SizedBox(height: 6),
+                    // 하차 정류장
+                    if (segment.endStation != null)
+                      _buildStationRow(
+                        icon: Icons.arrow_circle_down,
+                        label: "하차",
+                        stationName: segment.endStation!,
+                        color: Colors.red,
+                      ),
+                  ],
+
+                  // 버스 정류장 목록 표시
+                  if (!isWalk && segment.stations.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[850],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "정류장 (${segment.stations.length}개)",
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          ...segment.stations.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final station = entry.value;
+                            final isFirst = index == 0;
+                            final isLast = index == segment.stations.length - 1;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Row(
+                                children: [
+                                  // 정류장 번호/아이콘
+                                  Container(
+                                    width: 20,
+                                    height: 20,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: isFirst
+                                          ? Colors.green
+                                          : (isLast
+                                                ? Colors.red
+                                                : Colors.grey[600]),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        "${index + 1}",
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      station.name,
+                                      style: TextStyle(
+                                        color: isFirst || isLast
+                                            ? Colors.white
+                                            : Colors.grey[400],
+                                        fontSize: 13,
+                                        fontWeight: isFirst || isLast
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // 도보인 경우 세부 단계 표시
+                  if (isWalk && segment.stepDescription.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ...segment.stepDescription.map(
+                      (step) => Padding(
+                        padding: const EdgeInsets.only(left: 4, top: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "• ",
+                              style: TextStyle(
+                                color: Colors.grey[300],
+                                fontSize: 14,
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                step,
+                                style: TextStyle(
+                                  color: Colors.grey[300],
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 승하차 정류장 행 위젯
+  Widget _buildStationRow({
+    required IconData icon,
+    required String label,
+    required String stationName,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 8),
+        Text(
+          "$label: ",
+          style: TextStyle(
+            color: color,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Expanded(
+          child: Text(
+            stationName,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+          ),
+        ),
+      ],
+    );
   }
 }
