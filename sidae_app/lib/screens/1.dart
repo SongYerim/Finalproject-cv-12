@@ -61,6 +61,9 @@ class _HomeScreenState extends State<HomeScreen>
   // 주기적 진동 피드백 타이머
   Timer? _hapticTimer;
 
+  // 더블 탭 종료를 위한 변수
+  DateTime? _lastBackPressTime;
+
   @override
   void initState() {
     super.initState();
@@ -349,17 +352,71 @@ class _HomeScreenState extends State<HomeScreen>
   // UI: 상태 → build 분기 → UI
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
 
-      // 화면 아무 곳이나 누르면 듣기 시작 (요구사항 유지)
-      body: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: () {
-          // ready 화면에서만 시작하도록(2/3화면에서 오작동 방지)
-          if (_step == SttStep.ready) _listen();
-        },
-        child: SafeArea(child: _buildByStep()),
+        // 더블 탭 종료 처리
+        final now = DateTime.now();
+        if (_lastBackPressTime == null ||
+            now.difference(_lastBackPressTime!) > const Duration(seconds: 3)) {
+          // 첫 번째 뒤로가기
+          _lastBackPressTime = now;
+          HapticFeedback.mediumImpact();
+
+          // 시각적 피드백: SnackBar 표시
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.exit_to_app, color: Colors.white),
+                    const SizedBox(width: 12),
+                    const Text(
+                      '종료하려면 한 번 더 눌러주세요',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.redAccent,
+                duration: const Duration(seconds: 3),
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.all(16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            );
+          }
+
+          await _speak("종료하려면 한 번 더 눌러주세요");
+        } else {
+          // 3초 이내 두 번째 뒤로가기 - 종료
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).clearSnackBars();
+          }
+          HapticFeedback.heavyImpact();
+          await _speak("앱을 종료합니다");
+          // 앱 완전 종료
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+
+        // 화면 아무 곳이나 누르면 듣기 시작 (요구사항 유지)
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            // ready 화면에서만 시작하도록(2/3화면에서 오작동 방지)
+            if (_step == SttStep.ready) _listen();
+          },
+          child: SafeArea(child: _buildByStep()),
+        ),
       ),
     );
   }
