@@ -20,6 +20,7 @@ import '../utils/math_utils.dart' as math_utils;
 import '5.dart';
 import '6.dart';
 import '7.dart';
+import '9.dart';
 
 class Screen4 extends StatefulWidget {
   final List<RouteSegment> routes;
@@ -83,6 +84,20 @@ class _Screen4State extends State<Screen4> {
         _ttsService.speak(description);
         setState(() {});
       }
+    };
+
+    // 도착 완료 콜백 등록
+    _tracker.onRouteCompleted = () {
+      if (!mounted) return;
+
+      // 도착 화면으로 이동 (스택 교체)
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              ArrivalScreen(destinationName: widget.destinationName),
+        ),
+      );
     };
 
     _navService.startLocationTracking(onUpdate: _onPositionUpdate);

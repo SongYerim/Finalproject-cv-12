@@ -34,6 +34,13 @@ class RouteTracker {
   // 콜백: 구간/단계 변경 시 알림 (TTS 안내용)
   Function(int segmentIndex, int stepIndex, String description)? onStepChanged;
 
+  // 콜백: 최종 목적지 도착 시 알림
+  Function()? onRouteCompleted;
+
+  // 경로 완료 여부 (중복 호출 방지)
+  bool _isRouteCompleted = false;
+  bool get isRouteCompleted => _isRouteCompleted;
+
   // 이전에 안내한 단계 (중복 안내 방지)
   int _lastAnnouncedSegment = -1;
   int _lastAnnouncedStep = -1;
@@ -121,6 +128,7 @@ class RouteTracker {
     _lastAnnouncedSegment = -1;
     _lastAnnouncedStep = -1;
     _isInitialized = false;
+    _isRouteCompleted = false;
   }
 
   /// 진행률 계산
@@ -186,6 +194,37 @@ class RouteTracker {
     }
 
     onStepChanged?.call(currentSegmentIndex, currentStepIndex, description);
+
+    // 최종 목적지 도착 체크: 마지막 구간의 마지막 단계
+    _checkRouteCompletion();
+  }
+
+  /// 경로 완료 여부 체크 및 콜백 호출
+  void _checkRouteCompletion() {
+    if (_isRouteCompleted) return; // 이미 완료됨
+    if (routes.isEmpty) return;
+
+    final isLastSegment = currentSegmentIndex == routes.length - 1;
+    if (!isLastSegment) return;
+
+    final lastSegment = routes.last;
+    final totalSteps = lastSegment.stepDescription.isNotEmpty
+        ? lastSegment.stepDescription.length
+        : 1;
+    final isLastStep = currentStepIndex >= totalSteps - 1;
+
+    // 마지막 구간의 마지막 단계가 "[도착]"을 포함하는지도 확인
+    bool isArrivalStep = false;
+    if (lastSegment.stepDescription.isNotEmpty &&
+        currentStepIndex < lastSegment.stepDescription.length) {
+      final stepDesc = lastSegment.stepDescription[currentStepIndex];
+      isArrivalStep = stepDesc.contains('[도착]');
+    }
+
+    if (isLastStep || isArrivalStep) {
+      _isRouteCompleted = true;
+      onRouteCompleted?.call();
+    }
   }
 
   /// 초기 구간 안내 (화면 진입 시)

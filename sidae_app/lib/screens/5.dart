@@ -19,6 +19,7 @@ import '../utils/bus_utils.dart' as bus_utils;
 import '../utils/math_utils.dart' as math_utils;
 import '6.dart';
 import '7.dart';
+import '9.dart';
 
 class RouteTrackingMapScreen extends StatefulWidget {
   final List<RouteSegment> routes;
@@ -83,6 +84,20 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         _ttsService.speak(description);
         setState(() {});
       }
+    };
+
+    // 도착 완료 콜백 등록
+    _tracker.onRouteCompleted = () {
+      if (!mounted) return;
+
+      // 도착 화면으로 이동 (스택 교체)
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              ArrivalScreen(destinationName: widget.destinationName),
+        ),
+      );
     };
 
     // GPS 위치 추적 시작
