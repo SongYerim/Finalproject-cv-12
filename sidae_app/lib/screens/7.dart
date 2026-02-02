@@ -282,41 +282,67 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     final result = await _busDetectorService.sendTagRecognition();
 
     if (result != null) {
+      developer.log(
+        '📦 [태그 인식] 서버 응답 수신: ${result.response}',
+        name: 'BusArrivalScreen',
+      );
+
       String displayText = '';
       String ttsText = '';
 
       // JSON 파싱하여 result 추출
       try {
         final jsonResponse = json.decode(result.response);
-        final resultData = jsonResponse['result'];
+        developer.log(
+          '🔍 [태그 인식] 파싱된 JSON: $jsonResponse',
+          name: 'BusArrivalScreen',
+        );
 
-        if (resultData != null) {
-          // found 필드 확인
-          final found = resultData['found'];
-          if (found == false || resultData['error'] != null) {
-            displayText = '승차태그를 찾을 수 없습니다';
-            ttsText = '승차태그를 찾을 수 없습니다';
-          } else {
-            // result 데이터를 문자열로 변환
-            final resultStr = resultData.toString();
-            displayText = resultStr;
+        // tag_ 모드 응답 처리 ("des" 필드 확인)
+        if (jsonResponse.containsKey('des')) {
+          displayText = jsonResponse['des'];
+          ttsText = displayText;
 
-            // TTS용으로 간결하게 변환
-            if (resultData is Map) {
-              final parts = <String>[];
-              resultData.forEach((key, value) {
-                if (key != 'found' && key != 'error') {
-                  parts.add('$key: $value');
-                }
-              });
-              ttsText = parts.join(', ');
-            } else {
-              ttsText = resultStr;
-            }
+          if (displayText == '대상을 찾을 수 없습니다.') {
+            // 실패로 처리하고 싶다면 여기 로직 추가 가능하지만,
+            // 현재 구조상 displayText가 있으면 성공 로그를 찍으므로
+            // 실패로 간주하려면 result.success를 false로 하거나 별도 처리가 필요함.
+            // 하지만 서버 응답이 200 OK면 result.success는 true임.
+            // 따라서 내용만 표시.
           }
-        } else {
-          displayText = result.response;
-          ttsText = '태그 인식 실패';
+        }
+        // 기존 result 필드 처리 (다른 모드 호환)
+        else {
+          final resultData = jsonResponse['result'];
+
+          if (resultData != null) {
+            // found 필드 확인
+            final found = resultData['found'];
+            if (found == false || resultData['error'] != null) {
+              displayText = '승차태그를 찾을 수 없습니다';
+              ttsText = '승차태그를 찾을 수 없습니다';
+            } else {
+              // result 데이터를 문자열로 변환
+              final resultStr = resultData.toString();
+              displayText = resultStr;
+
+              // TTS용으로 간결하게 변환
+              if (resultData is Map) {
+                final parts = <String>[];
+                resultData.forEach((key, value) {
+                  if (key != 'found' && key != 'error') {
+                    parts.add('$key: $value');
+                  }
+                });
+                ttsText = parts.join(', ');
+              } else {
+                ttsText = resultStr;
+              }
+            }
+          } else {
+            displayText = result.response;
+            ttsText = '태그 인식 실패 (데이터 없음)';
+          }
         }
       } catch (e) {
         // JSON 파싱 실패 시 원본 표시
