@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../services/route_tracker.dart';
+import '../services/tts_service.dart';
 
 class BusOnlyScreen extends StatefulWidget {
   final double? returnMidLat;
@@ -203,27 +205,59 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     _startNativeReturnTrackingIfNeeded();
   }
 
-  void _startNativeReturnTrackingIfNeeded() {
+  Future<void> _startNativeReturnTrackingIfNeeded() async {
     final lat = widget.returnMidLat;
     final lng = widget.returnMidLng;
+    final threshold = widget.returnDistanceMeters;
+
+    print(
+      '🚌 [8.dart] Exit 추적 초기화 시작 - lat: $lat, lng: $lng, threshold: $threshold',
+    );
+
     if (lat == null || lng == null) return;
 
-    _exitDistanceSubscription = _eventChannel.receiveBroadcastStream().listen((
-      event,
-    ) {
-      if (event is Map && event['type'] == 'exitDistance') {
-        final reached = event['reached'] as bool? ?? false;
-        if (reached) {
-          if (mounted) {
-            Navigator.of(context).pop();
+    // 안전한 초기화를 위해 기존 추적 중지 및 딜레이
+    await _channel.invokeMethod('stopExitTracking');
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    _exitDistanceSubscription = _eventChannel.receiveBroadcastStream().listen(
+      (event) {
+        if (event is Map && event['type'] == 'exitDistance') {
+          final distance = event['distance'];
+          final reached = event['reached'] as bool? ?? false;
+
+          // 거리 로그 출력 (디버깅용)
+          print(
+            '📍 [8.dart] 남은 거리: $distance m (목표: $threshold m) - 도달: $reached',
+          );
+
+          if (reached) {
+            print('🎉 [8.dart] 하차 지점 도달 확인! 종료 프로세스 시작');
+            if (mounted) {
+              // 버스 하차 상태 설정 (도보 경로 감지 재활성화)
+              RouteTracker.instance.setOnBus(false);
+              // TTS 안내
+              TtsService.instance.speak('하차 완료. 도보로 전환합니다.');
+              Navigator.of(context).pop();
+            }
           }
         }
-      }
-    }, onError: (_) {});
+      },
+      onError: (e) {
+        print('❌ [8.dart] 이벤트 에러: $e');
+      },
+    );
 
-    _channel
-        .invokeMethod('startExitTracking', {'exitLat': lat, 'exitLng': lng})
-        .catchError((_) {});
+    try {
+      await _channel.invokeMethod('startExitTracking', {
+        'exitLat': lat,
+        'exitLng': lng,
+        'exitThreshold': threshold,
+      });
+      print('✅ [8.dart] 네이티브 추적 시작 명령 전송 완료');
+    } catch (e) {
+      print('❌ [8.dart] 추적 시작 실패: $e');
+    }
   }
 
   @override
@@ -234,6 +268,8 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     _exitDistanceSubscription = null;
     _channel.invokeMethod('stopExitTracking').catchError((_) {});
     _channel.invokeMethod('stopCamera').catchError((_) {});
+    // 버스 하차 상태 설정 (dispose 시에도 보장)
+    RouteTracker.instance.setOnBus(false);
     super.dispose();
   }
 

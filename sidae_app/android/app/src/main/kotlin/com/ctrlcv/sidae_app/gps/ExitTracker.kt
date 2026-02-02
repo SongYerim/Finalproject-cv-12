@@ -51,18 +51,22 @@ class ExitTracker(private val context: Context) {
         this.listener = listener
     }
     
+    private var exitThreshold = 15.0
+
     /**
      * GPS 추적 시작
      * 
      * @param lat 목표 위도 (횡단보도 반대편)
      * @param lng 목표 경도 (횡단보도 반대편)
+     * @param threshold 도달 판정 거리 (미터)
      * @return 성공 여부
      */
-    fun startTracking(lat: Double, lng: Double): Boolean {
+    fun startTracking(lat: Double, lng: Double, threshold: Double = 15.0): Boolean {
         exitLat = lat
         exitLng = lng
+        exitThreshold = threshold
         
-        Log.d(TAG, "🚶 GPS 추적 시작: ($lat, $lng)")
+        Log.d(TAG, "🚶 GPS 추적 시작: ($lat, $lng), 반경: ${threshold}m")
         
         // 위치 권한 확인
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
@@ -92,7 +96,7 @@ class ExitTracker(private val context: Context) {
                 
                 Log.d(TAG, "📍 GPS: (${location.latitude}, ${location.longitude}) → 거리: ${String.format("%.1f", distance)}m")
                 
-                val reached = distance <= EXIT_THRESHOLD
+                val reached = distance <= exitThreshold
                 
                 listener?.onLocationUpdate(distance, reached, location.latitude, location.longitude)
                 
@@ -104,7 +108,7 @@ class ExitTracker(private val context: Context) {
         
         fusedLocationClient?.requestLocationUpdates(locationRequest, locationCallback!!, Looper.getMainLooper())
         
-        Log.d(TAG, "✅ GPS 추적 시작됨")
+        Log.d(TAG, "✅ GPS 추적 시작됨 (반경: ${threshold}m)")
         return true
     }
     

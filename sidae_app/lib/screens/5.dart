@@ -195,6 +195,11 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   void _checkCrosswalk(Position position) {
     // 이미 카메라 화면으로 이동 중이면 추가 횡단보도 감지 무시
     if (_isNavigatingToCrosswalk) return;
+    // 버스/지하철 탑승 중이면 도보 경로 감지 건너뛰기
+    if (_tracker.isOnBus) {
+      print('🚌 [5.dart] 버스 탑승 중 - 횡단보도 감지 건너뛰기');
+      return;
+    }
     if (_crosswalkDetector == null) return;
     _crosswalkDetector!.checkCrosswalkProximity(position);
   }
@@ -244,6 +249,8 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
                     busNumber: arrival.busNumber,
                     stationName: busStopInfo.stationName,
                     enableCamera: true, // 카메라 모드 활성화
+                    exitLat: busStopInfo.exitLat, // 버스 하차 지점
+                    exitLng: busStopInfo.exitLng,
                   ),
                 ),
               ).then((_) {
@@ -278,6 +285,12 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
   // 현재 위치를 기준으로 지나간 점들을 체크 -> RouteTracker로 로직 이동
   void _checkAndUpdatePassedPoints(Position position) {
+    // 버스 탑승 중이면 경로 점 업데이트 건너뛰기 (도보 경로와 겹쳐도 통과 처리 방지)
+    if (_tracker.isOnBus) {
+      print('🚌 [5.dart] 버스 탑승 중 - 경로 점 업데이트 건너뛰기');
+      return;
+    }
+
     final updated = _tracker.findClosestPointAndUpdate(
       position.latitude,
       position.longitude,
