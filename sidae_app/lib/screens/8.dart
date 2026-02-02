@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../services/route_tracker.dart';
 import '../services/tts_service.dart';
+import '../services/porcupine_service.dart';
 
 class BusOnlyScreen extends StatefulWidget {
   final double? returnMidLat;
@@ -31,6 +32,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
   int? _responseTimeMs; // 응답 시간 (밀리초)
   Timer? _previewTimer;
   StreamSubscription? _exitDistanceSubscription;
+  final PorcupineService _porcupineService = PorcupineService.instance;
 
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
@@ -142,8 +144,25 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         try {
           await _channel.invokeMethod('stopCamera');
           developer.log('✅ [8.dart] 카메라 종료 완료', name: 'VLM');
+          print('✅ [8.dart] 카메라 종료 완료');
         } catch (e) {
           developer.log('❌ [8.dart] 카메라 종료 실패: $e', name: 'VLM');
+          print('❌ [8.dart] 카메라 종료 실패: $e');
+        }
+        
+        // 카메라 종료 후 Porcupine이 계속 실행되도록 보장
+        // 약간의 지연을 두어 오디오 리소스가 완전히 해제되도록 함
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        try {
+          print('🔄 [8.dart] Porcupine 재시작 시작');
+          developer.log('🔄 [8.dart] Porcupine 재시작 시작', name: 'Porcupine');
+          await _porcupineService.ensureRunning();
+          print('✅ [8.dart] Porcupine 재시작 완료');
+          developer.log('✅ [8.dart] Porcupine 재시작 완료', name: 'Porcupine');
+        } catch (e, stackTrace) {
+          print('❌ [8.dart] Porcupine 재시작 실패: $e');
+          developer.log('❌ [8.dart] Porcupine 재시작 실패: $e', name: 'Porcupine', error: e, stackTrace: stackTrace);
         }
 
         _previewTimer?.cancel();
@@ -203,7 +222,29 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       });
 
       // 업로드 완료 후 즉시 카메라 종료
-      await _channel.invokeMethod('stopCamera').catchError((_) {});
+      try {
+        await _channel.invokeMethod('stopCamera');
+        developer.log('✅ [8.dart] 카메라 종료 완료 (하차벨/태그기)', name: 'Camera');
+        print('✅ [8.dart] 카메라 종료 완료 (하차벨/태그기)');
+      } catch (e) {
+        developer.log('❌ [8.dart] 카메라 종료 실패: $e', name: 'Camera');
+        print('❌ [8.dart] 카메라 종료 실패: $e');
+      }
+      
+      // 카메라 종료 후 Porcupine이 계속 실행되도록 보장
+      // 약간의 지연을 두어 오디오 리소스가 완전히 해제되도록 함
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      try {
+        print('🔄 [8.dart] Porcupine 재시작 시작 (하차벨/태그기)');
+        developer.log('🔄 [8.dart] Porcupine 재시작 시작 (하차벨/태그기)', name: 'Porcupine');
+        await _porcupineService.ensureRunning();
+        print('✅ [8.dart] Porcupine 재시작 완료 (하차벨/태그기)');
+        developer.log('✅ [8.dart] Porcupine 재시작 완료 (하차벨/태그기)', name: 'Porcupine');
+      } catch (e, stackTrace) {
+        print('❌ [8.dart] Porcupine 재시작 실패 (하차벨/태그기): $e');
+        developer.log('❌ [8.dart] Porcupine 재시작 실패 (하차벨/태그기): $e', name: 'Porcupine', error: e, stackTrace: stackTrace);
+      }
 
       if (result is Map) {
         stopwatch.stop(); // 응답 받은 시점에 타이머 중지
@@ -225,6 +266,91 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
             _responseTimeMs = responseTime; // 응답 시간 저장
           });
         }
+        
+        // 응답에서 des와 reason 파싱하여 TTS로 읽기
+        if (body != null) {
+          try {
+            final bodyStr = body.toString();
+            developer.log('📥 [8.dart] 하차벨/태그기 응답 수신: $bodyStr', name: 'BusAction');
+            print('📥 [8.dart] 하차벨/태그기 응답 수신: $bodyStr');
+            
+            final jsonResponse = json.decode(bodyStr);
+            developer.log('✅ [8.dart] JSON 파싱 성공: $jsonResponse', name: 'BusAction');
+            
+            // des와 reason 추출 시도 (두 가지 형태 지원)
+            String? des;
+            String? reason;
+            
+            // 형태 1: {"des": "...", "reason": "..."}
+            if (jsonResponse is Map) {
+              if (jsonResponse['des'] != null) {
+                des = jsonResponse['des'].toString();
+                developer.log('📝 [8.dart] des 추출 (직접): $des', name: 'BusAction');
+              }
+              if (jsonResponse['reason'] != null) {
+                reason = jsonResponse['reason'].toString();
+                developer.log('📝 [8.dart] reason 추출 (직접): $reason', name: 'BusAction');
+              }
+              
+              // 형태 2: {"result": {"des": "...", "reason": "..."}}
+              if ((des == null || reason == null) && jsonResponse['result'] != null) {
+                final result = jsonResponse['result'];
+                if (result is Map) {
+                  if (des == null && result['des'] != null) {
+                    des = result['des'].toString();
+                    developer.log('📝 [8.dart] des 추출 (result 내부): $des', name: 'BusAction');
+                  }
+                  if (reason == null && result['reason'] != null) {
+                    reason = result['reason'].toString();
+                    developer.log('📝 [8.dart] reason 추출 (result 내부): $reason', name: 'BusAction');
+                  }
+                }
+              }
+            }
+            
+            // des와 reason을 이어서 TTS로 읽기
+            if (des != null || reason != null) {
+              final List<String> parts = [];
+              if (des != null && des.isNotEmpty) {
+                parts.add(des);
+              }
+              if (reason != null && reason.isNotEmpty) {
+                parts.add(reason);
+              }
+              
+              if (parts.isNotEmpty) {
+                final ttsText = parts.join('. ');
+                developer.log('🔊 [8.dart] TTS 호출 시작: "$ttsText"', name: 'BusAction');
+                print('🔊 [8.dart] TTS 호출 시작: "$ttsText"');
+                
+                // TTS 초기화 보장
+                await TtsService.instance.initialize();
+                
+                // TTS는 비동기로 시작
+                TtsService.instance.speak(ttsText).catchError((e) {
+                  developer.log('❌ [8.dart] TTS 호출 실패: $e', name: 'BusAction');
+                  print('❌ [8.dart] TTS 호출 실패: $e');
+                });
+                developer.log('✅ [8.dart] TTS 호출 완료', name: 'BusAction');
+                print('✅ [8.dart] TTS 호출 완료');
+              } else {
+                developer.log('⚠️ [8.dart] des와 reason이 모두 비어있음', name: 'BusAction');
+                print('⚠️ [8.dart] des와 reason이 모두 비어있음');
+              }
+            } else {
+              developer.log('⚠️ [8.dart] des와 reason을 찾을 수 없음. JSON 구조: $jsonResponse', name: 'BusAction');
+              print('⚠️ [8.dart] des와 reason을 찾을 수 없음. JSON 구조: $jsonResponse');
+            }
+          } catch (e, stackTrace) {
+            // JSON 파싱 실패 시 무시 (기존 동작 유지)
+            developer.log('❌ [8.dart] 하차벨/태그기 응답 파싱 실패: $e', name: 'BusAction', error: e, stackTrace: stackTrace);
+            print('❌ [8.dart] 하차벨/태그기 응답 파싱 실패: $e');
+          }
+        } else {
+          developer.log('⚠️ [8.dart] 응답 body가 없음', name: 'BusAction');
+          print('⚠️ [8.dart] 응답 body가 없음');
+        }
+        
         _previewTimer?.cancel();
         _previewTimer = Timer(const Duration(seconds: 3), () {
           if (!mounted) return;
@@ -240,7 +366,28 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         ).showSnackBar(SnackBar(content: Text('업로드 완료: $result')));
       }
     } catch (e) {
-      await _channel.invokeMethod('stopCamera').catchError((_) {});
+      try {
+        await _channel.invokeMethod('stopCamera');
+        developer.log('✅ [8.dart] 카메라 종료 완료 (에러 처리)', name: 'Camera');
+        print('✅ [8.dart] 카메라 종료 완료 (에러 처리)');
+      } catch (stopError) {
+        developer.log('❌ [8.dart] 카메라 종료 실패: $stopError', name: 'Camera');
+        print('❌ [8.dart] 카메라 종료 실패: $stopError');
+      }
+      
+      // 에러 발생 시에도 Porcupine 재시작
+      await Future.delayed(const Duration(milliseconds: 500));
+      try {
+        print('🔄 [8.dart] Porcupine 재시작 시작 (에러 처리)');
+        developer.log('🔄 [8.dart] Porcupine 재시작 시작 (에러 처리)', name: 'Porcupine');
+        await _porcupineService.ensureRunning();
+        print('✅ [8.dart] Porcupine 재시작 완료 (에러 처리)');
+        developer.log('✅ [8.dart] Porcupine 재시작 완료 (에러 처리)', name: 'Porcupine');
+      } catch (porcupineError) {
+        print('❌ [8.dart] Porcupine 재시작 실패 (에러 처리): $porcupineError');
+        developer.log('❌ [8.dart] Porcupine 재시작 실패 (에러 처리): $porcupineError', name: 'Porcupine');
+      }
+      
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -257,7 +404,71 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
   @override
   void initState() {
     super.initState();
-    _startNativeReturnTrackingIfNeeded();
+    print('🚀 [8.dart] initState() 시작');
+    developer.log('🚀 [8.dart] initState() 시작', name: '8.dart');
+    
+    try {
+      _startNativeReturnTrackingIfNeeded();
+      print('✅ [8.dart] _startNativeReturnTrackingIfNeeded() 완료');
+    } catch (e, stackTrace) {
+      print('❌ [8.dart] _startNativeReturnTrackingIfNeeded() 에러: $e');
+      developer.log('❌ [8.dart] _startNativeReturnTrackingIfNeeded() 에러: $e', name: '8.dart', error: e, stackTrace: stackTrace);
+    }
+    
+    // Porcupine 초기화 및 시작 (비동기로 실행)
+    print('🚀 [8.dart] _initPorcupine() 호출 예정');
+    developer.log('🚀 [8.dart] _initPorcupine() 호출 예정', name: 'Porcupine');
+    _initPorcupine().catchError((e, stackTrace) {
+      print('❌ [8.dart] _initPorcupine() 에러: $e');
+      developer.log('❌ [8.dart] _initPorcupine() 에러: $e', name: 'Porcupine', error: e, stackTrace: stackTrace);
+    });
+  }
+
+  Future<void> _initPorcupine() async {
+    try {
+      print('🔧 [8.dart] Porcupine 초기화 시작');
+      developer.log('🔧 [8.dart] Porcupine 초기화 시작', name: 'Porcupine');
+      
+      // 콜백을 먼저 설정 (initialize 전에)
+      _porcupineService.onKeywordDetected = (keyword) {
+        print('📞 [8.dart] onKeywordDetected 콜백 호출됨: $keyword');
+        developer.log('📞 [8.dart] onKeywordDetected 콜백 호출됨: $keyword', name: 'Porcupine');
+        if (keyword == '시대야' && mounted) {
+          print('🎤 [8.dart] "시대야" 키워드 감지됨 - VLM 호출 시작');
+          developer.log('🎤 [8.dart] "시대야" 키워드 감지됨 - VLM 호출 시작', name: 'Porcupine');
+          _captureAndUploadVLM(context);
+        } else {
+          print('⚠️ [8.dart] 키워드 불일치 또는 화면이 마운트되지 않음: keyword=$keyword, mounted=$mounted');
+          developer.log('⚠️ [8.dart] 키워드 불일치 또는 화면이 마운트되지 않음: keyword=$keyword, mounted=$mounted', name: 'Porcupine');
+        }
+      };
+      print('✅ [8.dart] onKeywordDetected 콜백 등록 완료');
+      developer.log('✅ [8.dart] onKeywordDetected 콜백 등록 완료', name: 'Porcupine');
+
+      print('🔧 [8.dart] PorcupineService.initialize() 호출');
+      developer.log('🔧 [8.dart] PorcupineService.initialize() 호출', name: 'Porcupine');
+      final initialized = await _porcupineService.initialize();
+      
+      if (initialized) {
+        print('✅ [8.dart] Porcupine 초기화 성공, start() 호출');
+        developer.log('✅ [8.dart] Porcupine 초기화 성공, start() 호출', name: 'Porcupine');
+        final started = await _porcupineService.start();
+        if (started) {
+          print('✅ [8.dart] Porcupine 시작 완료 - 마이크 활성화됨');
+          developer.log('✅ [8.dart] Porcupine 시작 완료 - 마이크 활성화됨', name: 'Porcupine');
+        } else {
+          print('❌ [8.dart] Porcupine 시작 실패');
+          developer.log('❌ [8.dart] Porcupine 시작 실패', name: 'Porcupine');
+        }
+      } else {
+        print('❌ [8.dart] Porcupine 초기화 실패');
+        developer.log('❌ [8.dart] Porcupine 초기화 실패', name: 'Porcupine');
+      }
+    } catch (e, stackTrace) {
+      print('❌ [8.dart] _initPorcupine() 예외 발생: $e');
+      print('❌ [8.dart] 스택 트레이스: $stackTrace');
+      developer.log('❌ [8.dart] _initPorcupine() 예외 발생: $e', name: 'Porcupine', error: e, stackTrace: stackTrace);
+    }
   }
 
   Future<void> _startNativeReturnTrackingIfNeeded() async {
@@ -317,6 +528,10 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
 
   @override
   void dispose() {
+    // Porcupine 중지하지 않음 (다른 화면에서도 사용 중일 수 있음)
+    // 대신 콜백만 제거
+    _porcupineService.onKeywordDetected = null;
+    developer.log('🛑 [8.dart] Porcupine 콜백 제거 (화면 종료)', name: 'Porcupine');
     _previewTimer?.cancel();
     _previewTimer = null;
     _exitDistanceSubscription?.cancel();

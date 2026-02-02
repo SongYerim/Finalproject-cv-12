@@ -14,6 +14,7 @@ import '../services/bus_stop_detector.dart';
 import '../services/bus_arrival_service.dart';
 import '../services/bus_popup_state_service.dart';
 import '../services/tts_service.dart';
+import '../services/porcupine_service.dart';
 import '9.dart';
 import '../services/navigation_service.dart';
 import '../widgets/progress_indicator_widget.dart';
@@ -43,6 +44,7 @@ class _Screen4State extends State<Screen4> {
   final RouteTracker _tracker = RouteTracker.instance;
   final NavigationService _navService = NavigationService.instance;
   final TtsService _ttsService = TtsService.instance;
+  final PorcupineService _porcupineService = PorcupineService.instance;
   final BusPopupStateService _popupState = BusPopupStateService.instance;
   final BusArrivalService _busArrivalService = BusArrivalService.instance;
   CrosswalkDetector? _crosswalkDetector;
@@ -112,6 +114,47 @@ class _Screen4State extends State<Screen4> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _tracker.announceInitialStep();
     });
+
+    // Porcupine 초기화 및 시작 (비동기로 실행)
+    developer.log('🚀 [4.dart] _initPorcupine() 호출 예정', name: 'Porcupine');
+    _initPorcupine().catchError((e, stackTrace) {
+      developer.log('❌ [4.dart] _initPorcupine() 에러: $e', name: 'Porcupine', error: e, stackTrace: stackTrace);
+    });
+  }
+
+  Future<void> _initPorcupine() async {
+    try {
+      developer.log('🔧 [4.dart] Porcupine 초기화 시작', name: 'Porcupine');
+      
+      // 콜백을 먼저 설정 (initialize 전에)
+      _porcupineService.onKeywordDetected = (keyword) {
+        developer.log('📞 [4.dart] onKeywordDetected 콜백 호출됨: $keyword', name: 'Porcupine');
+        if (keyword == '시대야' && mounted) {
+          developer.log('🎤 [4.dart] "시대야" 키워드 감지됨 - VLM 호출 시작', name: 'Porcupine');
+          _captureAndUploadVLM(context);
+        } else {
+          developer.log('⚠️ [4.dart] 키워드 불일치 또는 화면이 마운트되지 않음: keyword=$keyword, mounted=$mounted', name: 'Porcupine');
+        }
+      };
+      developer.log('✅ [4.dart] onKeywordDetected 콜백 등록 완료', name: 'Porcupine');
+
+      developer.log('🔧 [4.dart] PorcupineService.initialize() 호출', name: 'Porcupine');
+      final initialized = await _porcupineService.initialize();
+      
+      if (initialized) {
+        developer.log('✅ [4.dart] Porcupine 초기화 성공, start() 호출', name: 'Porcupine');
+        final started = await _porcupineService.start();
+        if (started) {
+          developer.log('✅ [4.dart] Porcupine 시작 완료 - 마이크 활성화됨', name: 'Porcupine');
+        } else {
+          developer.log('❌ [4.dart] Porcupine 시작 실패', name: 'Porcupine');
+        }
+      } else {
+        developer.log('❌ [4.dart] Porcupine 초기화 실패', name: 'Porcupine');
+      }
+    } catch (e, stackTrace) {
+      developer.log('❌ [4.dart] _initPorcupine() 예외 발생: $e', name: 'Porcupine', error: e, stackTrace: stackTrace);
+    }
   }
 
   void _initializePathPoints() {
@@ -175,6 +218,10 @@ class _Screen4State extends State<Screen4> {
 
   @override
   void dispose() {
+    // Porcupine 중지하지 않음 (다른 화면에서도 사용 중일 수 있음)
+    // 대신 콜백만 제거
+    _porcupineService.onKeywordDetected = null;
+    developer.log('🛑 [4.dart] Porcupine 콜백 제거 (화면 종료)', name: 'Porcupine');
     // NavigationService는 싱글톤 인스턴스로 dispose 하면 안 됨
     // _navService.dispose(); 제거
     super.dispose();
@@ -348,8 +395,25 @@ class _Screen4State extends State<Screen4> {
       try {
         await _channel.invokeMethod('stopCamera');
         developer.log('✅ [4.dart] 카메라 종료 완료', name: 'VLM');
+        print('✅ [4.dart] 카메라 종료 완료');
       } catch (e) {
         developer.log('❌ [4.dart] 카메라 종료 실패: $e', name: 'VLM');
+        print('❌ [4.dart] 카메라 종료 실패: $e');
+      }
+      
+      // 카메라 종료 후 Porcupine이 계속 실행되도록 보장
+      // 약간의 지연을 두어 오디오 리소스가 완전히 해제되도록 함
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      try {
+        print('🔄 [4.dart] Porcupine 재시작 시작');
+        developer.log('🔄 [4.dart] Porcupine 재시작 시작', name: 'Porcupine');
+        await _porcupineService.ensureRunning();
+        print('✅ [4.dart] Porcupine 재시작 완료');
+        developer.log('✅ [4.dart] Porcupine 재시작 완료', name: 'Porcupine');
+      } catch (e, stackTrace) {
+        print('❌ [4.dart] Porcupine 재시작 실패: $e');
+        developer.log('❌ [4.dart] Porcupine 재시작 실패: $e', name: 'Porcupine', error: e, stackTrace: stackTrace);
       }
 
       if (context.mounted) {

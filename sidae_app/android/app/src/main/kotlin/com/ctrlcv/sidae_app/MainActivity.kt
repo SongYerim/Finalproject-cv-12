@@ -80,6 +80,8 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     
     // ===== 카메라 관련 =====
     private var cameraProvider: ProcessCameraProvider? = null
+    private var captureUploadProvider: ProcessCameraProvider? = null // captureAndUploadImage에서 사용하는 provider
+    private var captureUploadScope: CoroutineScope? = null // captureAndUploadImage의 scope
     private var imageAnalysis: ImageAnalysis? = null
     private var preview: Preview? = null
     private var previewView: PreviewView? = null
@@ -311,12 +313,16 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         val metadata = call.argument<Map<String, String>>("metadata") ?: emptyMap()
         val keepFile = call.argument<Boolean>("keepFile") ?: false
 
+        // 기존 scope가 있으면 취소
+        captureUploadScope?.cancel()
         val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        captureUploadScope = scope
         scope.launch {
             try {
                 val cameraProviderFuture: ListenableFuture<ProcessCameraProvider> =
                     ProcessCameraProvider.getInstance(this@MainActivity)
                 val provider = cameraProviderFuture.await()
+                captureUploadProvider = provider // 전역 변수에 저장
 
                 val imageCapture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
@@ -383,9 +389,11 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                                     withContext(Dispatchers.Main) {
                                         try {
                                             provider.unbindAll()
+                                            captureUploadProvider = null // 전역 변수 초기화
                                             Log.d(TAG, "✅ 캡처/업로드 후 카메라 해제 완료")
                                         } catch (e: Exception) {
                                             Log.e(TAG, "카메라 해제 실패: ${e.message}", e)
+                                            captureUploadProvider = null
                                         }
                                     }
                                     if (!keepFile && photoFile.exists()) {
@@ -398,7 +406,11 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "캡처/업로드 처리 실패", e)
+                captureUploadProvider = null
                 result.error("CAPTURE_FLOW_ERROR", e.message, null)
+            } finally {
+                // scope 종료 시 정리
+                captureUploadScope = null
             }
         }
     }
@@ -513,7 +525,23 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 boundingBoxOverlayView?.clearDetections()
                 Log.d(TAG, "  - BoundingBoxOverlay 및 해상도 변수 초기화 완료")
                 
-                // 카메라 해제 (메인 스레드에서 실행)
+                // captureAndUploadImage에서 사용한 provider 해제
+                try {
+                    if (captureUploadProvider != null) {
+                        captureUploadProvider?.unbindAll()
+                        captureUploadProvider = null
+                        Log.d(TAG, "  - captureUploadProvider.unbindAll() 완료")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "  - captureUploadProvider.unbindAll() 실패: ${e.message}", e)
+                    captureUploadProvider = null
+                }
+                
+                // captureAndUploadImage의 scope 취소
+                captureUploadScope?.cancel()
+                captureUploadScope = null
+                
+                // 일반 카메라 provider 해제 (메인 스레드에서 실행)
                 try {
                     if (cameraProvider != null) {
                         cameraProvider?.unbindAll()
