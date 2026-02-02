@@ -7,6 +7,9 @@ import os
 from dotenv import load_dotenv
 from PIL import Image
 import io
+import time
+import cv2
+import numpy as np
 
 def resize_image_smart(
     image_bytes: bytes, 
@@ -14,11 +17,63 @@ def resize_image_smart(
     max_pixels: int = 512 * 512
 ) -> bytes:
     """
-    이미지 비율을 유지하면서:
-    1. 총 픽셀 수가 min_pixels보다 작으면 -> 확대 (Upscaling)
-    2. 총 픽셀 수가 max_pixels보다 크면 -> 축소 (Downscaling)
-    3. 그 사이라면 -> 원본 유지
+    OpenCV를 사용한 고속 리사이징
     """
+    try:
+        # 1. Bytes -> Numpy Array 변환 (디코딩)
+        # np.frombuffer는 데이터 복사 없이 뷰만 생성하므로 매우 빠름
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            return image_bytes
+
+        h, w = img.shape[:2]
+        current_pixels = w * h
+        
+        # 2. 리사이징 필요 여부 계산
+        target_pixels = None
+        if current_pixels < min_pixels:
+            target_pixels = min_pixels
+        elif current_pixels > max_pixels:
+            target_pixels = max_pixels
+            
+        # 3. 리사이징 수행
+        if target_pixels:
+            scale_factor = (target_pixels / current_pixels) ** 0.5
+            new_width = int(w * scale_factor)
+            new_height = int(h * scale_factor)
+            
+            # INTER_LINEAR: 빠르고 화질 준수 (기본값)
+            # INTER_AREA: 축소할 때 화질 좋음 (약간 더 느림)
+            # 여기서는 속도가 중요하므로 INTER_LINEAR 추천
+            img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+
+        # 4. 이미지 인코딩 (다시 Bytes로)
+        # quality: 85 (Pillow와 동일하게 설정)
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 85]
+        success, encoded_img = cv2.imencode(".jpg", img, encode_param)
+        
+        if success:
+            return encoded_img.tobytes()
+        else:
+            return image_bytes
+
+    except Exception as e:
+        print(f"OpenCV resize failed: {e}")
+        return image_bytes
+
+"""def resize_image_smart(
+    image_bytes: bytes, 
+    min_pixels: int = 256 * 256,
+    max_pixels: int = 512 * 512
+) -> bytes:
+    
+    #이미지 비율을 유지하면서:
+    #1. 총 픽셀 수가 min_pixels보다 작으면 -> 확대 (Upscaling)
+    #2. 총 픽셀 수가 max_pixels보다 크면 -> 축소 (Downscaling)
+    #3. 그 사이라면 -> 원본 유지
+    
     try:
         image = Image.open(io.BytesIO(image_bytes))
         
@@ -40,7 +95,7 @@ def resize_image_smart(
             new_width = int(image.width * scale_factor)
             new_height = int(image.height * scale_factor)
             
-            image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            image = image.resize((new_width, new_height), Image.Resampling.BILINEAR)
         
         # 다시 bytes로 변환
         buffer = io.BytesIO()
@@ -58,7 +113,7 @@ def resize_image_smart(
     except Exception as e:
         # 이미지 처리 중 에러 발생 시 원본 반환 (안전 장치)
         print(f"Image resize failed: {e}")
-        return image_bytes
+        return image_bytes"""
 
 load_dotenv()
 
@@ -79,7 +134,9 @@ async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt
 
     # rawPredict 엔드포인트 사용 (REST)
     url = f"https://{REGION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{REGION}/endpoints/{ENDPOINT_ID}:rawPredict"
+    resize_s = time.time()
     optimized_image_bytes = resize_image_smart(image_bytes, min_pixels=147456, max_pixels=262144)
+    resize_e = time.time()
     base64_image = base64.b64encode(optimized_image_bytes).decode("utf-8")
     messages = []
 
@@ -106,11 +163,12 @@ async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt
     }
     messages.append(user_message)
 
+
     payload = {
         "messages": messages,
         "max_tokens": max_tokens
     }
-
+    
     try:
         # 토큰 자동 획득
         token = get_access_token()
@@ -119,13 +177,15 @@ async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt
             "Content-Type": "application/json",
             "X-Goog-User-Project": PROJECT_ID 
         }
-
+        model_s = time.time()
         response = requests.post(url, json=payload, headers=headers)
-
+        model_e = time.time()
+        resize_time = (resize_e - resize_s) * 1000
+        model_time = (model_e - model_s) * 1000
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=f"Vertex AI API Error: {response.text}")
 
-        return response.json()
+        return [response.json(), resize_time, model_time]
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Request Error: {str(e)}")

@@ -26,7 +26,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
         # 3. Vertex AI 엔드포인트 호출
         logger.info(f"Vertex AI 요청 시작: 파일명={file.filename}, 크기={len(image_bytes)} bytes")
         
-        result = await request_vlm_prediction(
+        result_ = await request_vlm_prediction(
             image_bytes=image_bytes, 
             mime_type=file.content_type,
             system_prompt=system_instruction,
@@ -34,8 +34,10 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
             max_tokens = token_limit
         )
         
-        logger.info(f"Vertex AI 응답 수신: {result}")
-
+        logger.info(f"Vertex AI 응답 수신: {result_}")
+        result = result_[0]
+        resize_time = result_[1]
+        model_time = result_[2]
         choices = result.get("choices") # for OpenAI style response
 
         if choices and len(choices) > 0:
@@ -65,23 +67,25 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
             }
 
         if mode in ['bell', 'tag']:
-            pos = final_data.get("selected_area", "위치 불명")
+            pos = final_data.get("selected_area", " ")
             reason = final_data.get("reason", "이유 없음")
-            des = f'{mode}은 {pos}에 있습니다.'
-
-            return {"des": des, "reason": reason}
+            if mode == 'bell':
+                mode = '하차벨'
+            elif mode == 'tag':
+                mode ='단말기'
+            if pos == " ":
+                des = f'{mode}를 못 찾겠습니다.'
+            else:
+                des = f'{mode}은 {pos}에 있습니다.'
+            return {"des": des, "reason": reason, "resize_time": resize_time, "model_time": model_time}
         elif mode in ['tag_']:
-            pos_x = final_data.get("수평 위치", "알수없음")
-            pos_y = final_data.get("수직 위치", "알수없음")
-
-            if pos_x == "알수없음" and pos_y == "알수없음":
-                 return {"des": "대상을 찾을 수 없습니다."}
-            
-            des = f'{mode}은 {pos_x} {pos_y}에 있습니다.'
-            return {"des": des}
+            mode = '단말기'
+            pos = final_data.get("selected_area", " ")            
+            des = f'{mode}은 {pos}에 있습니다.'
+            return {"des": des, "resize_time": resize_time, "model_time": model_time}
         
         return {
-            "result": final_data
+            "result": final_data, "resize_time": resize_time, "model_time": model_time
         }
         
     except HTTPException as he:

@@ -66,10 +66,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       final result = await _channel.invokeMethod('captureAndUploadImage', {
         'uploadUrl': _getCaptureUploadUrl(),
         'jpegQuality': 90,
-        'metadata': {
-          'source': 'vlm',
-          'mode': 'vlm',
-        },
+        'metadata': {'source': 'vlm', 'mode': 'vlm'},
         'keepFile': true,
       });
 
@@ -88,8 +85,8 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
             final normalized = bodyText.trim();
             _lastResponse =
                 normalized.isNotEmpty && normalized.toLowerCase() != 'null'
-                    ? normalized
-                    : 'No response';
+                ? normalized
+                : 'No response';
             _responseTimeMs = responseTime;
           });
         }
@@ -99,29 +96,38 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
           try {
             final bodyStr = body.toString();
             developer.log('📥 [8.dart] VLM 응답 수신: $bodyStr', name: 'VLM');
-            
+
             final jsonResponse = json.decode(bodyStr);
             developer.log('✅ [8.dart] JSON 파싱 성공: $jsonResponse', name: 'VLM');
-            
+
             // description 추출 시도 (두 가지 형태 지원)
             String? description;
-            
+
             // 형태 1: {"description": "..."}
             if (jsonResponse is Map && jsonResponse['description'] != null) {
               description = jsonResponse['description'].toString();
-              developer.log('📝 [8.dart] description 추출 (직접): $description', name: 'VLM');
+              developer.log(
+                '📝 [8.dart] description 추출 (직접): $description',
+                name: 'VLM',
+              );
             }
             // 형태 2: {"result": {"description": "..."}}
             else if (jsonResponse is Map && jsonResponse['result'] != null) {
               final result = jsonResponse['result'];
               if (result is Map && result['description'] != null) {
                 description = result['description'].toString();
-                developer.log('📝 [8.dart] description 추출 (result 내부): $description', name: 'VLM');
+                developer.log(
+                  '📝 [8.dart] description 추출 (result 내부): $description',
+                  name: 'VLM',
+                );
               }
             }
-            
+
             if (description != null && description.isNotEmpty) {
-              developer.log('🔊 [8.dart] TTS 호출 시작: "$description"', name: 'VLM');
+              developer.log(
+                '🔊 [8.dart] TTS 호출 시작: "$description"',
+                name: 'VLM',
+              );
               // TTS 초기화 보장
               await TtsService.instance.initialize();
               // TTS는 비동기로 시작 (카메라 종료를 기다리지 않음)
@@ -130,7 +136,10 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
               });
               developer.log('✅ [8.dart] TTS 호출 완료', name: 'VLM');
             } else {
-              developer.log('⚠️ [8.dart] description을 찾을 수 없음. JSON 구조: $jsonResponse', name: 'VLM');
+              developer.log(
+                '⚠️ [8.dart] description을 찾을 수 없음. JSON 구조: $jsonResponse',
+                name: 'VLM',
+              );
             }
           } catch (e) {
             // JSON 파싱 실패 시 무시 (기존 동작 유지)
@@ -139,7 +148,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         } else {
           developer.log('⚠️ [8.dart] 응답 body가 없음', name: 'VLM');
         }
-        
+
         // TTS 시작 후 카메라 종료 (await하여 완료 보장)
         try {
           await _channel.invokeMethod('stopCamera');
@@ -175,16 +184,16 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       }
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('업로드 완료: $result')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('업로드 완료: $result')));
       }
     } catch (e) {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('업로드 실패: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
       }
       if (mounted) {
         setState(() {
@@ -645,77 +654,79 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                 left: 16,
                 right: 16,
                 top: 12,
-                child: Container(
-                  height: 220,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: const Color(0xFFFFD400),
-                      width: 2,
+                child: AspectRatio(
+                  aspectRatio: 3 / 4, // 카메라 비율 (일반적인 세로 모드)
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0xFFFFD400),
+                        width: 2,
+                      ),
                     ),
-                  ),
-                  padding: const EdgeInsets.all(8),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.file(File(_lastImagePath!), fit: BoxFit.cover),
-                        Positioned.fill(
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: Container(
-                              margin: const EdgeInsets.all(8),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.7),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                _lastResponse.isNotEmpty
-                                    ? _lastResponse
-                                    : 'No response',
-                                textAlign: TextAlign.center,
-                                maxLines: 4,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
+                    padding: const EdgeInsets.all(8),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.file(File(_lastImagePath!), fit: BoxFit.cover),
+                          Positioned.fill(
+                            child: Align(
+                              alignment: Alignment.bottomCenter,
+                              child: Container(
+                                margin: const EdgeInsets.all(8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.7),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  _lastResponse.isNotEmpty
+                                      ? _lastResponse
+                                      : 'No response',
+                                  textAlign: TextAlign.center,
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                        // 응답 시간 표시 (우상단)
-                        if (_responseTimeMs != null)
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFD400),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '응답 시간: ${_responseTimeMs}ms',
-                                style: const TextStyle(
-                                  color: Colors.black,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
+                          // 응답 시간 표시 (우상단)
+                          if (_responseTimeMs != null)
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFD400),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '응답 시간: ${_responseTimeMs}ms',
+                                  style: const TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

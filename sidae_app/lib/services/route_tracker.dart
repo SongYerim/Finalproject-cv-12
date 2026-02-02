@@ -1,5 +1,6 @@
 // lib/services/route_tracker.dart
 import 'package:flutter_naver_map/flutter_naver_map.dart';
+import 'dart:developer' as developer;
 import '../models/route_model.dart';
 import '../constants.dart';
 
@@ -229,24 +230,12 @@ class RouteTracker {
     if (_isRouteCompleted) return; // 이미 완료됨
     if (routes.isEmpty) return;
 
-    final isLastSegment = currentSegmentIndex == routes.length - 1;
-    if (!isLastSegment) return;
-
-    final lastSegment = routes.last;
-    final totalSteps = lastSegment.stepDescription.isNotEmpty
-        ? lastSegment.stepDescription.length
-        : 1;
-    final isLastStep = currentStepIndex >= totalSteps - 1;
-
-    // 마지막 구간의 마지막 단계가 "[도착]"을 포함하는지도 확인
-    bool isArrivalStep = false;
-    if (lastSegment.stepDescription.isNotEmpty &&
-        currentStepIndex < lastSegment.stepDescription.length) {
-      final stepDesc = lastSegment.stepDescription[currentStepIndex];
-      isArrivalStep = stepDesc.contains('[도착]');
-    }
-
-    if (isLastStep || isArrivalStep) {
+    // 수정: 단순히 마지막 단계(isLastStep)에 진입했다고 해서 완료 처리하면 안 됨.
+    // 경로의 마지막 지점(좌표)을 실제로 통과했는지 확인해야 함.
+    developer.log('🚩pointsPassed: $pointsPassed');
+    developer.log('🚩pointsPassed.last: ${pointsPassed.last}');
+    if (pointsPassed.isNotEmpty && pointsPassed.last) {
+      developer.log('🚩 [RouteTracker] 최종 목적지 좌표 도달 확인', name: 'RouteTracker');
       _isRouteCompleted = true;
       onRouteCompleted?.call();
     }
@@ -303,6 +292,9 @@ class RouteTracker {
 
       // 구간 업데이트 (경로 점과 구간을 매핑)
       _updateSegmentFromPointIndex(closestIndex);
+
+      // 위치가 업데이트되었으므로 완료 여부 체크 (단계 변경이 없어도 체크해야 함)
+      _checkRouteCompletion();
 
       return true;
     }
