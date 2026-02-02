@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'dart:io';
 import 'package:flutter/services.dart';
 import 'ocr_service.dart';
 import 'vlm_service.dart';
+import 'api_service.dart';
 
 // TagRecognitionResult를 vlm_service.dart에서 re-export
 export 'vlm_service.dart' show TagRecognitionResult;
@@ -165,9 +167,9 @@ class BusDetectorService {
     await _vlmService.sendToVlmDummy(imageBytes);
   }
 
-  /// 태그 인식 요청 (mode: tag_) - VlmService로 위임
+  /// 태그 인식 요청 (mode: tag_) - 네이티브 업로드 방식 사용
   ///
-  /// 현재 카메라 프레임을 캡처하여 API 서버로 전송합니다.
+  /// 네이티브에서 캡처 및 업로드를 직접 수행하여 타임아웃 문제를 방지합니다.
   /// Returns: TagRecognitionResult (이미지, 응답, 성공 여부)
   Future<TagRecognitionResult?> sendTagRecognition() async {
     if (!_isActive) {
@@ -178,9 +180,67 @@ class BusDetectorService {
       return null;
     }
 
-    return _vlmService.sendTagRecognition(
-      currentSnapshotCallback: onSnapshotCaptured,
-    );
+    try {
+      final baseUrl = ApiService.baseUrl;
+      final uploadUrl = '$baseUrl/bus-ai/bus-recognition';
+
+      developer.log(
+        '📤 [BusDetectorService] 태그 인식 요청 (Native) - URL: $uploadUrl',
+        name: 'BusDetectorService',
+      );
+
+      // 네이티브 메서드 호출
+      final result = await _channel.invokeMethod('captureAndUploadImage', {
+        'uploadUrl': uploadUrl,
+        'jpegQuality': 90,
+        'metadata': {'source': 'bus_detector', 'mode': 'tag_'},
+        'keepFile': true, // 결과 이미지 표시를 위해 파일 유지
+      });
+
+      if (result is Map) {
+        final localPath = result['localPath'] as String?;
+        final body = result['body'] as String?;
+
+        Uint8List? imageBytes;
+
+        // 로컬 파일에서 이미지 바이트 읽기
+        if (localPath != null) {
+          try {
+            final file = File(localPath);
+            if (await file.exists()) {
+              imageBytes = await file.readAsBytes();
+              // 필요하다면 파일 삭제 (지금은 유지)
+              // await file.delete();
+            }
+          } catch (e) {
+            developer.log('⚠️ 이미지 파일 읽기 실패: $e', name: 'BusDetectorService');
+          }
+        }
+
+        developer.log(
+          '✅ [BusDetectorService] 태그 인식 성공 (응답: $body)',
+          name: 'BusDetectorService',
+        );
+
+        return TagRecognitionResult(
+          imageBytes: imageBytes ?? Uint8List(0), // 이미지가 없으면 빈 바이트
+          response: body ?? '',
+          success: true,
+        );
+      } else {
+        developer.log(
+          '❌ [BusDetectorService] 예상치 못한 결과 형식: $result',
+          name: 'BusDetectorService',
+        );
+        return null;
+      }
+    } catch (e) {
+      developer.log(
+        '❌ [BusDetectorService] 태그 인식 실패: $e',
+        name: 'BusDetectorService',
+      );
+      return null;
+    }
   }
 
   /// 감지 결과 처리
