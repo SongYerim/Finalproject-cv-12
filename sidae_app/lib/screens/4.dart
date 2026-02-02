@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/route_model.dart';
 import '../services/route_tracker.dart';
 import '../services/crosswalk_detector.dart';
@@ -45,6 +46,10 @@ class _Screen4State extends State<Screen4> {
   CrosswalkDetector? _crosswalkDetector;
   BusStopDetector? _busStopDetector;
   bool _isNavigatingToCrosswalk = false; // 카메라 중복 실행 방지 플래그
+
+  static const MethodChannel _channel = MethodChannel(
+    'com.ctrlcv.sidae_app/yolo_native',
+  );
 
   double _distanceToTarget = 0.0;
   DateTime _lastVibrationTime = DateTime.now();
@@ -262,6 +267,48 @@ class _Screen4State extends State<Screen4> {
       popupState: _popupState,
       onClose: _closeBusArrivalOverlay,
     );
+  }
+
+  // VLM 모드로 이미지 캡처 및 업로드
+  Future<void> _captureAndUploadVLM(BuildContext context) async {
+    try {
+      final baseUrl = dotenv.env['SIDAE_SERVER_CLOUD_URL'];
+      if (baseUrl == null || baseUrl.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('SIDAE_SERVER_CLOUD_URL이 설정되지 않았습니다.')),
+          );
+        }
+        return;
+      }
+
+      final uploadUrl = '$baseUrl/bus-ai/bus-recognition';
+
+      final result = await _channel.invokeMethod('captureAndUploadImage', {
+        'uploadUrl': uploadUrl,
+        'jpegQuality': 90,
+        'metadata': {
+          'source': 'vlm',
+          'mode': 'vlm',
+        },
+        'keepFile': true,
+      });
+
+      await _channel.invokeMethod('stopCamera').catchError((_) {});
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('업로드 완료: ${result['body'] ?? 'Success'}')),
+        );
+      }
+    } catch (e) {
+      await _channel.invokeMethod('stopCamera').catchError((_) {});
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('업로드 실패: $e')),
+        );
+      }
+    }
   }
 
   // 현재 위치를 기준으로 지나간 점들을 체크 -> RouteTracker로 로직 이동
@@ -508,6 +555,43 @@ class _Screen4State extends State<Screen4> {
           ),
           // 버스 도착 정보 오버레이
           if (_popupState.showPopup) _buildBusArrivalOverlay(),
+          // 시대야 버튼 (오른쪽 윗부분)
+          Positioned(
+            top: 12,
+            right: 12,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => _captureAndUploadVLM(context),
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFD400),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Text(
+                      '시대야',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: Container(

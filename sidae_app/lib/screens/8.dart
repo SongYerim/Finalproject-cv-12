@@ -45,6 +45,79 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     return '$baseUrl/bus-ai/bus-recognition';
   }
 
+  // VLM 모드로 이미지 캡처 및 업로드
+  Future<void> _captureAndUploadVLM(BuildContext context) async {
+    final stopwatch = Stopwatch()..start();
+
+    try {
+      if (mounted) {
+        setState(() {
+          _lastResponse = 'No response';
+          _responseTimeMs = null;
+        });
+      }
+
+      final result = await _channel.invokeMethod('captureAndUploadImage', {
+        'uploadUrl': _getCaptureUploadUrl(),
+        'jpegQuality': 90,
+        'metadata': {
+          'source': 'vlm',
+          'mode': 'vlm',
+        },
+        'keepFile': true,
+      });
+
+      await _channel.invokeMethod('stopCamera').catchError((_) {});
+
+      if (result is Map) {
+        stopwatch.stop();
+        final responseTime = stopwatch.elapsedMilliseconds;
+
+        final path = result['localPath'];
+        final body = result['body'];
+        if (mounted) {
+          setState(() {
+            if (path is String) {
+              _lastImagePath = path;
+            }
+            final bodyText = body?.toString() ?? '';
+            final normalized = bodyText.trim();
+            _lastResponse =
+                normalized.isNotEmpty && normalized.toLowerCase() != 'null'
+                    ? normalized
+                    : 'No response';
+            _responseTimeMs = responseTime;
+          });
+        }
+        _previewTimer?.cancel();
+        _previewTimer = Timer(const Duration(seconds: 3), () {
+          if (!mounted) return;
+          setState(() {
+            _lastImagePath = null;
+          });
+        });
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('업로드 완료: $result')),
+        );
+      }
+    } catch (e) {
+      await _channel.invokeMethod('stopCamera').catchError((_) {});
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('업로드 실패: $e')),
+        );
+      }
+      if (mounted) {
+        setState(() {
+          _lastResponse = 'No response';
+        });
+      }
+    }
+  }
+
   Future<void> _captureAndUpload(BuildContext context, String source) async {
     // 시작 시간 측정
     final stopwatch = Stopwatch()..start();
@@ -221,6 +294,43 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                     SizedBox(width: 6),
                     Text('뒤로가기', style: TextStyle(fontWeight: FontWeight.w700)),
                   ],
+                ),
+              ),
+            ),
+            // 시대야 버튼 (오른쪽 윗부분)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _captureAndUploadVLM(context),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFD400),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: Text(
+                        '시대야',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
