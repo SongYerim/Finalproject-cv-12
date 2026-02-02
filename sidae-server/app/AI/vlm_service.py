@@ -68,12 +68,12 @@ def resize_image_smart(
     min_pixels: int = 256 * 256,
     max_pixels: int = 512 * 512
 ) -> bytes:
-    """
-    이미지 비율을 유지하면서:
-    1. 총 픽셀 수가 min_pixels보다 작으면 -> 확대 (Upscaling)
-    2. 총 픽셀 수가 max_pixels보다 크면 -> 축소 (Downscaling)
-    3. 그 사이라면 -> 원본 유지
-    """
+    
+    #이미지 비율을 유지하면서:
+    #1. 총 픽셀 수가 min_pixels보다 작으면 -> 확대 (Upscaling)
+    #2. 총 픽셀 수가 max_pixels보다 크면 -> 축소 (Downscaling)
+    #3. 그 사이라면 -> 원본 유지
+    
     try:
         image = Image.open(io.BytesIO(image_bytes))
         
