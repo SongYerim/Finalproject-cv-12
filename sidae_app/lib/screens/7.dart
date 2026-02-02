@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../services/bus_arrival_service.dart';
 import '../services/bus_detector_service.dart';
 import '../services/tts_service.dart';
+import '../services/route_tracker.dart';
 import '../utils/bus_utils.dart' as bus_utils;
 import '8.dart';
 
@@ -13,12 +14,17 @@ class BusArrivalScreen extends StatefulWidget {
   final String busNumber;
   final String stationName;
   final bool enableCamera; // 카메라 모드 활성화 파라미터
+  /// 버스 하차 지점 좌표 (하차 알림용)
+  final double? exitLat;
+  final double? exitLng;
 
   const BusArrivalScreen({
     super.key,
     required this.busNumber,
     required this.stationName,
     this.enableCamera = false,
+    this.exitLat,
+    this.exitLng,
   });
 
   @override
@@ -207,6 +213,9 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         });
         _ttsService.speak("탑승할 버스입니다! ${widget.busNumber}번");
 
+        // 버스 탑승 상태 설정 (도보 경로 감지 비활성화)
+        RouteTracker.instance.setOnBus(true);
+
         // 매칭 성공 시 추론 중지 (배터리 절약)
         _busDetectorService.stopInference();
 
@@ -357,7 +366,13 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => const BusOnlyScreen()),
+      MaterialPageRoute(
+        builder: (context) => BusOnlyScreen(
+          returnMidLat: widget.exitLat,
+          returnMidLng: widget.exitLng,
+          returnDistanceMeters: 30.0, // 30m 반경으로 하차 감지
+        ),
+      ),
     );
   }
 

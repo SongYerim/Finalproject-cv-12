@@ -42,6 +42,29 @@ class RouteTracker {
   bool _isRouteCompleted = false;
   bool get isRouteCompleted => _isRouteCompleted;
 
+  /// 현재 버스/지하철 구간인지 여부 (도보 경로 감지 건너뛰기용)
+  bool get isOnBusSegment {
+    final segment = getCurrentSegment();
+    final isBus = segment?.moveType == 'BUS' || segment?.moveType == 'SUBWAY';
+    // 디버그: 현재 구간 정보 출력
+    if (segment != null) {
+      print(
+        '🚌 [RouteTracker] 현재 구간: ${segment.segmentIndex}, moveType: ${segment.moveType}, isOnBusSegment: $isBus',
+      );
+    }
+    return isBus;
+  }
+
+  /// 명시적 버스 탑승 상태 (7.dart에서 승차 시 true, 8.dart에서 하차 시 false)
+  bool _isOnBus = false;
+  bool get isOnBus => _isOnBus;
+
+  /// 버스 탑승 상태 설정
+  void setOnBus(bool value) {
+    _isOnBus = value;
+    print('🚌 [RouteTracker] setOnBus($value) - 버스 탑승 상태 변경');
+  }
+
   // 이전에 안내한 단계 (중복 안내 방지)
   int _lastAnnouncedSegment = -1;
   int _lastAnnouncedStep = -1;
@@ -130,6 +153,7 @@ class RouteTracker {
     _lastAnnouncedStep = -1;
     _isInitialized = false;
     _isRouteCompleted = false;
+    _isOnBus = false; // 버스 탑승 상태 초기화
   }
 
   /// 진행률 계산

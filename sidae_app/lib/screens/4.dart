@@ -225,6 +225,8 @@ class _Screen4State extends State<Screen4> {
                     busNumber: arrival.busNumber,
                     stationName: busStopInfo.stationName,
                     enableCamera: true, // 카메라 모드 활성화
+                    exitLat: busStopInfo.exitLat, // 버스 하차 지점
+                    exitLng: busStopInfo.exitLng,
                   ),
                 ),
               ).then((_) {

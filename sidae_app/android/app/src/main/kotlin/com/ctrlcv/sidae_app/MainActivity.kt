@@ -546,13 +546,14 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     private fun handleStartExitTracking(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
         val lat = call.argument<Double>("exitLat")
         val lng = call.argument<Double>("exitLng")
+        val threshold = call.argument<Double>("exitThreshold") ?: 15.0
         
         if (lat == null || lng == null) {
             result.error("INVALID_ARGS", "exitLat and exitLng are required", null)
             return
         }
         
-        if (exitTracker.startTracking(lat, lng)) {
+        if (exitTracker.startTracking(lat, lng, threshold)) {
             result.success(true)
         } else {
             result.error("PERMISSION_DENIED", "Location permission not granted", null)
