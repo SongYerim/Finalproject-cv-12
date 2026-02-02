@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 from PIL import Image
 import io
+import time
 
 def resize_image_smart(
     image_bytes: bytes, 
@@ -79,7 +80,9 @@ async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt
 
     # rawPredict 엔드포인트 사용 (REST)
     url = f"https://{REGION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{REGION}/endpoints/{ENDPOINT_ID}:rawPredict"
+    resize_s = time.time()
     optimized_image_bytes = resize_image_smart(image_bytes, min_pixels=147456, max_pixels=262144)
+    resize_e = time.time()
     base64_image = base64.b64encode(optimized_image_bytes).decode("utf-8")
     messages = []
 
@@ -106,11 +109,12 @@ async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt
     }
     messages.append(user_message)
 
+
     payload = {
         "messages": messages,
         "max_tokens": max_tokens
     }
-
+    
     try:
         # 토큰 자동 획득
         token = get_access_token()
@@ -119,13 +123,15 @@ async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt
             "Content-Type": "application/json",
             "X-Goog-User-Project": PROJECT_ID 
         }
-
+        model_s = time.time()
         response = requests.post(url, json=payload, headers=headers)
-
+        model_e = time.time()
+        resize_time = (resize_e - resize_s) * 1000
+        model_time = (model_e - model_s) * 1000
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=f"Vertex AI API Error: {response.text}")
 
-        return response.json()
+        return [response.json(), resize_time, model_time]
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Request Error: {str(e)}")
