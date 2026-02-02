@@ -11,7 +11,7 @@ class PromptManager:
         "bus_number": {
             "max_tokens": 32,
             "user": """
-            Read  the text in the image. output format {bus_num:  , car_num: #### or unknown} #Only 4 digits 0-9 are allowed. 
+            Read  the text in the image. output format {"bus_num":  , "car_num": #### or unknown} #Only 4 digits 0-9 are allowed. 
             """
         },
         
