@@ -81,8 +81,6 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
             return {"des": des}
         
         return {
-            "status": "success",
-            "mode": mode,
             "result": final_data
         }
         
