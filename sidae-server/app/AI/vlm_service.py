@@ -41,7 +41,7 @@ def resize_image_smart(
             new_width = int(image.width * scale_factor)
             new_height = int(image.height * scale_factor)
             
-            image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            image = image.resize((new_width, new_height), Image.Resampling.BILINEAR)
         
         # 다시 bytes로 변환
         buffer = io.BytesIO()
