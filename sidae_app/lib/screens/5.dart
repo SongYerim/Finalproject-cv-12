@@ -4,6 +4,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:math' as math;
 import '../models/route_model.dart';
 import '../services/route_tracker.dart';
@@ -546,7 +548,59 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         'keepFile': true,
       });
 
-      await _channel.invokeMethod('stopCamera').catchError((_) {});
+      // 응답에서 description 파싱하여 TTS로 읽기 (먼저 처리)
+      if (result is Map && result['body'] != null) {
+        try {
+          final bodyStr = result['body'].toString();
+          developer.log('📥 [5.dart] VLM 응답 수신: $bodyStr', name: 'VLM');
+          
+          final jsonResponse = json.decode(bodyStr);
+          developer.log('✅ [5.dart] JSON 파싱 성공: $jsonResponse', name: 'VLM');
+          
+          // description 추출 시도 (두 가지 형태 지원)
+          String? description;
+          
+          // 형태 1: {"description": "..."}
+          if (jsonResponse is Map && jsonResponse['description'] != null) {
+            description = jsonResponse['description'].toString();
+            developer.log('📝 [5.dart] description 추출 (직접): $description', name: 'VLM');
+          }
+          // 형태 2: {"result": {"description": "..."}}
+          else if (jsonResponse is Map && jsonResponse['result'] != null) {
+            final result = jsonResponse['result'];
+            if (result is Map && result['description'] != null) {
+              description = result['description'].toString();
+              developer.log('📝 [5.dart] description 추출 (result 내부): $description', name: 'VLM');
+            }
+          }
+          
+          if (description != null && description.isNotEmpty) {
+            developer.log('🔊 [5.dart] TTS 호출 시작: "$description"', name: 'VLM');
+            // TTS 초기화 보장
+            await _ttsService.initialize();
+            // TTS는 비동기로 시작 (카메라 종료를 기다리지 않음)
+            _ttsService.speak(description).catchError((e) {
+              developer.log('❌ [5.dart] TTS 호출 실패: $e', name: 'VLM');
+            });
+            developer.log('✅ [5.dart] TTS 호출 완료', name: 'VLM');
+          } else {
+            developer.log('⚠️ [5.dart] description을 찾을 수 없음. JSON 구조: $jsonResponse', name: 'VLM');
+          }
+        } catch (e) {
+          // JSON 파싱 실패 시 무시 (기존 동작 유지)
+          developer.log('❌ [5.dart] VLM 응답 파싱 실패: $e', name: 'VLM');
+        }
+      } else {
+        developer.log('⚠️ [5.dart] 응답 body가 없음', name: 'VLM');
+      }
+      
+      // TTS 시작 후 카메라 종료 (await하여 완료 보장)
+      try {
+        await _channel.invokeMethod('stopCamera');
+        developer.log('✅ [5.dart] 카메라 종료 완료', name: 'VLM');
+      } catch (e) {
+        developer.log('❌ [5.dart] 카메라 종료 실패: $e', name: 'VLM');
+      }
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

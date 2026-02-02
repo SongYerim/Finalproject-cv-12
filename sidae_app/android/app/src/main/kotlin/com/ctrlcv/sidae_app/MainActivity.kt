@@ -379,12 +379,14 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                                         )
                                     }
                                 } finally {
-                                    // 업로드 완료 후 즉시 카메라 해제
-                                    try {
-                                        provider.unbindAll()
-                                        Log.d(TAG, "✅ 캡처/업로드 후 카메라 해제 완료")
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "카메라 해제 실패: ${e.message}")
+                                    // 업로드 완료 후 즉시 카메라 해제 (메인 스레드에서 실행)
+                                    withContext(Dispatchers.Main) {
+                                        try {
+                                            provider.unbindAll()
+                                            Log.d(TAG, "✅ 캡처/업로드 후 카메라 해제 완료")
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "카메라 해제 실패: ${e.message}", e)
+                                        }
                                     }
                                     if (!keepFile && photoFile.exists()) {
                                         photoFile.delete()
@@ -496,30 +498,44 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     }
     
     private fun handleStopCamera(result: MethodChannel.Result) {
-        try {
-            Log.d(TAG, "🛑 handleStopCamera 호출")
-            isProcessing = false
-            isInferenceEnabled = true  // 카메라 중지 시 추론 활성화 초기화
-            
-            // 상태 변수 초기화 (중요: 재진입 시 오버레이 좌표 오차 방지)
-            cameraWidth = 0
-            cameraHeight = 0
-            
-            // 바운딩 박스 오버레이 초기화
-            mainHandler.post {
+        // 메인 스레드에서 실행
+        mainHandler.post {
+            try {
+                Log.d(TAG, "🛑 handleStopCamera 호출")
+                isProcessing = false
+                isInferenceEnabled = true  // 카메라 중지 시 추론 활성화 초기화
+                
+                // 상태 변수 초기화 (중요: 재진입 시 오버레이 좌표 오차 방지)
+                cameraWidth = 0
+                cameraHeight = 0
+                
+                // 바운딩 박스 오버레이 초기화
                 boundingBoxOverlayView?.clearDetections()
                 Log.d(TAG, "  - BoundingBoxOverlay 및 해상도 변수 초기화 완료")
+                
+                // 카메라 해제 (메인 스레드에서 실행)
+                try {
+                    if (cameraProvider != null) {
+                        cameraProvider?.unbindAll()
+                        Log.d(TAG, "  - cameraProvider.unbindAll() 완료")
+                    } else {
+                        Log.d(TAG, "  - cameraProvider가 이미 null이므로 해제 스킵")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "  - cameraProvider.unbindAll() 실패: ${e.message}", e)
+                }
+                
+                camera = null
+                imageAnalysis = null
+                preview = null
+                previewView = null  // PreviewView도 null로 설정
+                
+                result.success(true)
+                Log.d(TAG, "✅ 카메라 중지 완료")
+            } catch (e: Exception) {
+                Log.e(TAG, "카메라 중지 실패", e)
+                result.error("CAMERA_ERROR", e.message, null)
             }
-            
-            cameraProvider?.unbindAll()
-            camera = null
-            imageAnalysis = null
-            preview = null
-            result.success(true)
-            Log.d(TAG, "✅ 카메라 중지 완료")
-        } catch (e: Exception) {
-            Log.e(TAG, "카메라 중지 실패", e)
-            result.error("CAMERA_ERROR", e.message, null)
         }
     }
 
