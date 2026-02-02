@@ -8,3 +8,5 @@ google-auth>=2.27.0           # Google Cloud Authentication
 google-auth-oauthlib>=1.0.0   # Google OAuth2.0 Authentication
 google-auth-httplib2>=0.1.0   # Google HTTP Client
 Pillow>=10.0.0                # Image Processing (For image resizing)
+opencv-python-headless>=4.9.0     # 서버용 OpenCV (GUI 기능 제거 버전, 훨씬 가볍고 에러 없음)
+numpy>=1.26.0
