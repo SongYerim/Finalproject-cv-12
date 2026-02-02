@@ -133,7 +133,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       // source에 따라 mode 설정
       // 하차벨: 'stop_bell' -> mode: 'bell'
       // 교통카드 태그기: 'card_tagger' -> mode: 'tags_'
-      final mode = source == 'stop_bell' ? 'bell' : 'tag_';
+      final mode = source == 'stop_bell' ? 'bell' : 'tag';
 
       final result = await _channel.invokeMethod('captureAndUploadImage', {
         'uploadUrl': _getCaptureUploadUrl(),
