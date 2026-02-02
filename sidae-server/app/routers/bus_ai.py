@@ -64,7 +64,22 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
                 "raw_text": raw_text_content
             }
 
-        # [수정] 응답 구조를 범용적으로 변경
+        if mode in ['bell', 'tag']:
+            pos = final_data.get("selected_area", "위치 불명")
+            reason = final_data.get("reason", "이유 없음")
+            des = f'{mode}은 {pos}에 있습니다.'
+
+            return {"des": des, "reason": reason}
+        elif mode in ['tag_']:
+            pos_x = final_data.get("수평 위치", "알수없음")
+            pos_y = final_data.get("수직 위치", "알수없음")
+
+            if pos_x == "알수없음" and pos_y == "알수없음":
+                 return {"des": "대상을 찾을 수 없습니다."}
+            
+            des = f'{mode}은 {pos_x} {pos_y}에 있습니다.'
+            return {"des": des}
+        
         return {
             "status": "success",
             "mode": mode,
