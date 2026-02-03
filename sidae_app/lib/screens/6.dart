@@ -85,6 +85,9 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
         _currentSignalState = state;
         _currentConsensus = consensus;
       });
+      
+      // 신호등 상태에 따라 공간음향 제어
+      _controlSpatialAudioBySignal(state, consensus);
     };
 
     // 반대편 좌표가 있으면 GPS 추적 및 공간음향 시작
@@ -107,7 +110,7 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
           });
         };
 
-    // 서비스 시작
+    // 서비스 시작 (공간음향은 신호등 상태에 따라 별도로 제어)
     final success = await _directionService.start(
       exitLat: widget.exitLat!,
       exitLng: widget.exitLng!,
@@ -116,6 +119,20 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
     if (success) {
       // TTS로 안내
       await TtsService.instance.speak('소리가 나는 방향이 횡단보도 끝지점입니다.');
+    }
+  }
+
+  /// 신호등 상태에 따라 공간음향 제어
+  Future<void> _controlSpatialAudioBySignal(
+    SignalState state,
+    SignalConsensus consensus,
+  ) async {
+    // 초록불이고 건너가는 상태(crossing)일 때만 공간음향 재생
+    if (state == SignalState.crossing && consensus == SignalConsensus.green) {
+      await _directionService.startSpatialAudio();
+    } else {
+      // 빨간불이거나 대기 상태일 때는 공간음향 중지
+      await _directionService.stopSpatialAudio();
     }
   }
 

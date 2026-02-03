@@ -72,11 +72,23 @@ class CrosswalkDirectionService {
     // 3. GPS 위치 추적 시작
     _startLocationTracking();
 
-    // 4. 공간음향 재생 시작
-    await _audioService.start();
+    // 4. 공간음향은 신호등 상태에 따라 별도로 제어 (start()에서는 초기화만)
+    // await _audioService.start(); // 제거 - 신호등 상태에 따라 제어
 
     _isRunning = true;
     return true;
+  }
+
+  /// 공간음향 재생 시작 (신호등이 초록불일 때 호출)
+  Future<void> startSpatialAudio() async {
+    if (!_isRunning) return;
+    await _audioService.start();
+  }
+
+  /// 공간음향 재생 중지 (신호등이 빨간불일 때 호출)
+  Future<void> stopSpatialAudio() async {
+    if (!_isRunning) return;
+    await _audioService.stop();
   }
 
   /// 외부에서 heading 이벤트를 전달받아 처리
@@ -176,8 +188,10 @@ class CrosswalkDirectionService {
     // 부호 반전 제거: 안드로이드 네이티브 센서 사용으로 정방향 계산
     _angleDiff = diff;
 
-    // 공간음향 패닝 업데이트
-    _audioService.updateDirection(_angleDiff);
+    // 공간음향 패닝 업데이트 (재생 중일 때만)
+    if (_audioService.isPlaying) {
+      _audioService.updateDirection(_angleDiff);
+    }
 
     // 콜백 호출 (UI 업데이트용)
     onDirectionUpdate?.call(_deviceHeading, _exitBearing, _angleDiff);
