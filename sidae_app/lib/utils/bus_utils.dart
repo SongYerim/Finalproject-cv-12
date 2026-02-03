@@ -7,8 +7,10 @@
 /// 버스 도착 상태 메시지에서 "곧 도착", "잠시 후", "1분", "2분" 등의
 /// 키워드가 포함되어 있는지 확인합니다.
 bool isBusApproachingStatus(String statusMsg) {
-  return statusMsg.contains('곧 도착') ||
-      statusMsg.contains('1분') ||
+  return statusMsg.contains('곧 도착') || statusMsg.contains('1분');
+}
+
+/*
       statusMsg.contains('2분') ||
       statusMsg.contains('3분') ||
       statusMsg.contains('4분') ||
@@ -23,4 +25,4 @@ bool isBusApproachingStatus(String statusMsg) {
       statusMsg.contains('13분') ||
       statusMsg.contains('14분') ||
       statusMsg.contains('15분');
-}
+*/
