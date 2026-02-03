@@ -43,7 +43,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
   bool _isBusApproaching = false;
   bool _cameraActive = false;
   String _detectionStatus = '';
-  BusDetection? _currentDetection;
+
   Uint8List? _croppedBusImage;
 
   // 매칭 상태
@@ -114,15 +114,6 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         setState(() {
           _detectionStatus = status;
         });
-      }
-    };
-
-    _busDetectorService.onBusDetected = (detection) {
-      if (mounted) {
-        setState(() {
-          _currentDetection = detection;
-        });
-        // _ttsService.speak("버스가 감지되었습니다");
       }
     };
 
@@ -402,85 +393,12 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     );
   }
 
-  /// 탑승 시뮬레이션 시작 (Debug)
-  Future<void> _startBoardingSimulation() async {
-    developer.log('🚀 탑승 시뮬레이션 시작', name: 'BusArrivalScreen');
-
-    setState(() {
-      _matchStatus = 'MATCH';
-    });
-
-    // 시뮬레이션 시작 시 추론 중지
-    await _busDetectorService.stopInference();
-
-    // 5초 대기 (탑승 준비)
-    for (int i = 5; i > 0; i--) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("탑승 준비 중... ${i}초"),
-          duration: const Duration(milliseconds: 800),
-        ),
-      );
-      await Future.delayed(const Duration(seconds: 1));
-    }
-
-    // 3회 루프 (태그기 인식 시도)
-    for (int i = 1; i <= 3; i++) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("태그기 찾는 중... ($i/3)"),
-          duration: const Duration(milliseconds: 800),
-        ),
-      );
-
-      // 캡쳐 요청 및 대기
-      final completer = Completer<Uint8List>();
-      _busDetectorService.onSnapshotCaptured = (image) {
-        if (!completer.isCompleted) completer.complete(image);
-      };
-
-      await _busDetectorService.requestSnapshot();
-
-      try {
-        // 3초 타임아웃
-        final image = await completer.future.timeout(
-          const Duration(seconds: 3),
-        );
-
-        // 캡쳐된 이미지를 화면에 표시 (크롭 이미지 뷰 재사용)
-        if (mounted) {
-          setState(() {
-            _croppedBusImage = image;
-          });
-        }
-
-        await _busDetectorService.sendToVlmDummy(image);
-      } catch (e) {
-        developer.log("❌ 캡쳐/전송 실패: $e", name: 'BusArrivalScreen');
-      }
-
-      // 약간의 간격
-      await Future.delayed(const Duration(seconds: 1));
-    }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("✅ 탑승 완료! (시뮬레이션 종료)"),
-        backgroundColor: Colors.green,
-      ),
-    );
-    developer.log("✅ 탑승 시뮬레이션 종료", name: 'BusArrivalScreen');
-  }
-
   /// 카메라 중지
   void _stopCamera() {
     _busDetectorService.stopDetection();
     setState(() {
       _cameraActive = false;
-      _currentDetection = null;
+
       _croppedBusImage = null;
       _matchStatus = '';
     });
@@ -594,14 +512,6 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
           // 5. 타야할 버스 정보 표시 (좌측 상단)
           Positioned(top: 100, left: 16, child: _buildTargetBusInfo()),
-
-          // 6. 감지 상태 표시 (좌측 상단, 타야할 버스 정보 아래)
-          if (_cameraActive)
-            Positioned(
-              top: _arrival != null && _arrival!.plateNo.isNotEmpty ? 200 : 170,
-              left: 16,
-              child: _buildDetectionStatusBadge(),
-            ),
 
           // 7. 매칭 결과 텍스트 (중앙 상단)
           if (_matchStatus == 'MATCH')
@@ -748,20 +658,6 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
                 ),
               ),
             ),
-
-          // 8. DEBUG 버튼 (좌측 하단)
-          Positioned(
-            left: 16,
-            bottom: 140,
-            child: ElevatedButton(
-              onPressed: _startBoardingSimulation,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text("DEBUG: 매칭 성공"),
-            ),
-          ),
         ],
       ),
     );
@@ -1025,45 +921,6 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  /// 감지 상태 배지
-  Widget _buildDetectionStatusBadge() {
-    final isDetected = _currentDetection != null;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: isDetected
-            ? Colors.green.withValues(alpha: 0.9)
-            : Colors.black.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDetected ? Colors.green : Colors.grey,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isDetected ? Icons.check_circle : Icons.search,
-            color: isDetected ? Colors.white : Colors.grey,
-            size: 16,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            isDetected
-                ? '버스 감지됨 (${(_currentDetection!.confidence * 100).toStringAsFixed(0)}%)'
-                : _detectionStatus,
-            style: TextStyle(
-              color: isDetected ? Colors.white : Colors.grey,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
         ],
       ),
     );
