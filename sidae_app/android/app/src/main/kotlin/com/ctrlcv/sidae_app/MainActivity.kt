@@ -862,7 +862,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                         // Log.d(TAG, "🔍 감지된 객체 없음")
                     }
 
-                    // --- 가장 큰 버스 이미지 크롭 ---
+                    // --- 가장 큰 버스 이미지 크롭 (aspect ratio 1.7 이하만) ---
                     var croppedBusBytes: ByteArray? = null
                     try {
                         val bestBus = detections.filter { 
@@ -873,6 +873,17 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                             
                             label != null && label.trim().equals("bus", ignoreCase = true) 
                         }
+                            .filter { dict ->
+                                val bbox = dict["bbox"] as List<*>
+                                val w = (bbox[2] as Number).toFloat() - (bbox[0] as Number).toFloat()
+                                val h = (bbox[3] as Number).toFloat() - (bbox[1] as Number).toFloat()
+                                if (h > 0) {
+                                    val aspect = w / h
+                                    aspect <= 1.7f
+                                } else {
+                                    false
+                                }
+                            }
                             .maxByOrNull { dict ->
                                 val bbox = dict["bbox"] as List<*>
                                 val w = (bbox[2] as Number).toFloat() - (bbox[0] as Number).toFloat()
