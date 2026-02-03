@@ -88,8 +88,9 @@ class SpatialAudioManager(private val context: Context) {
         
         try {
             // SoundPool 생성
+            // USAGE_MEDIA로 설정하여 화면 녹화 시 오디오 캡처 가능하도록 함
             val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build()
             
