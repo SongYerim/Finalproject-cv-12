@@ -1,6 +1,6 @@
 // lib/services/route_tracker.dart
 import 'package:flutter_naver_map/flutter_naver_map.dart';
-import 'dart:developer' as developer;
+// import 'dart:developer' as developer;
 import '../models/route_model.dart';
 import '../constants.dart';
 
@@ -48,11 +48,11 @@ class RouteTracker {
     final segment = getCurrentSegment();
     final isBus = segment?.moveType == 'BUS' || segment?.moveType == 'SUBWAY';
     // 디버그: 현재 구간 정보 출력
-    if (segment != null) {
-      print(
-        '🚌 [RouteTracker] 현재 구간: ${segment.segmentIndex}, moveType: ${segment.moveType}, isOnBusSegment: $isBus',
-      );
-    }
+    // if (segment != null) {
+    // print(
+    //   '🚌 [RouteTracker] 현재 구간: ${segment.segmentIndex}, moveType: ${segment.moveType}, isOnBusSegment: $isBus',
+    // );
+    // }
     return isBus;
   }
 
@@ -63,7 +63,7 @@ class RouteTracker {
   /// 버스 탑승 상태 설정
   void setOnBus(bool value) {
     _isOnBus = value;
-    print('🚌 [RouteTracker] setOnBus($value) - 버스 탑승 상태 변경');
+    // print('🚌 [RouteTracker] setOnBus($value) - 버스 탑승 상태 변경');
   }
 
   // 이전에 안내한 단계 (중복 안내 방지)
@@ -232,10 +232,10 @@ class RouteTracker {
 
     // 수정: 단순히 마지막 단계(isLastStep)에 진입했다고 해서 완료 처리하면 안 됨.
     // 경로의 마지막 지점(좌표)을 실제로 통과했는지 확인해야 함.
-    developer.log('🚩pointsPassed: $pointsPassed');
-    developer.log('🚩pointsPassed.last: ${pointsPassed.last}');
+    // developer.log('🚩pointsPassed: $pointsPassed');
+    // developer.log('🚩pointsPassed.last: ${pointsPassed.last}');
     if (pointsPassed.isNotEmpty && pointsPassed.last) {
-      developer.log('🚩 [RouteTracker] 최종 목적지 좌표 도달 확인', name: 'RouteTracker');
+      // developer.log('🚩 [RouteTracker] 최종 목적지 좌표 도달 확인', name: 'RouteTracker');
       _isRouteCompleted = true;
       onRouteCompleted?.call();
     }

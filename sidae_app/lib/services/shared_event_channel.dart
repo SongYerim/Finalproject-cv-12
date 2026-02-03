@@ -30,15 +30,15 @@ class SharedEventChannel {
   /// 이후에는 같은 브로드캐스트 스트림을 반환합니다.
   Stream<dynamic> get stream {
     if (_broadcastStream == null) {
-      print('📡 [SharedEventChannel] 브로드캐스트 스트림 생성');
+      // print('📡 [SharedEventChannel] 브로드캐스트 스트림 생성');
       _broadcastStream = _eventChannel
           .receiveBroadcastStream()
           .asBroadcastStream(
             onListen: (subscription) {
-              print('📡 [SharedEventChannel] 리스너 추가됨');
+              // print('📡 [SharedEventChannel] 리스너 추가됨');
             },
             onCancel: (subscription) {
-              print('📡 [SharedEventChannel] 리스너 제거됨');
+              // print('📡 [SharedEventChannel] 리스너 제거됨');
               // 스트림은 유지 - 다른 리스너가 있을 수 있음
             },
           );
@@ -51,6 +51,6 @@ class SharedEventChannel {
     _baseSubscription?.cancel();
     _baseSubscription = null;
     _broadcastStream = null;
-    print('📡 [SharedEventChannel] 스트림 dispose');
+    // print('📡 [SharedEventChannel] 스트림 dispose');
   }
 }
