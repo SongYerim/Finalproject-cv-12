@@ -15,6 +15,7 @@ import 'package:sidae_app/screens/8.dart';
 import '../services/api_service.dart';
 import '../services/tts_service.dart';
 import '../models/route_model.dart';
+import '../services/shared_event_channel.dart';
 
 //화면 단계: 1(ready) / 2(listening) / 3(done) / 4(failed)- UI 변환
 enum SttStep { ready, listening, done, failed }
@@ -28,12 +29,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
-  // 1. 네이티브 STT를 위한 MethodChannel/EventChannel
+  // 1. 네이티브 STT를 위한 MethodChannel
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
-  );
-  static const EventChannel _eventChannel = EventChannel(
-    'com.ctrlcv.sidae_app/yolo_detections',
   );
 
   StreamSubscription? _sttSubscription;
@@ -100,10 +98,10 @@ class _HomeScreenState extends State<HomeScreen>
     ].request();
   }
 
-  // 네이티브 STT EventChannel 구독 초기화
+  // 네이티브 STT SharedEventChannel 구독 초기화
   void _initSpeech() {
     try {
-      _sttSubscription = _eventChannel.receiveBroadcastStream().listen((event) {
+      _sttSubscription = SharedEventChannel.instance.stream.listen((event) {
         if (event is Map && event['type'] == 'stt') {
           final eventType = event['eventType'] as String?;
           final data = event['data'] as String?;

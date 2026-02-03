@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'ocr_service.dart';
 import 'vlm_service.dart';
 import 'api_service.dart';
+import 'shared_event_channel.dart';
 
 // TagRecognitionResult를 vlm_service.dart에서 re-export
 export 'vlm_service.dart' show TagRecognitionResult;
@@ -41,9 +42,6 @@ class BusDetection {
 class BusDetectorService {
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
-  );
-  static const EventChannel _eventChannel = EventChannel(
-    'com.ctrlcv.sidae_app/yolo_detections',
   );
 
   StreamSubscription? _detectionSubscription;
@@ -127,9 +125,9 @@ class BusDetectorService {
     }
   }
 
-  /// EventChannel에서 감지 결과 수신
+  /// EventChannel에서 감지 결과 수신 (SharedEventChannel 사용)
   void _subscribeToDetections() {
-    _detectionSubscription = _eventChannel.receiveBroadcastStream().listen(
+    _detectionSubscription = SharedEventChannel.instance.stream.listen(
       (event) {
         if (event is Map) {
           if (event['type'] == 'snapshot') {

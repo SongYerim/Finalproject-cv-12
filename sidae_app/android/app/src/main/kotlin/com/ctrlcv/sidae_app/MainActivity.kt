@@ -792,6 +792,8 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
             ) {
         mainHandler.post {
             try {
+                        // 디버그: 60hz 전송 확인 (매 60번째 이벤트마다 로그)
+                        // Log.d(TAG, "🧭 navigation event: heading=$deviceHeading")
                         eventSink?.success(mapOf(
                             "type" to "navigation",
                             "deviceHeading" to deviceHeading,

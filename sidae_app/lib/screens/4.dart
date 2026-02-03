@@ -777,6 +777,13 @@ class _Screen4State extends State<Screen4> {
                         }
                       };
 
+                  // 센서 방향 업데이트 콜백 재등록 (중요: 5.dart에서 덮어쓴거 복구)
+                  _navService.onBearingUpdate = () {
+                    if (mounted) {
+                      setState(() {});
+                    }
+                  };
+
                   // GPS 추적 재개
                   _navService.startLocationTracking(
                     onUpdate: _onPositionUpdate,
