@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:developer' as developer;
+// import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import '../services/bus_arrival_service.dart';
 import '../services/bus_detector_service.dart';
@@ -132,21 +132,21 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
     // OCR 결과 수신
     _busDetectorService.onBusNumberFound = (ocrResult, responseTimeMs) {
-      developer.log(
-        '🎯 [7.dart] OCR 콜백 수신: $ocrResult (응답시간: ${responseTimeMs}ms)',
-        name: 'BusArrivalScreen',
-      );
+      // developer.log(
+      //   '🎯 [7.dart] OCR 콜백 수신: $ocrResult (응답시간: ${responseTimeMs}ms)',
+      //   name: 'BusArrivalScreen',
+      // );
       if (mounted) {
-        developer.log(
-          '  - mounted: true, _checkMatch 호출',
-          name: 'BusArrivalScreen',
-        );
+        // developer.log(
+        //   '  - mounted: true, _checkMatch 호출',
+        //   name: 'BusArrivalScreen',
+        // );
         setState(() {
           _lastResponseTimeMs = responseTimeMs;
         });
         _checkMatch(ocrResult);
       } else {
-        developer.log('  - mounted: false, 스킵', name: 'BusArrivalScreen');
+        // developer.log('  - mounted: false, 스킵', name: 'BusArrivalScreen');
       }
     };
 
@@ -163,21 +163,21 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
   // 매칭 로직
   void _checkMatch(String ocrResult) {
-    developer.log('🔍 [7.dart] _checkMatch 시작', name: 'BusArrivalScreen');
-    developer.log('  - ocrResult: $ocrResult', name: 'BusArrivalScreen');
-    developer.log(
-      '  - widget.busNumber: ${widget.busNumber}',
-      name: 'BusArrivalScreen',
-    );
+    // developer.log('🔍 [7.dart] _checkMatch 시작', name: 'BusArrivalScreen');
+    // developer.log('  - ocrResult: $ocrResult', name: 'BusArrivalScreen');
+    // developer.log(
+    //   '  - widget.busNumber: ${widget.busNumber}',
+    //   name: 'BusArrivalScreen',
+    // );
 
     _lastOcrResult = ocrResult;
 
     // 1. 버스 번호 매칭 (문자열 포함 여부)
     bool isNumberMatch = ocrResult.contains(widget.busNumber);
-    developer.log(
-      '  - isNumberMatch: $isNumberMatch',
-      name: 'BusArrivalScreen',
-    );
+    // developer.log(
+    //   '  - isNumberMatch: $isNumberMatch',
+    //   name: 'BusArrivalScreen',
+    // );
 
     // 2. 번호판 매칭 (뒤 4자리)
     bool isPlateMatch = false;
@@ -188,14 +188,14 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
           ? plate.substring(plate.length - 4)
           : plate;
       isPlateMatch = ocrResult.contains(last4);
-      developer.log(
-        '  - plateNo: $plate, last4: $last4, isPlateMatch: $isPlateMatch',
-        name: 'BusArrivalScreen',
-      );
+      // developer.log(
+      //   '  - plateNo: $plate, last4: $last4, isPlateMatch: $isPlateMatch',
+      //   name: 'BusArrivalScreen',
+      // );
     }
 
     if (isNumberMatch || isPlateMatch) {
-      developer.log('✅ [7.dart] 매칭 성공!', name: 'BusArrivalScreen');
+      // developer.log('✅ [7.dart] 매칭 성공!', name: 'BusArrivalScreen');
 
       // 중복 실행 방지
       if (_matchStatus != 'MATCH') {
@@ -214,7 +214,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         _startTagRecognition();
       }
     } else {
-      developer.log('❌ [7.dart] 매칭 실패', name: 'BusArrivalScreen');
+      // developer.log('❌ [7.dart] 매칭 실패', name: 'BusArrivalScreen');
       if (_matchStatus != 'MATCH') {
         setState(() {
           _matchStatus = 'MISMATCH';
@@ -242,11 +242,11 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     });
 
     // 버스 탑승을 위해 5초 대기
-    developer.log('⏰ [태그 인식] 5초 후 시작...', name: 'BusArrivalScreen');
+    // developer.log('⏰ [태그 인식] 5초 후 시작...', name: 'BusArrivalScreen');
     _ttsService.speak('5초 후 태그 인식을 시작합니다');
     await Future.delayed(const Duration(seconds: 5));
 
-    developer.log('🏷️ [태그 인식] 시작', name: 'BusArrivalScreen');
+    // developer.log('🏷️ [태그 인식] 시작', name: 'BusArrivalScreen');
     _ttsService.speak('태그 인식 시작');
     await _recognizeTagSequentially();
   }
@@ -255,7 +255,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
   Future<void> _recognizeTagSequentially() async {
     if (_tagRecognitionCount >= 3) {
       // 3번 완료 → 8.dart로 이동
-      developer.log('🏷️ [태그 인식] 3번 완료 - 8.dart로 이동', name: 'BusArrivalScreen');
+      // developer.log('🏷️ [태그 인식] 3번 완료 - 8.dart로 이동', name: 'BusArrivalScreen');
       _navigateToBusOnlyScreen();
       return;
     }
@@ -264,19 +264,19 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     setState(() {
       _tagStatus = '태그 인식 중... ($_tagRecognitionCount/3)';
     });
-    developer.log(
-      '🏷️ [태그 인식] 시도 $_tagRecognitionCount/3 시작',
-      name: 'BusArrivalScreen',
-    );
+    // developer.log(
+    //   '🏷️ [태그 인식] 시도 $_tagRecognitionCount/3 시작',
+    //   name: 'BusArrivalScreen',
+    // );
 
     // API 서버로 전송 (mode: tag_)
     final result = await _busDetectorService.sendTagRecognition();
 
     if (result != null) {
-      developer.log(
-        '📦 [태그 인식] 서버 응답 수신: ${result.response}',
-        name: 'BusArrivalScreen',
-      );
+      // developer.log(
+      //   '📦 [태그 인식] 서버 응답 수신: ${result.response}',
+      //   name: 'BusArrivalScreen',
+      // );
 
       String displayText = '';
       String ttsText = '';
@@ -284,10 +284,10 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
       // JSON 파싱하여 result 추출
       try {
         final jsonResponse = json.decode(result.response);
-        developer.log(
-          '🔍 [태그 인식] 파싱된 JSON: $jsonResponse',
-          name: 'BusArrivalScreen',
-        );
+        // developer.log(
+        //   '🔍 [태그 인식] 파싱된 JSON: $jsonResponse',
+        //   name: 'BusArrivalScreen',
+        // );
 
         // tag_ 모드 응답 처리 ("des" 필드 확인)
         if (jsonResponse.containsKey('des')) {
@@ -337,7 +337,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         }
       } catch (e) {
         // JSON 파싱 실패 시 원본 표시
-        developer.log('JSON 파싱 실패: $e', name: 'BusArrivalScreen');
+        // developer.log('JSON 파싱 실패: $e', name: 'BusArrivalScreen');
         displayText = result.response;
         ttsText = '태그 인식 실패';
       }
@@ -348,29 +348,29 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
       });
 
       if (result.success) {
-        developer.log(
-          '✅ [태그 인식] $_tagRecognitionCount/3 성공: $displayText',
-          name: 'BusArrivalScreen',
-        );
+        // developer.log(
+        //   '✅ [태그 인식] $_tagRecognitionCount/3 성공: $displayText',
+        //   name: 'BusArrivalScreen',
+        // );
         // TTS로 응답 읽어주기
         _ttsService.speak('태그 $_tagRecognitionCount번: $ttsText');
       } else {
-        developer.log(
-          '⚠️ [태그 인식] $_tagRecognitionCount/3 실패: $displayText',
-          name: 'BusArrivalScreen',
-        );
+        // developer.log(
+        //   '⚠️ [태그 인식] $_tagRecognitionCount/3 실패: $displayText',
+        //   name: 'BusArrivalScreen',
+        // );
         _ttsService.speak('태그 인식 실패');
       }
     } else {
-      developer.log(
-        '⚠️ [태그 인식] $_tagRecognitionCount/3 실패 (계속 진행)',
-        name: 'BusArrivalScreen',
-      );
+      // developer.log(
+      //   '⚠️ [태그 인식] $_tagRecognitionCount/3 실패 (계속 진행)',
+      //   name: 'BusArrivalScreen',
+      // );
       _ttsService.speak('태그 인식 실패');
     }
 
     // 다음 시도까지 1초 대기 (디버깅 용이성)
-    developer.log('⏰ [태그 인식] 1초 대기 후 다음 시도...', name: 'BusArrivalScreen');
+    // developer.log('⏰ [태그 인식] 1초 대기 후 다음 시도...', name: 'BusArrivalScreen');
     await Future.delayed(const Duration(seconds: 1));
 
     // 서버 응답 받은 후 다음 전송
@@ -411,20 +411,20 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
   @override
   void dispose() {
-    developer.log(
-      '🗑️ [BusArrivalScreen] dispose() 시작',
-      name: 'BusArrivalScreen',
-    );
+    // developer.log(
+    //   '🗑️ [BusArrivalScreen] dispose() 시작',
+    //   name: 'BusArrivalScreen',
+    // );
 
     // 카메라가 활성화된 경우 명시적으로 중지
     if (_cameraActive) {
-      developer.log('  - 카메라 활성화 상태, 명시적 중지', name: 'BusArrivalScreen');
+      // developer.log('  - 카메라 활성화 상태, 명시적 중지', name: 'BusArrivalScreen');
       _busDetectorService.stopDetection();
       _cameraActive = false;
     }
 
     // 콜백 제거
-    developer.log('  - 콜백 제거', name: 'BusArrivalScreen');
+    // developer.log('  - 콜백 제거', name: 'BusArrivalScreen');
     _busDetectorService.onStatusChanged = null;
     _busDetectorService.onBusDetected = null;
     _busDetectorService.onBusCropped = null;
@@ -436,14 +436,14 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     _mismatchTimer = null;
 
     // 서비스 정리
-    developer.log('  - 서비스 정리', name: 'BusArrivalScreen');
+    // developer.log('  - 서비스 정리', name: 'BusArrivalScreen');
     _arrivalService.dispose();
     _busDetectorService.dispose();
 
-    developer.log(
-      '✅ [BusArrivalScreen] dispose() 완료',
-      name: 'BusArrivalScreen',
-    );
+    // developer.log(
+    //   '✅ [BusArrivalScreen] dispose() 완료',
+    //   name: 'BusArrivalScreen',
+    // );
     super.dispose();
   }
 

@@ -57,8 +57,8 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
   // 공간음향 방향 안내 서비스
   final CrosswalkDirectionService _directionService =
       CrosswalkDirectionService();
-  double _deviceHeading = 0.0;
-  double _exitBearing = 0.0;
+  // double _deviceHeading = 0.0;
+  // double _exitBearing = 0.0;
   double _angleDiff = 0.0;
 
   @override
@@ -102,8 +102,8 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
         (deviceHeading, exitBearing, angleDiff) {
           if (!mounted) return;
           setState(() {
-            _deviceHeading = deviceHeading;
-            _exitBearing = exitBearing;
+            // _deviceHeading = deviceHeading;
+            // _exitBearing = exitBearing;
             _angleDiff = angleDiff;
           });
         };

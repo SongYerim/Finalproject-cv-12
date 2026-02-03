@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' as developer;
+// import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -59,42 +59,42 @@ class BusArrivalService {
         queryParameters: {'bus_number': busNumber, 'station_name': stationName},
       );
 
-      print('[BusArrival] 요청 시작: $uri');
+      // print('[BusArrival] 요청 시작: $uri');
       final response = await http.get(uri).timeout(const Duration(seconds: 10));
-      print('[BusArrival] 응답 상태코드: ${response.statusCode}');
+      // print('[BusArrival] 응답 상태코드: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        print('[BusArrival] 응답 바디: ${response.body}');
+        // print('[BusArrival] 응답 바디: ${response.body}');
         final json = jsonDecode(response.body);
         return BusArrival.fromJson(json);
       } else {
-        print('[BusArrival] 에러 응답: ${response.body}');
+        // print('[BusArrival] 에러 응답: ${response.body}');
       }
       return null;
     } catch (e) {
-      print('[BusArrival] 예외 발생: $e');
+      // print('[BusArrival] 예외 발생: $e');
       return null;
     }
   }
 
   /// 버스 도착 정보 조회 시작 (1분마다 자동 갱신)
   Future<void> startTracking(String busNumber, String stationName) async {
-    developer.log(
-      '📍 [BusArrivalService] startTracking 호출 (버스: $busNumber, 정류장: $stationName)',
-      name: 'BusArrivalService',
-    );
+    // developer.log(
+    //   '📍 [BusArrivalService] startTracking 호출 (버스: $busNumber, 정류장: $stationName)',
+    //   name: 'BusArrivalService',
+    // );
 
     // 이미 동일한 버스/정류장을 추적 중이면 중복 호출 방지
     if (_currentBusNumber == busNumber &&
         _currentStationName == stationName &&
         _refreshTimer != null) {
-      developer.log(
-        '⏭️ [BusArrivalService] 이미 추적 중 - 중복 호출 스킵',
-        name: 'BusArrivalService',
-      );
+      // developer.log(
+      //   '⏭️ [BusArrivalService] 이미 추적 중 - 중복 호출 스킵',
+      //   name: 'BusArrivalService',
+      // );
       // 기존 캐시된 데이터가 있으면 즉시 콜백 호출
       if (_lastArrival != null) {
-        developer.log('  - 캐시된 데이터 반환', name: 'BusArrivalService');
+        // developer.log('  - 캐시된 데이터 반환', name: 'BusArrivalService');
         onArrivalUpdate?.call(_lastArrival);
       }
       return;
@@ -102,7 +102,7 @@ class BusArrivalService {
 
     // 이전 추적 중지 (Timer 확실히 정리)
     if (_refreshTimer != null) {
-      developer.log('  - 이전 Timer 취소 중...', name: 'BusArrivalService');
+      // developer.log('  - 이전 Timer 취소 중...', name: 'BusArrivalService');
       stopTracking();
     }
 
@@ -110,16 +110,16 @@ class BusArrivalService {
     _currentStationName = stationName;
 
     // 즉시 첫 조회
-    developer.log('  - 첫 조회 시작', name: 'BusArrivalService');
+    // developer.log('  - 첫 조회 시작', name: 'BusArrivalService');
     final arrival = await getBusArrival(busNumber, stationName);
     _lastArrival = arrival; // 캐싱
     onArrivalUpdate?.call(arrival);
 
     // 1분마다 자동 갱신
-    developer.log('  - 1분 주기 Timer 시작', name: 'BusArrivalService');
+    // developer.log('  - 1분 주기 Timer 시작', name: 'BusArrivalService');
     _refreshTimer = Timer.periodic(const Duration(minutes: 1), (_) async {
       if (_currentBusNumber == null || _currentStationName == null) return;
-      developer.log('  - 자동 갱신 중...', name: 'BusArrivalService');
+      // developer.log('  - 자동 갱신 중...', name: 'BusArrivalService');
       final arrival = await getBusArrival(
         _currentBusNumber!,
         _currentStationName!,
@@ -128,10 +128,10 @@ class BusArrivalService {
       onArrivalUpdate?.call(arrival);
     });
 
-    developer.log(
-      '✅ [BusArrivalService] startTracking 완료',
-      name: 'BusArrivalService',
-    );
+    // developer.log(
+    //   '✅ [BusArrivalService] startTracking 완료',
+    //   name: 'BusArrivalService',
+    // );
   }
 
   /// 수동 새로고침
@@ -147,31 +147,31 @@ class BusArrivalService {
 
   /// 버스 도착 정보 조회 중지
   void stopTracking() {
-    developer.log(
-      '🛑 [BusArrivalService] stopTracking 호출',
-      name: 'BusArrivalService',
-    );
+    // developer.log(
+    //   '🛑 [BusArrivalService] stopTracking 호출',
+    //   name: 'BusArrivalService',
+    // );
     _refreshTimer?.cancel();
     _refreshTimer = null;
     _currentBusNumber = null;
     _currentStationName = null;
     _lastArrival = null; // 캐시 초기화
-    developer.log(
-      '✅ [BusArrivalService] stopTracking 완료',
-      name: 'BusArrivalService',
-    );
+    // developer.log(
+    //   '✅ [BusArrivalService] stopTracking 완료',
+    //   name: 'BusArrivalService',
+    // );
   }
 
   void dispose() {
-    developer.log(
-      '🗑️ [BusArrivalService] dispose 호출',
-      name: 'BusArrivalService',
-    );
+    // developer.log(
+    //   '🗑️ [BusArrivalService] dispose 호출',
+    //   name: 'BusArrivalService',
+    // );
     stopTracking();
     onArrivalUpdate = null;
-    developer.log(
-      '✅ [BusArrivalService] dispose 완료',
-      name: 'BusArrivalService',
-    );
+    // developer.log(
+    //   '✅ [BusArrivalService] dispose 완료',
+    //   name: 'BusArrivalService',
+    // );
   }
 }

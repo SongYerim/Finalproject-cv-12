@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:developer' as developer;
+// import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'ocr_service.dart';
@@ -66,28 +66,28 @@ class BusDetectorService {
   Future<bool> startDetection() async {
     // 이미 활성화된 경우 재초기화하지 않음
     if (_isActive) {
-      developer.log(
-        '⚠️ [BusDetectorService] 이미 감지가 활성화되어 있습니다',
-        name: 'BusDetectorService',
-      );
+      // developer.log(
+      //   '⚠️ [BusDetectorService] 이미 감지가 활성화되어 있습니다',
+      //   name: 'BusDetectorService',
+      // );
       return true;
     }
 
     try {
-      developer.log(
-        '🎬 [BusDetectorService] startDetection() 시작',
-        name: 'BusDetectorService',
-      );
+      // developer.log(
+      //   '🎬 [BusDetectorService] startDetection() 시작',
+      //   name: 'BusDetectorService',
+      // );
       _updateStatus('카메라 초기화 중...');
 
       // 1. 모델과 라벨 로드 (6.dart와 동일하게)
       const modelPath = 'assets/yolo11s_float16.tflite';
-      developer.log('  - 모델 로드: $modelPath', name: 'BusDetectorService');
+      // developer.log('  - 모델 로드: $modelPath', name: 'BusDetectorService');
       final modelBytes = await rootBundle.load(modelPath);
       final labelsData = await rootBundle.loadString('assets/coco_labels.txt');
 
       // 2. 네이티브 초기화
-      developer.log('  - 네이티브 초기화 중...', name: 'BusDetectorService');
+      // developer.log('  - 네이티브 초기화 중...', name: 'BusDetectorService');
       final initResult = await _channel.invokeMethod('initialize', {
         'modelBytes': modelBytes.buffer.asUint8List(),
         'labelsText': labelsData,
@@ -95,31 +95,31 @@ class BusDetectorService {
       });
 
       if (initResult is! Map || initResult['initialized'] != true) {
-        developer.log('  - ❌ 네이티브 초기화 실패', name: 'BusDetectorService');
+        // developer.log('  - ❌ 네이티브 초기화 실패', name: 'BusDetectorService');
         _updateStatus('네이티브 초기화 실패');
         return false;
       }
 
       // 3. EventChannel 구독
-      developer.log('  - EventChannel 구독', name: 'BusDetectorService');
+      // developer.log('  - EventChannel 구독', name: 'BusDetectorService');
       _subscribeToDetections();
 
       // 4. 네이티브 카메라 시작
-      developer.log('  - 네이티브 카메라 시작', name: 'BusDetectorService');
+      // developer.log('  - 네이티브 카메라 시작', name: 'BusDetectorService');
       await _channel.invokeMethod('startCamera');
       _updateStatus('버스 감지 시작');
 
       _isActive = true;
-      developer.log(
-        '✅ [BusDetectorService] startDetection() 완료',
-        name: 'BusDetectorService',
-      );
+      // developer.log(
+      //   '✅ [BusDetectorService] startDetection() 완료',
+      //   name: 'BusDetectorService',
+      // );
       return true;
     } catch (e) {
-      developer.log(
-        '❌ [BusDetectorService] 오류: $e',
-        name: 'BusDetectorService',
-      );
+      // developer.log(
+      //   '❌ [BusDetectorService] 오류: $e',
+      //   name: 'BusDetectorService',
+      // );
       _updateStatus('카메라 시작 실패: $e');
       return false;
     }
@@ -133,10 +133,10 @@ class BusDetectorService {
           if (event['type'] == 'snapshot') {
             final imageBytes = event['image'] as Uint8List?;
             if (imageBytes != null) {
-              developer.log(
-                '📸 [BusDetectorService] 스냅샷 수신 (${imageBytes.length} bytes)',
-                name: 'BusDetectorService',
-              );
+              // developer.log(
+              //   '📸 [BusDetectorService] 스냅샷 수신 (${imageBytes.length} bytes)',
+              //   name: 'BusDetectorService',
+              // );
               onSnapshotCaptured?.call(imageBytes);
             }
           } else if (event.containsKey('detections')) {
@@ -156,7 +156,7 @@ class BusDetectorService {
     try {
       await _channel.invokeMethod('captureSnapshot');
     } catch (e) {
-      developer.log('❌ 스냅샷 요청 실패: $e', name: 'BusDetectorService');
+      // developer.log('❌ 스냅샷 요청 실패: $e', name: 'BusDetectorService');
     }
   }
 
@@ -171,10 +171,10 @@ class BusDetectorService {
   /// Returns: TagRecognitionResult (이미지, 응답, 성공 여부)
   Future<TagRecognitionResult?> sendTagRecognition() async {
     if (!_isActive) {
-      developer.log(
-        '⚠️ [BusDetectorService] 카메라가 활성화되지 않음',
-        name: 'BusDetectorService',
-      );
+      // developer.log(
+      //   '⚠️ [BusDetectorService] 카메라가 활성화되지 않음',
+      //   name: 'BusDetectorService',
+      // );
       return null;
     }
 
@@ -182,10 +182,10 @@ class BusDetectorService {
       final baseUrl = ApiService.baseUrl;
       final uploadUrl = '$baseUrl/bus-ai/bus-recognition';
 
-      developer.log(
-        '📤 [BusDetectorService] 태그 인식 요청 (Native) - URL: $uploadUrl',
-        name: 'BusDetectorService',
-      );
+      // developer.log(
+      //   '📤 [BusDetectorService] 태그 인식 요청 (Native) - URL: $uploadUrl',
+      //   name: 'BusDetectorService',
+      // );
 
       // 네이티브 메서드 호출
       final result = await _channel.invokeMethod('captureAndUploadImage', {
@@ -211,14 +211,14 @@ class BusDetectorService {
               // await file.delete();
             }
           } catch (e) {
-            developer.log('⚠️ 이미지 파일 읽기 실패: $e', name: 'BusDetectorService');
+            // developer.log('⚠️ 이미지 파일 읽기 실패: $e', name: 'BusDetectorService');
           }
         }
 
-        developer.log(
-          '✅ [BusDetectorService] 태그 인식 성공 (응답: $body)',
-          name: 'BusDetectorService',
-        );
+        // developer.log(
+        //   '✅ [BusDetectorService] 태그 인식 성공 (응답: $body)',
+        //   name: 'BusDetectorService',
+        // );
 
         return TagRecognitionResult(
           imageBytes: imageBytes ?? Uint8List(0), // 이미지가 없으면 빈 바이트
@@ -226,17 +226,17 @@ class BusDetectorService {
           success: true,
         );
       } else {
-        developer.log(
-          '❌ [BusDetectorService] 예상치 못한 결과 형식: $result',
-          name: 'BusDetectorService',
-        );
+        // developer.log(
+        //   '❌ [BusDetectorService] 예상치 못한 결과 형식: $result',
+        //   name: 'BusDetectorService',
+        // );
         return null;
       }
     } catch (e) {
-      developer.log(
-        '❌ [BusDetectorService] 태그 인식 실패: $e',
-        name: 'BusDetectorService',
-      );
+      // developer.log(
+      //   '❌ [BusDetectorService] 태그 인식 실패: $e',
+      //   name: 'BusDetectorService',
+      // );
       return null;
     }
   }
@@ -290,10 +290,10 @@ class BusDetectorService {
     final result = await _ocrService.sendOcrRequest(imageBytes);
 
     if (result != null) {
-      developer.log(
-        '✅ OCR 성공: ${result.displayText} (${result.responseTimeMs}ms)',
-        name: 'BusDetectorService',
-      );
+      // developer.log(
+      //   '✅ OCR 성공: ${result.displayText} (${result.responseTimeMs}ms)',
+      //   name: 'BusDetectorService',
+      // );
       onBusNumberFound?.call(result.displayText, result.responseTimeMs);
     }
   }
@@ -302,9 +302,9 @@ class BusDetectorService {
   Future<void> stopInference() async {
     try {
       await _channel.invokeMethod('setInferenceEnabled', {'enabled': false});
-      developer.log('🧠 YOLO 추론 중지됨', name: 'BusDetectorService');
+      // developer.log('🧠 YOLO 추론 중지됨', name: 'BusDetectorService');
     } catch (e) {
-      developer.log('❌ 추론 중지 실패: $e', name: 'BusDetectorService');
+      // developer.log('❌ 추론 중지 실패: $e', name: 'BusDetectorService');
     }
   }
 
@@ -314,57 +314,57 @@ class BusDetectorService {
 
   /// 감지 중지
   Future<void> stopDetection() async {
-    developer.log(
-      '🛑 [BusDetectorService] stopDetection() 호출',
-      name: 'BusDetectorService',
-    );
+    // developer.log(
+    //   '🛑 [BusDetectorService] stopDetection() 호출',
+    //   name: 'BusDetectorService',
+    // );
 
     _isActive = false;
 
     // EventChannel 구독 취소
     if (_detectionSubscription != null) {
-      developer.log('  - EventChannel 구독 취소 중...', name: 'BusDetectorService');
+      // developer.log('  - EventChannel 구독 취소 중...', name: 'BusDetectorService');
       await _detectionSubscription?.cancel();
       _detectionSubscription = null;
-      developer.log('  - EventChannel 구독 취소 완료', name: 'BusDetectorService');
+      // developer.log('  - EventChannel 구독 취소 완료', name: 'BusDetectorService');
     }
 
     // 네이티브 카메라 중지 (타임아웃 2초)
     try {
-      developer.log('  - 네이티브 카메라 중지 시작...', name: 'BusDetectorService');
+      // developer.log('  - 네이티브 카메라 중지 시작...', name: 'BusDetectorService');
       await _channel
           .invokeMethod('stopCamera')
           .timeout(
             const Duration(seconds: 2),
             onTimeout: () {
-              developer.log(
-                '  - ⚠️ stopCamera 타임아웃 (2초)',
-                name: 'BusDetectorService',
-              );
+              // developer.log(
+              //   '  - ⚠️ stopCamera 타임아웃 (2초)',
+              //   name: 'BusDetectorService',
+              // );
               return null;
             },
           );
-      developer.log('  - 네이티브 카메라 중지 완료', name: 'BusDetectorService');
+      // developer.log('  - 네이티브 카메라 중지 완료', name: 'BusDetectorService');
     } catch (e) {
-      developer.log('  - ⚠️ stopCamera 오류: $e', name: 'BusDetectorService');
+      // developer.log('  - ⚠️ stopCamera 오류: $e', name: 'BusDetectorService');
     }
 
     _updateStatus('감지 중지됨');
-    developer.log(
-      '✅ [BusDetectorService] stopDetection() 완료',
-      name: 'BusDetectorService',
-    );
+    // developer.log(
+    //   '✅ [BusDetectorService] stopDetection() 완료',
+    //   name: 'BusDetectorService',
+    // );
   }
 
   Future<void> dispose() async {
-    developer.log(
-      '🗑️ [BusDetectorService] dispose() 호출',
-      name: 'BusDetectorService',
-    );
+    // developer.log(
+    //   '🗑️ [BusDetectorService] dispose() 호출',
+    //   name: 'BusDetectorService',
+    // );
     await stopDetection();
-    developer.log(
-      '✅ [BusDetectorService] dispose() 완료',
-      name: 'BusDetectorService',
-    );
+    // developer.log(
+    //   '✅ [BusDetectorService] dispose() 완료',
+    //   name: 'BusDetectorService',
+    // );
   }
 }

@@ -40,8 +40,6 @@ class CrosswalkDetector extends ProximityDetector<RouteStep> {
     // );
     // debugPrint('🔍 [CrosswalkDetector] routes 개수: ${routes.length}');
 
-    int totalCrosswalks = 0;
-
     for (var segment in routes) {
       // WALK 타입만 횡단보도가 있을 수 있음
       if (segment.moveType != 'WALK') {
@@ -50,7 +48,7 @@ class CrosswalkDetector extends ProximityDetector<RouteStep> {
 
       for (var step in segment.steps) {
         if (step.isCrosswalk) {
-          totalCrosswalks++;
+          // totalCrosswalks++;
 
           // 현재 위치와 횡단보도 위치 간의 거리 확인
           final distance = calculateDistance(position, step.lat, step.lng);
