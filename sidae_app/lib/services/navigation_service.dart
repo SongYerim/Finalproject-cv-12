@@ -54,6 +54,25 @@ class NavigationService {
     _startNativeEventListening();
   }
 
+  /// 센서가 실행 중인지 확인하고 필요 시 재시작 (화면 복귀 시 호출)
+  Future<void> ensureSensorRunning() async {
+    print('🔄 센서 재시작 (화면 복귀)');
+
+    // 기존 EventChannel 구독 취소 후 재시작 (다른 화면의 구독과 충돌 방지)
+    _nativeEventSubscription?.cancel();
+    _nativeEventSubscription = null;
+
+    if (!_sensorInitialized) {
+      _sensorInitialized = true;
+    }
+
+    // 네이티브 Navigation 재시작
+    await _startNativeNavigation();
+
+    // EventChannel 리스닝 재시작
+    _startNativeEventListening();
+  }
+
   /// 네이티브 Navigation 시작
   Future<void> _startNativeNavigation() async {
     try {
