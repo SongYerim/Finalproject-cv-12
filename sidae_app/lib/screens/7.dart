@@ -720,6 +720,41 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                // 새로고침 버튼 + 카운트다운
+                StreamBuilder<int>(
+                  stream: _arrivalService.countdownStream,
+                  initialData: 30,
+                  builder: (context, snapshot) {
+                    final remaining = snapshot.data ?? 30;
+                    return TextButton.icon(
+                      onPressed: _onRefresh,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        backgroundColor: Colors.white.withOpacity(0.1),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      icon: const Icon(
+                        Icons.refresh,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      label: Text(
+                        '${remaining}초',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
             const SizedBox(height: 8),
