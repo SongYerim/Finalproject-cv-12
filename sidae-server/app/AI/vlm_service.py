@@ -51,7 +51,7 @@ def resize_image_smart(
 
         # 4. 이미지 인코딩 (다시 Bytes로)
         # quality: 85 (Pillow와 동일하게 설정)
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 85]
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
         success, encoded_img = cv2.imencode(".jpg", img, encode_param)
         
         if success:
