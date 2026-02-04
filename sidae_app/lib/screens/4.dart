@@ -87,7 +87,10 @@ class _Screen4State extends State<Screen4> {
     // 단계 변경 TTS 콜백 등록
     _tracker.onStepChanged = (segmentIndex, stepIndex, description) {
       if (mounted) {
-        _ttsService.speak(description);
+        // "[도착] 도착" 문구는 TTS 출력 제외
+        if (!description.contains("[도착] 도착")) {
+          _ttsService.speak(description);
+        }
         setState(() {});
       }
     };
