@@ -84,15 +84,18 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
                 mode = '하차벨'
             elif mode == 'tag':
                 mode ='단말기'
-            if pos == " ":
+            if pos == "카드단말기기 없음" or "하차벨 없음":
                 des = f'{mode}를 못 찾겠습니다.'
             else:
                 des = f'{mode}은 {pos}에 있습니다.'
             return {"des": des, "reason": reason, "resize_time": resize_time, "model_time": model_time}
         elif mode in ['tag_']:
             mode = '단말기'
-            pos = final_data.get("selected_area", " ")            
-            des = f'{mode}은 {pos}에 있습니다.'
+            pos = final_data.get("selected_area", " ")
+            if pos == "카드단말기기 없음":
+                des = "카드단말기기 없음"
+            else:
+                des = f'{mode}은 {pos}에 있습니다.'
             return {"des": des, "resize_time": resize_time, "model_time": model_time}
         
         return {
