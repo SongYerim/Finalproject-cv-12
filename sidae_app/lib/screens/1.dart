@@ -398,6 +398,8 @@ class _HomeScreenState extends State<HomeScreen>
           // heavy -> vibrate로 상향
           HapticFeedback.vibrate();
           await _speak("앱을 종료합니다");
+          await PorcupineService.instance
+              .stop(); // 종료 전 마이크 리소스 해제 (FlutterJNI detach 에러 방지)
           SystemNavigator.pop();
         }
       },
@@ -432,24 +434,24 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildReadyUI() {
     return Column(
       children: [
-        const SizedBox(height: 80),
+        const SizedBox(height: 60), // 상단 여백 조정
         Text(
           '목적지를\n말해주세요.',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: Theme.of(context).primaryColor,
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-            height: 1.25,
+            fontSize: 40, // 28 -> 40 (대폭 확대)
+            fontWeight: FontWeight.w900, // 더 굵게
+            height: 1.2,
           ),
         ),
-        const SizedBox(height: 40),
+        const SizedBox(height: 50),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: _micPanel(
-              panelColor: Colors.grey[900]!, // 어두운 배경
-              micColor: Theme.of(context).primaryColor, // 노란색 마이크
+              panelColor: Colors.black,
+              micColor: Theme.of(context).primaryColor,
             ),
           ),
         ),
@@ -697,20 +699,20 @@ class _HomeScreenState extends State<HomeScreen>
       children: [
         const SizedBox(height: 80),
         Text(
-          '음성인식 중...',
+          '듣고 있어요...',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: Theme.of(context).primaryColor,
-            fontSize: 26,
-            fontWeight: FontWeight.w700,
+            fontSize: 36, // 26 -> 36
+            fontWeight: FontWeight.w900,
           ),
         ),
-        const SizedBox(height: 40),
+        const SizedBox(height: 50),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: _micPanel(
-              panelColor: Colors.grey[900]!,
+              panelColor: Colors.black,
               micColor: Colors.redAccent,
             ),
           ),
@@ -728,8 +730,8 @@ class _HomeScreenState extends State<HomeScreen>
         RichText(
           text: TextSpan(
             style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w700,
+              fontSize: 36, // 26 -> 36
+              fontWeight: FontWeight.w900,
               color: Theme.of(context).primaryColor,
             ),
             children: const [
@@ -741,12 +743,12 @@ class _HomeScreenState extends State<HomeScreen>
             ],
           ),
         ),
-        const SizedBox(height: 40),
+        const SizedBox(height: 50),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: _micPanel(
-              panelColor: Colors.grey[900]!,
+              panelColor: Colors.black,
               micColor: Colors.redAccent,
             ),
           ),
@@ -765,8 +767,8 @@ class _HomeScreenState extends State<HomeScreen>
         RichText(
           text: TextSpan(
             style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w700,
+              fontSize: 36, // 26 -> 36
+              fontWeight: FontWeight.w900,
               color: Theme.of(context).primaryColor,
             ),
             children: const [
@@ -779,123 +781,166 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: 30),
 
-        // 목적지 표시 박스
+        // 목적지 표시 박스 (고대비 카드 스타일)
         Container(
-          margin: const EdgeInsets.symmetric(horizontal: 28),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
           decoration: BoxDecoration(
-            color: Colors.grey[900],
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Theme.of(context).primaryColor),
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Theme.of(context).primaryColor, width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.3),
+                blurRadius: 15,
+                spreadRadius: 2,
+              ),
+            ],
           ),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '목적지 : ${_recognizedDestination.isEmpty ? "(없음)" : _recognizedDestination}',
-              style: TextStyle(fontSize: 16, color: Colors.white),
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "인식된 목적지",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _recognizedDestination.isEmpty
+                    ? "(없음)"
+                    : _recognizedDestination,
+                style: const TextStyle(
+                  fontSize: 32, // 목적지 크게
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                ),
+              ),
+            ],
           ),
         ),
-
-        const SizedBox(height: 18),
+        const SizedBox(height: 30),
 
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Container(
+              // 버튼 영역도 카드 스타일 제거하고 배경만 투명하게 or
+              // 버튼 자체를 강조하기 위해 컨테이너 장식 제거
               width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white),
-              ),
-              padding: const EdgeInsets.all(18),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // 확인 버튼
-                  SizedBox(
-                    width: double.infinity,
-                    height: 70,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF7BC96F),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                  // 확인 버튼 (초록색 강조)
+                  Expanded(
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4CAF50), // 더 진한 초록색
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            side: const BorderSide(
+                              color: Colors.white,
+                              width: 2,
+                            ), // 흰색 테두리 추가
+                          ),
+                          elevation: 8,
+                          shadowColor: const Color(0xFF4CAF50).withOpacity(0.5),
                         ),
-                        elevation: 0,
-                      ),
-                      onPressed: () async {
-                        // 2.dart/경로 탐색로 연결
+                        onPressed: () async {
+                          // 2.dart/경로 탐색로 연결
 
-                        if (_recognizedDestination.isEmpty) {
-                          _speak("목적지가 없습니다. 다시 말씀해주세요.");
-                          return;
-                        }
+                          if (_recognizedDestination.isEmpty) {
+                            _speak("목적지가 없습니다. 다시 말씀해주세요.");
+                            return;
+                          }
 
-                        // 로딩 상태 표시 (선택사항)
-                        // setState(() {
-                        //   _statusText = "경로를 찾는 중입니다...";
-                        // });
+                          // 로딩 상태 표시 (선택사항)
+                          // setState(() {
+                          //   _statusText = "경로를 찾는 중입니다...";
+                          // });
 
-                        try {
-                          await _processNavigation(_recognizedDestination);
-                        } catch (e) {
-                          if (!mounted) return;
-                          _speak("경로 탐색 중 오류가 발생했습니다.");
-                          setState(() {
-                            _step = SttStep.ready;
-                          });
-                        }
-                      },
-                      child: const Text(
-                        '확인',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          try {
+                            await _processNavigation(_recognizedDestination);
+                          } catch (e) {
+                            if (!mounted) return;
+                            _speak("경로 탐색 중 오류가 발생했습니다.");
+                            setState(() {
+                              _step = SttStep.ready;
+                            });
+                          }
+                        },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.check_circle, size: 48), // 아이콘 추가
+                            SizedBox(width: 16),
+                            Text(
+                              '확인',
+                              style: TextStyle(
+                                fontSize: 36,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 20),
 
-                  // 다시 말하기 버튼
-                  SizedBox(
-                    width: double.infinity,
-                    height: 70,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        elevation: 0,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _recognizedDestination = "";
-                          _step = SttStep.ready;
-                        });
-                        _speak("화면을 눌러 목적지를 말씀해주세요.");
-                      },
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(Icons.mic, color: Colors.black, size: 26),
-                          SizedBox(width: 10),
-                          Text(
-                            '다시 말하기',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black,
+                  // 다시 말하기 버튼 (빨간색 강조)
+                  Expanded(
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent, // 빨간색
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            side: const BorderSide(
+                              color: Colors.white,
+                              width: 2,
                             ),
                           ),
-                        ],
+                          elevation: 8,
+                          shadowColor: Colors.redAccent.withOpacity(0.5),
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _recognizedDestination = "";
+                            _step = SttStep.ready;
+                          });
+                          _speak("화면을 눌러 목적지를 말씀해주세요.");
+                        },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(
+                              Icons.refresh,
+                              size: 48,
+                            ), // 아이콘 변경 (mic -> refresh)
+                            SizedBox(width: 16),
+                            Text(
+                              '다시 말하기',
+                              style: TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -910,20 +955,33 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // 공통 마이크 패널(중복 최소화) - 펀스 애니메이션 적용
+  // 공통 마이크 패널 (디자인 통일)
   Widget _micPanel({required Color panelColor, required Color micColor}) {
+    // 테두리 색상 결정:
+    // - 보통 상태: Primary Color (노란색)
+    // - 듣고 있음(에러 등): 빨간색 or 지정색
+    final borderColor = _isListening
+        ? Colors.redAccent
+        : Theme.of(context).primaryColor;
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: panelColor,
+        color: Colors.black, // 배경은 항상 검정 (카드 느낌)
         borderRadius: BorderRadius.circular(32),
-        // 음성인식 중일 때 빨간색 테두리 추가
-        border: _isListening
-            ? Border.all(color: Colors.redAccent, width: 3)
-            : null,
+        border: Border.all(
+          color: borderColor,
+          width: 4, // 테두리 두껍게
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: borderColor.withValues(alpha: 0.3),
+            blurRadius: 20,
+            spreadRadius: 2,
+          ),
+        ],
       ),
       child: Center(
-        // 펀스 애니메이션 적용
         child: AnimatedBuilder(
           animation: _pulseController,
           builder: (context, child) {
@@ -931,22 +989,26 @@ class _HomeScreenState extends State<HomeScreen>
             return Transform.scale(
               scale: scale,
               child: Container(
-                width: 92,
-                height: 92,
+                width: 120, // 마이크 원 크기 확대 (92 -> 120)
+                height: 120,
                 decoration: BoxDecoration(
                   color: micColor,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      blurRadius: _isListening ? 28 : 18,
-                      offset: const Offset(0, 8),
+                      blurRadius: _isListening ? 30 : 20,
+                      offset: const Offset(0, 10),
                       color: _isListening
-                          ? micColor.withValues(alpha: 0.5)
-                          : Colors.black.withValues(alpha: 0.12),
+                          ? micColor.withValues(alpha: 0.6)
+                          : Colors.transparent,
                     ),
                   ],
                 ),
-                child: const Icon(Icons.mic, size: 44, color: Colors.white),
+                child: const Icon(
+                  Icons.mic,
+                  size: 60, // 아이콘 크기 확대 (44 -> 60)
+                  color: Colors.white,
+                ),
               ),
             );
           },

@@ -105,141 +105,152 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
     );
   }
 
-  // 로딩 화면: "경로 탐색 처리용" 화면 (첨부 이미지 형태)
+  // 로딩 화면: "경로 탐색 처리용" 화면 (첨부 이미지 형태 + Accessibility)
   Widget _buildRouteSearchingView() {
     // 화면 전체 여백/배치용
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 24), // 패딩 약간 증가
       child: Column(
         // 위-가운데-아래로 배치
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // 1) 상단 아이콘 3개 (도보/버스/지하철)
+          // 1) 상단 아이콘 3개 (도보/버스/지하철) - 크기 증가
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 Icons.directions_walk,
-                size: 28,
+                size: 36, // 28 -> 36
                 color: Theme.of(context).primaryColor,
               ),
-              const SizedBox(width: 26),
+              const SizedBox(width: 30),
               Icon(
                 Icons.directions_bus_filled,
-                size: 28,
+                size: 36, // 28 -> 36
                 color: Theme.of(context).primaryColor,
               ),
-              const SizedBox(width: 26),
+              const SizedBox(width: 30),
               Icon(
                 Icons.train,
-                size: 28,
+                size: 36, // 28 -> 36
                 color: Theme.of(context).primaryColor,
               ),
             ],
           ),
 
-          const SizedBox(height: 36),
+          const SizedBox(height: 40),
 
-          // 2) 가운데 카드 (연보라 느낌 + 라운드)
+          // 2) 가운데 정보 표시 (스타일 유지하되 가독성 강화)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
             decoration: BoxDecoration(
-              // 이미지의 "연한 보라색 카드" 느낌 -> 고대비 테마박스
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(18),
+              color: Colors.black, // 고대비
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: Theme.of(context).primaryColor,
-                width: 2,
+                width: 3, // 두께 증가
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Theme.of(context).primaryColor.withValues(
+                    alpha: 0.3,
+                  ), // withOpacity -> withValues(alpha:)
+                  blurRadius: 15,
+                  spreadRadius: 2,
+                ),
+              ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 출발: 내 위치 (강조)
-                RichText(
-                  textAlign: TextAlign.center,
-                  text: TextSpan(
-                    style: const TextStyle(color: Colors.white),
-                    children: [
-                      const TextSpan(
-                        text: "출발: ",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
+                // 출발 (강조)
+                Column(
+                  children: [
+                    const Text(
+                      "출발",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white70,
                       ),
-                      TextSpan(
-                        text: "내 위치",
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
-                          color: Theme.of(context).primaryColor,
-                        ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "내 위치",
+                      style: TextStyle(
+                        fontSize: 32, // 글자 크기 대폭 증가
+                        fontWeight: FontWeight.w900,
+                        color: Theme.of(context).primaryColor,
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Icon(
+                    Icons.arrow_downward,
+                    color: Colors.white,
+                    size: 30,
                   ),
                 ),
 
-                const SizedBox(height: 10),
-
-                // 도착: 목적지 (목적지 이름 강조)
-                RichText(
-                  textAlign: TextAlign.center,
-                  text: TextSpan(
-                    style: const TextStyle(color: Colors.white),
-                    children: [
-                      const TextSpan(
-                        text: "도착: ",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
+                // 도착 (강조)
+                Column(
+                  children: [
+                    const Text(
+                      "목적지",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white70,
                       ),
-                      TextSpan(
-                        text: widget.destinationName,
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          color: Theme.of(context).primaryColor,
-                        ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      widget.destinationName,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 32, // 글자 크기 대폭 증가
+                        fontWeight: FontWeight.w900,
+                        color: Theme.of(context).primaryColor,
                       ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                // 안내 문구 (이미지 문구에 맞춤)
-                const Text(
-                  "최단 경로를 찾고있습니다.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
 
-          const SizedBox(height: 44),
+          const SizedBox(height: 50),
 
-          // 3) 하단 큰 로딩 인디케이터
-          SizedBox(
-            width: 90,
-            height: 90,
-            child: CircularProgressIndicator(
-              // 좀 더 “두꺼운 링” 느낌
-              strokeWidth: 9,
-              // 기본 테마 색을 쓰고 싶으면 Theme.colorScheme.primary로도 가능
-              valueColor: AlwaysStoppedAnimation(
-                Theme.of(context).primaryColor,
+          // 3) 하단 안내 문구 + 로딩
+          Column(
+            children: [
+              Text(
+                "최단 경로를 찾는 중...",
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 22, // 16 -> 22
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
               ),
-              backgroundColor: Colors.grey[800],
-            ),
+              const SizedBox(height: 30),
+              SizedBox(
+                width: 70,
+                height: 70,
+                child: CircularProgressIndicator(
+                  strokeWidth: 8,
+                  valueColor: AlwaysStoppedAnimation(
+                    Theme.of(context).primaryColor,
+                  ),
+                  backgroundColor: Colors.grey[300],
+                ),
+              ),
+            ],
           ),
-
-          // (선택) 상태 텍스트를 디버깅/유지하고 싶으면 아래처럼 숨겨둘 수도 있어요.
-          // const SizedBox(height: 18),
-          // Text(_statusText, textAlign: TextAlign.center),
         ],
       ),
     );
@@ -247,23 +258,68 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
 
   // ------------------------------------------------------------
   // 실패/에러 화면 (기존 기능 유지, UI는 심플하게)
+  // 실패/에러 화면 (screens/1.dart 스타일 적용)
   Widget _buildErrorView() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.min, // Center 정렬을 위해 min
         children: [
+          Icon(Icons.error_outline, size: 80, color: Colors.redAccent),
+          const SizedBox(height: 20),
           Text(
             _errorText ?? "알 수 없는 오류",
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
+          const SizedBox(height: 40),
+
+          // 다시 시도 버튼 (확대)
+          SizedBox(
+            width: double.infinity,
+            height: 70,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              onPressed: _fetchRoute,
+              child: const Text(
+                "다시 시도",
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+          ),
+
           const SizedBox(height: 16),
-          ElevatedButton(onPressed: _fetchRoute, child: const Text("다시 시도")),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("이전 화면으로"),
+
+          // 이전 화면으로 버튼 (확대)
+          SizedBox(
+            width: double.infinity,
+            height: 70,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey[800],
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                "이전 화면으로",
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
           ),
         ],
       ),
