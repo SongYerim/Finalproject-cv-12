@@ -158,9 +158,9 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
               busNumber: arrival.busNumber,
               stationName: _popupState.busStationName ?? "",
               enableCamera: true, // 카메라 모드 활성화
-              // 기존에 저장해둔 하차 지점 정보 사용
-              exitLat: _currentBusStopInfo?.exitLat ?? 0.0,
-              exitLng: _currentBusStopInfo?.exitLng ?? 0.0,
+              // 팝업 서비스에 저장된 하차 지점 정보 사용 (없으면 0.0)
+              exitLat: _popupState.exitLat ?? 0.0,
+              exitLng: _popupState.exitLng ?? 0.0,
             ),
           ),
         ).then((_) {
@@ -173,9 +173,6 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       }
     }
   }
-
-  // 현재 감지된 버스 정류장 정보 (화면 전환용)
-  BusStopInfo? _currentBusStopInfo;
 
   Future<void> _initPorcupine() async {
     try {
@@ -344,13 +341,12 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         await _ttsService.speak("버스 정류장에 도착했습니다.");
         HapticFeedback.vibrate();
 
-        // 정류장 정보 저장 (화면 전환 시 exitLat/Lng 사용 위해)
-        _currentBusStopInfo = busStopInfo;
-
         // 버스 추적 시작 (서비스 위임)
         await _popupState.startBusTracking(
           busStopInfo.busNumber,
           busStopInfo.stationName,
+          exitLat: busStopInfo.exitLat,
+          exitLng: busStopInfo.exitLng,
         );
       },
     );

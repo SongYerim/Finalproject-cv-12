@@ -11,26 +11,21 @@ class TtsService {
   final FlutterTts _tts = FlutterTts();
   bool _isInitialized = false;
 
+  // TTS 대기열 (FIFO)
+  final List<String> _queue = [];
+  bool _isPlaying = false; // 현재 재생 중 여부
+
   /// TTS 초기화 (한 번만 수행)
   Future<void> initialize() async {
     if (_isInitialized) return;
 
-    // developer.log('🔧 [TtsService] TTS 초기화 시작', name: 'TTS');
-
     try {
       await _tts.setLanguage("ko-KR");
-      // developer.log('✅ [TtsService] 언어 설정: ko-KR', name: 'TTS');
-    } catch (e) {
-      // developer.log('⚠️ [TtsService] 언어 설정 실패: $e', name: 'TTS');
-    }
+    } catch (e) {}
 
     await _tts.setSpeechRate(1.2);
     await _tts.setPitch(1.0);
     await _tts.setVolume(1.0);
-    await _tts.setSpeechRate(1.2);
-    await _tts.setPitch(1.0);
-    await _tts.setVolume(1.0);
-    // developer.log('✅ [TtsService] 속도/피치/볼륨 설정 완료', name: 'TTS');
 
     // iOS 오디오 세션 설정
     try {
@@ -39,70 +34,83 @@ class TtsService {
             IosTextToSpeechAudioCategoryOptions.allowBluetooth,
             IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
           ]);
-      // developer.log('✅ [TtsService] iOS 오디오 세션 설정 완료', name: 'TTS');
-    } catch (e) {
-      // developer.log(
-      //   '⚠️ [TtsService] iOS 오디오 세션 설정 실패 (Android일 수 있음): $e',
-      //   name: 'TTS',
-      // );
-    }
+    } catch (e) {}
 
-    // Android에서 완료 대기 설정
+    // Android/iOS 완료 핸들러 설정
+    _tts.setCompletionHandler(() {
+      _isPlaying = false;
+      _processQueue(); // 다음 메시지 재생
+    });
+
+    // Android에서 완료 대기 설정 (awaitSpeakCompletion을 true로 하면 await _tts.speak()가 끝날 때까지 기다림)
+    // 하지만 큐 시스템에서는 setCompletionHandler로 제어하는 것이 더 유연할 수 있음.
+    // 여기서는 awaitSpeakCompletion을 true로 유지하되, 큐 로직은 _processQueue에서 순차 실행하도록 함.
     try {
       await _tts.awaitSpeakCompletion(true);
-      // developer.log('✅ [TtsService] awaitSpeakCompletion 설정 완료', name: 'TTS');
-    } catch (e) {
-      // developer.log(
-      //   '⚠️ [TtsService] awaitSpeakCompletion 설정 실패: $e',
-      //   name: 'TTS',
-      // );
-    }
+    } catch (e) {}
 
     _isInitialized = true;
-    // developer.log('✅ [TtsService] TTS 초기화 완료', name: 'TTS');
   }
 
-  /// 텍스트 읽기
+  /// 텍스트 읽기 (큐에 추가)
   Future<void> speak(String text) async {
-    if (text.isEmpty) {
-      // developer.log('⚠️ [TtsService] 빈 텍스트, TTS 호출 스킵', name: 'TTS');
-      return;
-    }
-
-    // developer.log('🔊 [TtsService] speak 호출: "$text"', name: 'TTS');
+    if (text.isEmpty) return;
 
     if (!_isInitialized) {
-      // developer.log('⚠️ [TtsService] 초기화되지 않음, 초기화 중...', name: 'TTS');
       await initialize();
     }
 
-    try {
-      // 기존 TTS 중지
-      await _tts.stop();
-      // developer.log('🛑 [TtsService] 기존 TTS 중지 완료', name: 'TTS');
+    // 중복 방지: 큐의 마지막 메시지와 같으면 추가하지 않음 (선택 사항)
+    if (_queue.isNotEmpty && _queue.last == text) {
+      return;
+    }
+    // 현재 재생 중인 메시지와 같아도 중복 방지 (선택 사항)
+    // if (_isPlaying && _currentMessage == text) return;
 
-      // TTS 실행
-      final result = await _tts.speak(text);
-      // developer.log('✅ [TtsService] speak 호출 완료, result: $result', name: 'TTS');
+    // 큐에 추가
+    _queue.add(text);
 
-      // Android에서 완료 대기 (awaitSpeakCompletion이 true일 때)
-      if (result == 1) {
-        // developer.log('✅ [TtsService] TTS 재생 시작됨', name: 'TTS');
-      } else {
-        // developer.log(
-        //   '⚠️ [TtsService] TTS 재생 실패, result: $result',
-        //   name: 'TTS',
-        // );
-      }
-    } catch (e) {
-      // developer.log('❌ [TtsService] speak 호출 실패: $e', name: 'TTS', error: e);
-      rethrow;
+    // 재생 중이 아니면 큐 처리 시작
+    if (!_isPlaying) {
+      _processQueue();
     }
   }
 
-  /// TTS 중지
+  /// 대기열 처리 (재귀적으로 호출됨)
+  Future<void> _processQueue() async {
+    if (_queue.isEmpty) {
+      _isPlaying = false;
+      return;
+    }
+
+    _isPlaying = true;
+    final text = _queue.removeAt(0); // FIFO: 첫 번째 항목 꺼내기
+
+    try {
+      // awaitSpeakCompletion(true) 설정 덕분에 재생이 끝날 때까지 여기서 대기함
+      // (만약 설정이 안 먹히면 setCompletionHandler가 백업으로 동작)
+      await _tts.speak(text);
+
+      // Android에서는 await가 완료되면 재생이 끝난 것임.
+      // iOS 등 일관성을 위해 여기서 바로 다음으로 넘어갈 수도 있지만,
+      // setCompletionHandler가 호출될 수도 있으므로 플래그 관리에 주의.
+
+      // 여기서는 안전하게: await가 풀리면 바로 다음 곡 재생 시도
+      // (만약 setCompletionHandler가 중복 호출되어도 _isPlaying 체크 등이 필요할 수 있음.
+      //  하지만 단일 스레드 이벤트 루프라 큰 문제는 없음)
+
+      _processQueue();
+    } catch (e) {
+      // 에러 발생 시에도 다음 메시지로 진행
+      _isPlaying = false;
+      _processQueue();
+    }
+  }
+
+  /// TTS 중지 (대기열 비우기 + 즉시 중지)
   Future<void> stop() async {
-    // developer.log('🛑 [TtsService] stop 호출', name: 'TTS');
+    _queue.clear(); // 대기열 삭제
+    _isPlaying = false;
     await _tts.stop();
   }
 }

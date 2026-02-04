@@ -50,7 +50,6 @@ class _Screen4State extends State<Screen4> {
   CrosswalkDetector? _crosswalkDetector;
   BusStopDetector? _busStopDetector;
   bool _isNavigatingToCrosswalk = false; // 카메라 중복 실행 방지 플래그
-  BusStopInfo? _currentBusStopInfo; // 현재 감지된 버스 정류장 정보
 
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
@@ -149,9 +148,9 @@ class _Screen4State extends State<Screen4> {
               busNumber: arrival.busNumber,
               stationName: _popupState.busStationName ?? "",
               enableCamera: true, // 카메라 모드 활성화
-              // 기존에 저장해둔 하차 지점 정보 사용
-              exitLat: _currentBusStopInfo?.exitLat ?? 0.0,
-              exitLng: _currentBusStopInfo?.exitLng ?? 0.0,
+              // 팝업 서비스에 저장된 하차 지점 정보 사용 (없으면 0.0)
+              exitLat: _popupState.exitLat ?? 0.0,
+              exitLng: _popupState.exitLng ?? 0.0,
             ),
           ),
         ).then((_) {
@@ -316,9 +315,6 @@ class _Screen4State extends State<Screen4> {
         if (!mounted) return;
         await _ttsService.speak("버스 정류장에 도착했습니다.");
         HapticFeedback.vibrate();
-
-        // 정류장 정보 저장 (화면 전환 시 exitLat/Lng 사용 위해)
-        _currentBusStopInfo = busStopInfo;
 
         // 버스 추적 시작 (서비스 위임)
         await _popupState.startBusTracking(

@@ -28,11 +28,17 @@ class BusPopupStateService {
   // 리스너 목록
   final List<VoidCallback> _listeners = [];
 
+  // 하차 지점 좌표 (전역 공유)
+  double? _exitLat;
+  double? _exitLng;
+
   // Getters
   bool get showPopup => _showPopup;
   String? get busStationName => _busStationName;
   bool get isNavigatingToBusStop => _isNavigatingToBusStop;
   BusArrival? get busArrival => _busArrival;
+  double? get exitLat => _exitLat;
+  double? get exitLng => _exitLng;
 
   /// 리스너 등록
   void addListener(VoidCallback listener) {
@@ -76,11 +82,20 @@ class BusPopupStateService {
   }
 
   /// 버스 도착 추적 시작 (중앙 집중식 관리)
-  Future<void> startBusTracking(String busNumber, String stationName) async {
+  Future<void> startBusTracking(
+    String busNumber,
+    String stationName, {
+    double? exitLat,
+    double? exitLng,
+  }) async {
     developer.log(
       '🚀 [BusPopupStateService] 버스 추적 시작 요청: $busNumber @ $stationName',
       name: 'BusPopupStateService',
     );
+
+    // 하차 좌표 저장
+    _exitLat = exitLat;
+    _exitLng = exitLng;
 
     // 팝업 먼저 열기
     openPopup(stationName);
