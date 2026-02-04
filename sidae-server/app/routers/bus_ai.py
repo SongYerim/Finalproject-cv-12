@@ -1,5 +1,6 @@
 from app.AI.prompt import PromptManager
 import logging
+from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from app.AI.vlm_service import request_vlm_prediction
 import json
@@ -10,7 +11,7 @@ logger = logging.getLogger("uvicorn")
 router = APIRouter(tags=["Bus AI"])
 
 @router.post("/bus-recognition")
-async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
+async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_prompt: Optional[str] = Form(None)):
     # 1. 파일 확장자 검증
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="이미지 파일만 업로드 가능합니다.")
@@ -26,14 +27,24 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...)):
         # 3. Vertex AI 엔드포인트 호출
         logger.info(f"Vertex AI 요청 시작: 파일명={file.filename}, 크기={len(image_bytes)} bytes")
         
-        result_ = await request_vlm_prediction(
-            image_bytes=image_bytes, 
-            mime_type=file.content_type,
-            system_prompt=system_instruction,
-            user_prompt=user_instruction,
-            max_tokens = token_limit
-        )
-        
+        if vlm_prompt:
+            result_ = await request_vlm_prediction(
+                image_bytes=image_bytes, 
+                mime_type=file.content_type,
+                system_prompt=system_instruction,
+                user_prompt=vlm_prompt,
+                max_tokens = token_limit
+            )
+
+        else:
+            result_ = await request_vlm_prediction(
+                image_bytes=image_bytes, 
+                mime_type=file.content_type,
+                system_prompt=system_instruction,
+                user_prompt=user_instruction,
+                max_tokens = token_limit
+            )
+            
         logger.info(f"Vertex AI 응답 수신: {result_}")
         result = result_[0]
         resize_time = result_[1]

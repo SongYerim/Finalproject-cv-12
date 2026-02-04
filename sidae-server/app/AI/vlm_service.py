@@ -63,58 +63,6 @@ def resize_image_smart(
         print(f"OpenCV resize failed: {e}")
         return image_bytes
 
-"""def resize_image_smart(
-    image_bytes: bytes, 
-    min_pixels: int = 256 * 256,
-    max_pixels: int = 512 * 512
-) -> bytes:
-    
-    #이미지 비율을 유지하면서:
-    #1. 총 픽셀 수가 min_pixels보다 작으면 -> 확대 (Upscaling)
-    #2. 총 픽셀 수가 max_pixels보다 크면 -> 축소 (Downscaling)
-    #3. 그 사이라면 -> 원본 유지
-    
-    try:
-        image = Image.open(io.BytesIO(image_bytes))
-        
-        # 현재 픽셀 수 계산
-        current_pixels = image.width * image.height
-        
-        # 변경이 필요한지 확인
-        target_pixels = None
-        
-        if current_pixels < min_pixels:
-            target_pixels = min_pixels
-        elif current_pixels > max_pixels:
-            target_pixels = max_pixels
-            
-        # 리사이징 수행 (변경이 필요한 경우에만)
-        if target_pixels:
-            # 스케일 비율 계산 (루트 씌워서 가로/세로 비율 산출)
-            scale_factor = (target_pixels / current_pixels) ** 0.5
-            new_width = int(image.width * scale_factor)
-            new_height = int(image.height * scale_factor)
-            
-            image = image.resize((new_width, new_height), Image.Resampling.BILINEAR)
-        
-        # 다시 bytes로 변환
-        buffer = io.BytesIO()
-        # 원본 포맷 유지 (없으면 JPEG)
-        fmt = image.format if image.format else 'JPEG'
-        
-        # JPEG일 경우 품질 최적화 (용량 절약)
-        if fmt == 'JPEG':
-            image.save(buffer, format=fmt, quality=85)
-        else:
-            image.save(buffer, format=fmt)
-            
-        return buffer.getvalue()
-
-    except Exception as e:
-        # 이미지 처리 중 에러 발생 시 원본 반환 (안전 장치)
-        print(f"Image resize failed: {e}")
-        return image_bytes"""
-
 load_dotenv()
 
 # Google Cloud ADC(Application Default Credentials)를 사용하여 인증 토큰 획득
