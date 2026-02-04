@@ -72,14 +72,16 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
         except json.JSONDecodeError:
             # 파싱 실패 시 (AI가 이상한 텍스트를 줬을 때)
             logger.warning(f"JSON 파싱 실패. 원본 텍스트 반환. Raw: {raw_text_content}")
-            final_data = {
-                "found": False,
-                "error": "Parsing Failed",
-                "raw_text": raw_text_content
+            return {
+                "des": "AI 응답을 해석할 수 없습니다.",
+                "reason": "데이터 형식 오류", 
+                "raw_text": raw_text_content, # 디버깅용: AI가 뭐라고 했는지 확인
+                "resize_time": resize_time, 
+                "model_time": model_time
             }
-
+        """
         if mode in ['bell', 'tag']:
-            pos = final_data.get("selected_area", "")
+            pos = final_data.get("selected_area", " ")
             reason = final_data.get("reason", "이유 없음")
             if mode == 'bell':
                 mode = '하차벨'
@@ -98,6 +100,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
             else:
                 des = f'{mode} 위치는 {pos}에 있습니다.'
             return {"des": des, "resize_time": resize_time, "model_time": model_time}
+        """
         
         return {
             "result": final_data, "resize_time": resize_time, "model_time": model_time
