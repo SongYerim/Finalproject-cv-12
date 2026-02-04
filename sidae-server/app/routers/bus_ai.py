@@ -28,6 +28,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
         logger.info(f"Vertex AI 요청 시작: 파일명={file.filename}, 크기={len(image_bytes)} bytes")
         
         if vlm_prompt:
+            vlm_prompt += vlm_prompt + '출력 형식 (반드시 이 형식을 따르세요):{"description": }'
             result_ = await request_vlm_prediction(
                 image_bytes=image_bytes, 
                 mime_type=file.content_type,
@@ -83,17 +84,17 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
             if mode == 'bell':
                 mode = '하차벨'
             elif mode == 'tag':
-                mode ='단말기'
-            if pos == "카드단말기기 없음" or "하차벨 없음":
+                mode ='태그기'
+            if pos == "카드 단말기 없음" or "하차벨 없음":
                 des = f'{mode}를 못 찾겠습니다.'
             else:
                 des = f'{mode}은 {pos}에 있습니다.'
             return {"des": des, "reason": reason, "resize_time": resize_time, "model_time": model_time}
         elif mode in ['tag_']:
-            mode = '단말기'
+            mode = '태그기'
             pos = final_data.get("selected_area", " ")
-            if pos == "카드단말기기 없음":
-                des = "카드단말기기 없음"
+            if pos == "카드 단말기 없음":
+                des = "카드 단말기 없음"
             else:
                 des = f'{mode}은 {pos}에 있습니다.'
             return {"des": des, "resize_time": resize_time, "model_time": model_time}
