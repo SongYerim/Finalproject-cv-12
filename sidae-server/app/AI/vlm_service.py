@@ -11,12 +11,13 @@ import time
 import cv2
 import numpy as np
 
+
 def resize_image_smart(
     image_bytes: bytes, 
     min_pixels: int = 256 * 256,
     max_pixels: int = 512 * 512
 ) -> bytes:
-    """
+    """W
     OpenCV를 사용한 고속 리사이징
     """
     try:
