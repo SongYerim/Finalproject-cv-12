@@ -48,8 +48,8 @@ class NavigationManager(private val context: Context) {
     
     companion object {
         private const val TAG = "NavigationManager"
-        private const val UPDATE_INTERVAL_MS = 200L  // 200ms로 단축 (더 빠른 반응)
-        private const val MIN_DISTANCE_FOR_BEARING = 1.0 // 1m 이상 이동해야 진행 방향 계산
+        private const val UPDATE_INTERVAL_MS = 200L  // 200ms로 변경
+        private const val MIN_DISTANCE_FOR_BEARING = 0.5 // 1m 이상 이동해야 진행 방향 계산
     }
     
     private var sensorManager: SensorManager? = null
