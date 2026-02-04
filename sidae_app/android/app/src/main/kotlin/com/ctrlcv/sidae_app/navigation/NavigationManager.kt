@@ -48,7 +48,7 @@ class NavigationManager(private val context: Context) {
     
     companion object {
         private const val TAG = "NavigationManager"
-        private const val UPDATE_INTERVAL_MS = 200L  // 200ms로 변경
+        private const val UPDATE_INTERVAL_MS = 500L
         private const val MIN_DISTANCE_FOR_BEARING = 0.5 // 1m 이상 이동해야 진행 방향 계산
     }
     

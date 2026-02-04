@@ -35,7 +35,7 @@ class ExitTracker(private val context: Context) {
     companion object {
         private const val TAG = "ExitTracker"
         private const val EXIT_THRESHOLD = 15.0 // 15m 이내면 도달로 판정
-        private const val UPDATE_INTERVAL_MS = 200L
+        private const val UPDATE_INTERVAL_MS = 500L
     }
     
     private var fusedLocationClient: FusedLocationProviderClient? = null

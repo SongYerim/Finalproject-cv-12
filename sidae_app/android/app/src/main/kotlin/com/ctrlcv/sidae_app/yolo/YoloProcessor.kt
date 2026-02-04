@@ -380,7 +380,7 @@ class YoloProcessor(private val context: Context) {
      * 출력 후처리 (모델 출력 형식에 따라 분기)
      */
     private fun postprocessOutput(outputBuffer: ByteBuffer, outputShape: IntArray): List<Map<String, Any>> {
-        val confidenceThreshold = 0.25f
+        val confidenceThreshold = 0.5f
         val iouThreshold = 0.45f
         
         outputBuffer.rewind()

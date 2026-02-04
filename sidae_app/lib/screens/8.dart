@@ -34,6 +34,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
   Timer? _previewTimer;
   StreamSubscription? _exitDistanceSubscription;
   final PorcupineService _porcupineService = PorcupineService.instance;
+  bool _hasArrived = false; // 중복 하차 처리 방지 플래그
 
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
@@ -596,6 +597,10 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
           );
 
           if (reached) {
+            // 이미 하차 처리가 되었다면 중복 실행 방지
+            if (_hasArrived) return;
+            _hasArrived = true;
+
             print('🎉 [8.dart] 하차 지점 도달 확인! 종료 프로세스 시작');
             if (mounted) {
               // 버스 하차 상태 설정 (도보 경로 감지 재활성화)

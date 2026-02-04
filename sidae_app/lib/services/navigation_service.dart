@@ -110,7 +110,7 @@ class NavigationService {
       return;
     }
 
-    _positionSubscription = Stream.periodic(const Duration(milliseconds: 200))
+    _positionSubscription = Stream.periodic(const Duration(milliseconds: 500))
         .asyncMap((_) async {
           return await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.high,
