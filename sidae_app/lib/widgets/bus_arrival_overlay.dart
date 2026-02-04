@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/bus_popup_state_service.dart';
+import '../services/bus_arrival_service.dart';
 
 /// 버스 도착 오버레이 위젯
 ///
@@ -44,11 +45,57 @@ class BusArrivalOverlay extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.grey, size: 20),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: onClose,
+                Row(
+                  children: [
+                    // 새로고침 버튼 + 카운트다운
+                    StreamBuilder<int>(
+                      stream: BusArrivalService.instance.countdownStream,
+                      initialData: 30,
+                      builder: (context, snapshot) {
+                        final remaining = snapshot.data ?? 30;
+                        return TextButton.icon(
+                          onPressed: () {
+                            BusArrivalService.instance.refresh();
+                          },
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            backgroundColor: Colors.white.withOpacity(0.1),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.refresh,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                          label: Text(
+                            '${remaining}초',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.grey,
+                        size: 20,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: onClose,
+                    ),
+                  ],
                 ),
               ],
             ),
