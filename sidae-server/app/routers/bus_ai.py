@@ -79,7 +79,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
             }
 
         if mode in ['bell', 'tag']:
-            pos = final_data.get("selected_area", " ")
+            pos = final_data.get("selected_area", "")
             reason = final_data.get("reason", "이유 없음")
             if mode == 'bell':
                 mode = '하차벨'
