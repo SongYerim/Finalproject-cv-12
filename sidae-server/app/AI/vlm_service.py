@@ -47,7 +47,7 @@ def resize_image_smart(
             # INTER_LINEAR: 빠르고 화질 준수 (기본값)
             # INTER_AREA: 축소할 때 화질 좋음 (약간 더 느림)
             # 여기서는 속도가 중요하므로 INTER_LINEAR 추천
-            img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+            img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
         # 4. 이미지 인코딩 (다시 Bytes로)
         # quality: 85 (Pillow와 동일하게 설정)
