@@ -25,6 +25,7 @@ class _MapResultScreenState extends State<MapResultScreen> {
   StreamSubscription<Position>? _positionSubscription;
   NMarker? _currentLocationMarker;
   final TtsService _ttsService = TtsService.instance;
+  Timer? _autoStartTimer;
 
   @override
   void initState() {
@@ -38,6 +39,7 @@ class _MapResultScreenState extends State<MapResultScreen> {
 
   @override
   void dispose() {
+    _autoStartTimer?.cancel();
     _ttsService.stop();
     _positionSubscription?.cancel();
     super.dispose();
@@ -80,9 +82,37 @@ class _MapResultScreenState extends State<MapResultScreen> {
 
     // TTS 메시지 생성
     final summary = segmentDescriptions.join(", ");
-    final message = "목적지까지 총 $segmentCount개 구간입니다. $summary. 안내 시작 버튼을 눌러주세요.";
+    final message = "목적지까지 총 $segmentCount개 구간입니다. $summary.";
+    // 안내 시작 버튼 안내 제거 (자동 시작 멘트로 대체)
 
     await _ttsService.speak(message);
+
+    // 5초 자동 시작 안내
+    if (!mounted) return;
+    await _ttsService.speak(
+      "5초 뒤 자동으로 안내를 시작합니다.",
+      onCompleted: () {
+        if (!mounted) return;
+        // 타이머 시작 (TTS 종료 시점부터 5초)
+        _autoStartTimer = Timer(const Duration(seconds: 5), () {
+          if (mounted) {
+            _navigateToScreen4();
+          }
+        });
+      },
+    );
+  }
+
+  void _navigateToScreen4() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Screen4(
+          routes: widget.routes,
+          destinationName: widget.destinationName,
+        ),
+      ),
+    );
   }
 
   void _initLocationTracking() {
@@ -197,17 +227,8 @@ class _MapResultScreenState extends State<MapResultScreen> {
                   // 안내 시작 버튼 (박스)
                   GestureDetector(
                     onTap: () {
-                      // 4.dart로 이동
-                      // 주의: 'Screen4' 부분을 4.dart에 있는 실제 클래스 이름으로 바꿔주세요.
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => Screen4(
-                            routes: widget.routes,
-                            destinationName: widget.destinationName,
-                          ),
-                        ),
-                      );
+                      _autoStartTimer?.cancel(); // 수동 시작 시 타이머 취소
+                      _navigateToScreen4();
                     },
                     child: Container(
                       width: double.infinity, // 가로 꽉 차게

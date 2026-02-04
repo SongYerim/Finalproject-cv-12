@@ -80,6 +80,8 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     
     // ===== 카메라 관련 =====
     private var cameraProvider: ProcessCameraProvider? = null
+    private var captureUploadProvider: ProcessCameraProvider? = null // captureAndUploadImage에서 사용하는 provider
+    private var captureUploadScope: CoroutineScope? = null // captureAndUploadImage의 scope
     private var imageAnalysis: ImageAnalysis? = null
     private var preview: Preview? = null
     private var previewView: PreviewView? = null
@@ -311,12 +313,16 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         val metadata = call.argument<Map<String, String>>("metadata") ?: emptyMap()
         val keepFile = call.argument<Boolean>("keepFile") ?: false
 
+        // 기존 scope가 있으면 취소
+        captureUploadScope?.cancel()
         val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        captureUploadScope = scope
         scope.launch {
             try {
                 val cameraProviderFuture: ListenableFuture<ProcessCameraProvider> =
                     ProcessCameraProvider.getInstance(this@MainActivity)
                 val provider = cameraProviderFuture.await()
+                captureUploadProvider = provider // 전역 변수에 저장
 
                 val imageCapture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
@@ -379,12 +385,16 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                                         )
                                     }
                                 } finally {
-                                    // 업로드 완료 후 즉시 카메라 해제
-                                    try {
-                                        provider.unbindAll()
-                                        Log.d(TAG, "✅ 캡처/업로드 후 카메라 해제 완료")
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "카메라 해제 실패: ${e.message}")
+                                    // 업로드 완료 후 즉시 카메라 해제 (메인 스레드에서 실행)
+                                    withContext(Dispatchers.Main) {
+                                        try {
+                                            provider.unbindAll()
+                                            captureUploadProvider = null // 전역 변수 초기화
+                                            Log.d(TAG, "✅ 캡처/업로드 후 카메라 해제 완료")
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "카메라 해제 실패: ${e.message}", e)
+                                            captureUploadProvider = null
+                                        }
                                     }
                                     if (!keepFile && photoFile.exists()) {
                                         photoFile.delete()
@@ -396,7 +406,11 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "캡처/업로드 처리 실패", e)
+                captureUploadProvider = null
                 result.error("CAPTURE_FLOW_ERROR", e.message, null)
+            } finally {
+                // scope 종료 시 정리
+                captureUploadScope = null
             }
         }
     }
@@ -496,30 +510,60 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     }
     
     private fun handleStopCamera(result: MethodChannel.Result) {
-        try {
-            Log.d(TAG, "🛑 handleStopCamera 호출")
-            isProcessing = false
-            isInferenceEnabled = true  // 카메라 중지 시 추론 활성화 초기화
-            
-            // 상태 변수 초기화 (중요: 재진입 시 오버레이 좌표 오차 방지)
-            cameraWidth = 0
-            cameraHeight = 0
-            
-            // 바운딩 박스 오버레이 초기화
-            mainHandler.post {
+        // 메인 스레드에서 실행
+        mainHandler.post {
+            try {
+                Log.d(TAG, "🛑 handleStopCamera 호출")
+                isProcessing = false
+                isInferenceEnabled = true  // 카메라 중지 시 추론 활성화 초기화
+                
+                // 상태 변수 초기화 (중요: 재진입 시 오버레이 좌표 오차 방지)
+                cameraWidth = 0
+                cameraHeight = 0
+                
+                // 바운딩 박스 오버레이 초기화
                 boundingBoxOverlayView?.clearDetections()
                 Log.d(TAG, "  - BoundingBoxOverlay 및 해상도 변수 초기화 완료")
+                
+                // captureAndUploadImage에서 사용한 provider 해제
+                try {
+                    if (captureUploadProvider != null) {
+                        captureUploadProvider?.unbindAll()
+                        captureUploadProvider = null
+                        Log.d(TAG, "  - captureUploadProvider.unbindAll() 완료")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "  - captureUploadProvider.unbindAll() 실패: ${e.message}", e)
+                    captureUploadProvider = null
+                }
+                
+                // captureAndUploadImage의 scope 취소
+                captureUploadScope?.cancel()
+                captureUploadScope = null
+                
+                // 일반 카메라 provider 해제 (메인 스레드에서 실행)
+                try {
+                    if (cameraProvider != null) {
+                        cameraProvider?.unbindAll()
+                        Log.d(TAG, "  - cameraProvider.unbindAll() 완료")
+                    } else {
+                        Log.d(TAG, "  - cameraProvider가 이미 null이므로 해제 스킵")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "  - cameraProvider.unbindAll() 실패: ${e.message}", e)
+                }
+                
+                camera = null
+                imageAnalysis = null
+                preview = null
+                previewView = null  // PreviewView도 null로 설정
+                
+                result.success(true)
+                Log.d(TAG, "✅ 카메라 중지 완료")
+            } catch (e: Exception) {
+                Log.e(TAG, "카메라 중지 실패", e)
+                result.error("CAMERA_ERROR", e.message, null)
             }
-            
-            cameraProvider?.unbindAll()
-            camera = null
-            imageAnalysis = null
-            preview = null
-            result.success(true)
-            Log.d(TAG, "✅ 카메라 중지 완료")
-        } catch (e: Exception) {
-            Log.e(TAG, "카메라 중지 실패", e)
-            result.error("CAMERA_ERROR", e.message, null)
         }
     }
 
@@ -546,13 +590,14 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
     private fun handleStartExitTracking(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
         val lat = call.argument<Double>("exitLat")
         val lng = call.argument<Double>("exitLng")
+        val threshold = call.argument<Double>("exitThreshold") ?: 15.0
         
         if (lat == null || lng == null) {
             result.error("INVALID_ARGS", "exitLat and exitLng are required", null)
             return
         }
         
-        if (exitTracker.startTracking(lat, lng)) {
+        if (exitTracker.startTracking(lat, lng, threshold)) {
             result.success(true)
         } else {
             result.error("PERMISSION_DENIED", "Location permission not granted", null)
@@ -747,6 +792,8 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
             ) {
         mainHandler.post {
             try {
+                        // 디버그: 60hz 전송 확인 (매 60번째 이벤트마다 로그)
+                        // Log.d(TAG, "🧭 navigation event: heading=$deviceHeading")
                         eventSink?.success(mapOf(
                             "type" to "navigation",
                             "deviceHeading" to deviceHeading,
@@ -817,7 +864,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                         // Log.d(TAG, "🔍 감지된 객체 없음")
                     }
 
-                    // --- 가장 큰 버스 이미지 크롭 ---
+                    // --- 가장 큰 버스 이미지 크롭 (aspect ratio 1.7 이하만) ---
                     var croppedBusBytes: ByteArray? = null
                     try {
                         val bestBus = detections.filter { 
@@ -828,6 +875,17 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                             
                             label != null && label.trim().equals("bus", ignoreCase = true) 
                         }
+                            .filter { dict ->
+                                val bbox = dict["bbox"] as List<*>
+                                val w = (bbox[2] as Number).toFloat() - (bbox[0] as Number).toFloat()
+                                val h = (bbox[3] as Number).toFloat() - (bbox[1] as Number).toFloat()
+                                if (h > 0) {
+                                    val aspect = w / h
+                                    aspect <= 1.7f
+                                } else {
+                                    false
+                                }
+                            }
                             .maxByOrNull { dict ->
                                 val bbox = dict["bbox"] as List<*>
                                 val w = (bbox[2] as Number).toFloat() - (bbox[0] as Number).toFloat()

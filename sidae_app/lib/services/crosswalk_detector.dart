@@ -35,41 +35,28 @@ class CrosswalkDetector extends ProximityDetector<RouteStep> {
   /// GPS 위치 업데이트 시 호출
   void checkCrosswalkProximity(Position position) {
     // 디버그: 현재 위치와 routes 확인
-    debugPrint(
-      '🔍 [CrosswalkDetector] 현재 위치: (${position.latitude}, ${position.longitude})',
-    );
-    debugPrint('🔍 [CrosswalkDetector] routes 개수: ${routes.length}');
-
-    int totalCrosswalks = 0;
+    // debugPrint(
+    //   '🔍 [CrosswalkDetector] 현재 위치: (${position.latitude}, ${position.longitude})',
+    // );
+    // debugPrint('🔍 [CrosswalkDetector] routes 개수: ${routes.length}');
 
     for (var segment in routes) {
       // WALK 타입만 횡단보도가 있을 수 있음
       if (segment.moveType != 'WALK') {
-        debugPrint(
-          '🔍 [CrosswalkDetector] segment ${segment.segmentIndex}: moveType=${segment.moveType} (스킵)',
-        );
         continue;
       }
 
-      debugPrint(
-        '🔍 [CrosswalkDetector] segment ${segment.segmentIndex}: WALK, steps=${segment.steps.length}개',
-      );
-
       for (var step in segment.steps) {
-        debugPrint(
-          '🔍 [CrosswalkDetector] step: facilityType="${step.facilityType}", isCrosswalk=${step.isCrosswalk}, desc="${step.description}"',
-        );
-
         if (step.isCrosswalk) {
-          totalCrosswalks++;
+          // totalCrosswalks++;
 
           // 현재 위치와 횡단보도 위치 간의 거리 확인
           final distance = calculateDistance(position, step.lat, step.lng);
           final alreadyDetected = isAlreadyDetected(step);
 
-          debugPrint(
-            '🚶 [CrosswalkDetector] 횡단보도 발견! 거리=${distance.toStringAsFixed(1)}m, 임계값=${proximityThreshold}m, 이미감지=$alreadyDetected',
-          );
+          // debugPrint(
+          //   '🚶 [CrosswalkDetector] 횡단보도 발견! 거리=${distance.toStringAsFixed(1)}m, 임계값=${proximityThreshold}m, 이미감지=$alreadyDetected',
+          // );
 
           // 근접 범위 내 & 이미 감지되지 않은 경우
           if (distance <= proximityThreshold && !alreadyDetected) {
@@ -89,13 +76,13 @@ class CrosswalkDetector extends ProximityDetector<RouteStep> {
             onCrosswalkDetected?.call(crosswalkInfo);
             return; // 한 번에 하나만 처리
           } else if (alreadyDetected) {
-            debugPrint('⚠️ [CrosswalkDetector] 이미 감지된 횡단보도입니다');
+            // debugPrint('⚠️ [CrosswalkDetector] 이미 감지된 횡단보도입니다');
           }
         }
       }
     }
 
-    debugPrint('🔍 [CrosswalkDetector] 총 횡단보도 수: $totalCrosswalks');
+    // debugPrint('🔍 [CrosswalkDetector] 총 횡단보도 수: $totalCrosswalks');
   }
 
   /// 횡단보도 반대편 좌표 계산

@@ -98,15 +98,29 @@ class OcrService {
 
         final jsonResponse = json.decode(responseBody);
 
-        if (jsonResponse['status'] == 'success') {
-          final result = jsonResponse['result'] as Map<String, dynamic>?;
-          final busNumber = result?['bus_number'] as String?;
+        // API 응답 유연 처리 (status 필드가 없어도 result가 있으면 처리)
+        final result = jsonResponse['result'];
+
+        if (result is Map) {
+          // 키 변경 대응 (bus_number -> bus_num, car_num 추가)
+          String? busNumber =
+              result['bus_num']?.toString() ?? result['bus_number']?.toString();
+          String? carNumber =
+              result['car_num']?.toString() ?? result['car_number']?.toString();
+
+          // 'unknown' 값 처리
+          if (busNumber != null && busNumber.toLowerCase() == 'unknown')
+            busNumber = null;
+          if (carNumber != null && carNumber.toLowerCase() == 'unknown')
+            carNumber = null;
 
           // raw_text 폴백 처리
           String? extractedBusNumber = busNumber;
-          String? extractedCarNumber;
+          String? extractedCarNumber = carNumber;
 
-          if ((busNumber == null || busNumber == 'null') && result != null) {
+          if (extractedBusNumber == null ||
+              extractedBusNumber == 'null' ||
+              extractedBusNumber.isEmpty) {
             final rawText = result['raw_text'] as String?;
             if (rawText != null && rawText.isNotEmpty) {
               extractedBusNumber = _extractBusNumber(rawText);
@@ -114,7 +128,9 @@ class OcrService {
             }
           }
 
-          if (extractedBusNumber != null && extractedBusNumber != 'null') {
+          if (extractedBusNumber != null &&
+              extractedBusNumber != 'null' &&
+              extractedBusNumber.isNotEmpty) {
             stopwatch.stop();
             final ocrResult = OcrResult(
               busNumber: extractedBusNumber,
@@ -132,6 +148,8 @@ class OcrService {
             // 성공 시 2초 쿨다운
             await Future.delayed(const Duration(seconds: 2));
             return ocrResult;
+          } else {
+            developer.log('⚠️ OCR 결과 없음 (unknown 또는 null)', name: 'OcrService');
           }
         }
       }

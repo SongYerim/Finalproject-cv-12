@@ -9,6 +9,11 @@ ENV PORT=8001
 # 컨테이너 기본 경로 설정
 WORKDIR /sidae-server
 
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libxcb1 \
+    && rm -rf /var/lib/apt/lists/*
 # 라이브러리 설치 (캐시 최적화를 위해 먼저 수행)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

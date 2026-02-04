@@ -5,6 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../services/signal_state_service.dart';
 import '../services/tts_service.dart';
 import '../services/crosswalk_direction_service.dart';
+import '../services/shared_event_channel.dart';
 
 /// YOLO 온디바이스 객체 감지 테스트 화면
 ///
@@ -32,9 +33,6 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
   static const MethodChannel _cameraChannel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
   );
-  static const EventChannel _detectionsChannel = EventChannel(
-    'com.ctrlcv.sidae_app/yolo_detections',
-  );
   StreamSubscription? _detectionsSubscription;
 
   bool _isCameraInitialized = false;
@@ -59,8 +57,8 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
   // 공간음향 방향 안내 서비스
   final CrosswalkDirectionService _directionService =
       CrosswalkDirectionService();
-  double _deviceHeading = 0.0;
-  double _exitBearing = 0.0;
+  // double _deviceHeading = 0.0;
+  // double _exitBearing = 0.0;
   double _angleDiff = 0.0;
 
   @override
@@ -85,6 +83,9 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
         _currentSignalState = state;
         _currentConsensus = consensus;
       });
+
+      // 신호등 상태에 따라 공간음향 제어
+      _controlSpatialAudioBySignal(state, consensus);
     };
 
     // 반대편 좌표가 있으면 GPS 추적 및 공간음향 시작
@@ -101,13 +102,13 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
         (deviceHeading, exitBearing, angleDiff) {
           if (!mounted) return;
           setState(() {
-            _deviceHeading = deviceHeading;
-            _exitBearing = exitBearing;
+            // _deviceHeading = deviceHeading;
+            // _exitBearing = exitBearing;
             _angleDiff = angleDiff;
           });
         };
 
-    // 서비스 시작
+    // 서비스 시작 (공간음향은 신호등 상태에 따라 별도로 제어)
     final success = await _directionService.start(
       exitLat: widget.exitLat!,
       exitLng: widget.exitLng!,
@@ -116,6 +117,20 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
     if (success) {
       // TTS로 안내
       await TtsService.instance.speak('소리가 나는 방향이 횡단보도 끝지점입니다.');
+    }
+  }
+
+  /// 신호등 상태에 따라 공간음향 제어
+  Future<void> _controlSpatialAudioBySignal(
+    SignalState state,
+    SignalConsensus consensus,
+  ) async {
+    // 초록불이고 건너가는 상태(crossing)일 때만 공간음향 재생
+    if (state == SignalState.crossing && consensus == SignalConsensus.green) {
+      await _directionService.startSpatialAudio();
+    } else {
+      // 빨간불이거나 대기 상태일 때는 공간음향 중지
+      await _directionService.stopSpatialAudio();
     }
   }
 
@@ -208,71 +223,67 @@ class _YoloTestScreenState extends State<YoloTestScreen> {
         return;
       }
 
-      // 2. 결과 스트림 리스닝 (카메라 시작 전에 설정)
-      _detectionsSubscription = _detectionsChannel
-          .receiveBroadcastStream()
-          .listen(
-            (dynamic result) {
-              if (result is Map) {
-                // FPS 업데이트 (네이티브에서 받음)
-                if (result['fps'] != null) {
-                  final nativeFps = (result['fps'] as num).toDouble();
-                  if (!mounted) return;
-                  setState(() {
-                    _fps = nativeFps;
-                  });
-                }
+      // 2. 결과 스트림 리스닝 (SharedEventChannel 사용)
+      _detectionsSubscription = SharedEventChannel.instance.stream.listen(
+        (dynamic result) {
+          if (result is Map) {
+            // FPS 업데이트 (네이티브에서 받음)
+            if (result['fps'] != null) {
+              final nativeFps = (result['fps'] as num).toDouble();
+              if (!mounted) return;
+              setState(() {
+                _fps = nativeFps;
+              });
+            }
 
-                // 감지 결과 업데이트
-                if (result['detections'] != null) {
-                  final detectionsList = (result['detections'] as List).map((
-                    d,
-                  ) {
-                    final map = d as Map;
-                    return Detection(
-                      label: map['label'] as String,
-                      confidence: (map['confidence'] as num).toDouble(),
-                      bbox: (map['bbox'] as List)
-                          .map((e) => (e as num).toDouble())
-                          .toList(),
-                    );
-                  }).toList();
+            // 감지 결과 업데이트
+            if (result['detections'] != null) {
+              final detectionsList = (result['detections'] as List).map((d) {
+                final map = d as Map;
+                return Detection(
+                  label: map['label'] as String,
+                  confidence: (map['confidence'] as num).toDouble(),
+                  bbox: (map['bbox'] as List)
+                      .map((e) => (e as num).toDouble())
+                      .toList(),
+                );
+              }).toList();
 
-                  if (!mounted) return;
-                  setState(() {
-                    _detections = detectionsList;
-                  });
+              if (!mounted) return;
+              setState(() {
+                _detections = detectionsList;
+              });
 
-                  // 신호 상태 서비스에 감지 결과 전달
-                  final signalDetections = detectionsList
-                      .map<Map<String, dynamic>>(
-                        (d) => {'label': d.label, 'confidence': d.confidence},
-                      )
-                      .toList();
+              // 신호 상태 서비스에 감지 결과 전달
+              final signalDetections = detectionsList
+                  .map<Map<String, dynamic>>(
+                    (d) => {'label': d.label, 'confidence': d.confidence},
+                  )
+                  .toList();
 
-                  _signalStateService.processDetections(signalDetections);
-                }
+              _signalStateService.processDetections(signalDetections);
+            }
 
-                // 네이티브 GPS 추적 결과 처리
-                if (result['type'] == 'exitDistance') {
-                  final reached = result['reached'] as bool;
+            // 네이티브 GPS 추적 결과 처리
+            if (result['type'] == 'exitDistance') {
+              final reached = result['reached'] as bool;
 
-                  if (reached && !_hasReachedExit) {
-                    _onReachedExit();
-                  }
-                }
-
-                // Heading 이벤트 처리 (CrosswalkDirectionService로 전달)
-                if (result['type'] == 'heading') {
-                  final heading = (result['heading'] as num).toDouble();
-                  _directionService.handleHeadingEvent(heading);
-                }
+              if (reached && !_hasReachedExit) {
+                _onReachedExit();
               }
-            },
-            onError: (error) {
-              // 무시
-            },
-          );
+            }
+
+            // Heading 이벤트 처리 (CrosswalkDirectionService로 전달)
+            if (result['type'] == 'heading') {
+              final heading = (result['heading'] as num).toDouble();
+              _directionService.handleHeadingEvent(heading);
+            }
+          }
+        },
+        onError: (error) {
+          // 무시
+        },
+      );
 
       // 3. 카메라 시작
       await _cameraChannel.invokeMethod('startCamera');

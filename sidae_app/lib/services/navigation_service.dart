@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import '../services/route_tracker.dart';
+import '../services/shared_event_channel.dart';
 
 /// GPS 및 센서 기반 네비게이션 서비스 (싱글톤)
 class NavigationService {
@@ -17,9 +18,6 @@ class NavigationService {
   // 네이티브 채널
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
-  );
-  static const EventChannel _eventChannel = EventChannel(
-    'com.ctrlcv.sidae_app/yolo_detections',
   );
 
   StreamSubscription? _nativeEventSubscription;
@@ -46,7 +44,6 @@ class NavigationService {
   void initSensor() {
     // 이미 초기화되었으면 스킵
     if (_sensorInitialized) {
-      print('✅ 센서 이미 초기화됨 - 스킵');
       return;
     }
     _sensorInitialized = true;
@@ -54,29 +51,51 @@ class NavigationService {
     _startNativeEventListening();
   }
 
+  /// 센서가 실행 중인지 확인하고 필요 시 재시작 (화면 복귀 시 호출)
+  Future<void> ensureSensorRunning() async {
+    // print('🔄 센서 재시작 (화면 복귀)');
+
+    // 기존 구독 취소 (SharedEventChannel의 브로드캐스트 스트림에서 구독 해제)
+    _nativeEventSubscription?.cancel();
+    _nativeEventSubscription = null;
+
+    if (!_sensorInitialized) {
+      _sensorInitialized = true;
+    }
+
+    // 네이티브 Navigation 재시작
+    await _startNativeNavigation();
+
+    // EventChannel 리스닝 재시작 (공유 브로드캐스트 스트림 사용)
+    _startNativeEventListening();
+  }
+
   /// 네이티브 Navigation 시작
   Future<void> _startNativeNavigation() async {
     try {
       await _channel.invokeMethod('startNavigation');
-      print('✅ 네이티브 센서 Navigation 시작됨');
     } catch (e) {
-      print('❌ 네이티브 센서 Navigation 시작 실패: $e');
+      // print('❌ 네이티브 센서 Navigation 시작 실패: $e');
     }
   }
 
-  /// 네이티브 EventChannel 리스닝 시작
+  /// 네이티브 EventChannel 리스닝 시작 (SharedEventChannel 사용)
   void _startNativeEventListening() {
-    _nativeEventSubscription = _eventChannel.receiveBroadcastStream().listen(
+    // print('🎧 [NavigationService] SharedEventChannel 구독 시작');
+    // 공유 브로드캐스트 스트림 사용 - 여러 리스너가 취소해도 네이티브 onCancel 안 됨
+    _nativeEventSubscription = SharedEventChannel.instance.stream.listen(
       (result) {
         if (result is Map && result['type'] == 'navigation') {
           deviceHeading = (result['deviceHeading'] as num?)?.toDouble() ?? 0.0;
           // 진행 방향 = 디바이스 방향 (센서 기반)
           travelingBearing = deviceHeading;
+          // 디버그: onBearingUpdate 호출 확인 (60Hz이면 많은 로그가 출력됨)
+          // print('🧭 deviceHeading: $deviceHeading, callback: ${onBearingUpdate != null}');
           onBearingUpdate?.call();
         }
       },
       onError: (error) {
-        print('❌ Navigation EventChannel 에러: $error');
+        // print('❌ Navigation EventChannel 에러: $error');
       },
     );
   }
@@ -87,7 +106,7 @@ class NavigationService {
 
     // 이미 추적 중이면 콜백만 갱신
     if (_positionSubscription != null) {
-      print('✅ GPS 추적 이미 진행 중 - 콜백만 갱신');
+      // print('✅ GPS 추적 이미 진행 중 - 콜백만 갱신');
       return;
     }
 
@@ -149,7 +168,7 @@ class NavigationService {
         'targetLng': target.longitude,
       });
     } catch (e) {
-      print('❌ Navigation 타겟 업데이트 실패: $e');
+      // print('❌ Navigation 타겟 업데이트 실패: $e');
     }
   }
 
@@ -162,7 +181,7 @@ class NavigationService {
 
     // 네이티브 Navigation 중지
     _channel.invokeMethod('stopNavigation').catchError((e) {
-      print('❌ 네이티브 Navigation 중지 실패: $e');
+      // print('❌ 네이티브 Navigation 중지 실패: $e');
     });
   }
 }

@@ -10,11 +10,17 @@ class BusStopInfo {
   final double lat;
   final double lng;
 
+  /// 버스 하차 지점 좌표 (버스 구간 끝점)
+  final double? exitLat;
+  final double? exitLng;
+
   BusStopInfo({
     required this.busNumber,
     required this.stationName,
     required this.lat,
     required this.lng,
+    this.exitLat,
+    this.exitLng,
   });
 }
 
@@ -55,12 +61,30 @@ class BusStopDetector extends ProximityDetector<BusStopInfo> {
         continue;
       }
 
-      // 버스 정류장 정보 생성
+      // 버스 하차 지점 좌표 (경로 끝점 우선, 없으면 마지막 정류장)
+      double? exitLat;
+      double? exitLng;
+
+      if (segment.pathCoordinates.isNotEmpty) {
+        // 경로 데이터가 있으면 경로의 마지막 지점을 하차 지점으로 사용
+        final endPath = segment.pathCoordinates.last;
+        exitLat = endPath.latitude;
+        exitLng = endPath.longitude;
+      } else if (segment.stations.length > 1) {
+        // 경로 데이터가 없으면 마지막 정류장 좌표 사용
+        final endStation = segment.stations.last;
+        exitLat = endStation.lat;
+        exitLng = endStation.lng;
+      }
+
+      // 버스 정류장 정보 생성 (하차 좌표 포함)
       final busStopInfo = BusStopInfo(
         busNumber: busNumber,
         stationName: stationName,
         lat: startStation.lat,
         lng: startStation.lng,
+        exitLat: exitLat,
+        exitLng: exitLng,
       );
 
       // 이미 감지된 정류장이 아니면 콜백 호출

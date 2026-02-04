@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:developer' as developer;
+// import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import '../services/bus_arrival_service.dart';
 import '../services/bus_detector_service.dart';
 import '../services/tts_service.dart';
+import '../services/route_tracker.dart';
 import '../utils/bus_utils.dart' as bus_utils;
 import '8.dart';
 
@@ -13,12 +14,17 @@ class BusArrivalScreen extends StatefulWidget {
   final String busNumber;
   final String stationName;
   final bool enableCamera; // 카메라 모드 활성화 파라미터
+  /// 버스 하차 지점 좌표 (하차 알림용)
+  final double? exitLat;
+  final double? exitLng;
 
   const BusArrivalScreen({
     super.key,
     required this.busNumber,
     required this.stationName,
     this.enableCamera = false,
+    this.exitLat,
+    this.exitLng,
   });
 
   @override
@@ -37,7 +43,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
   bool _isBusApproaching = false;
   bool _cameraActive = false;
   String _detectionStatus = '';
-  BusDetection? _currentDetection;
+
   Uint8List? _croppedBusImage;
 
   // 매칭 상태
@@ -111,15 +117,6 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
       }
     };
 
-    _busDetectorService.onBusDetected = (detection) {
-      if (mounted) {
-        setState(() {
-          _currentDetection = detection;
-        });
-        // _ttsService.speak("버스가 감지되었습니다");
-      }
-    };
-
     _busDetectorService.onBusCropped = (croppedImage) {
       if (mounted) {
         setState(() {
@@ -135,21 +132,21 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
     // OCR 결과 수신
     _busDetectorService.onBusNumberFound = (ocrResult, responseTimeMs) {
-      developer.log(
-        '🎯 [7.dart] OCR 콜백 수신: $ocrResult (응답시간: ${responseTimeMs}ms)',
-        name: 'BusArrivalScreen',
-      );
+      // developer.log(
+      //   '🎯 [7.dart] OCR 콜백 수신: $ocrResult (응답시간: ${responseTimeMs}ms)',
+      //   name: 'BusArrivalScreen',
+      // );
       if (mounted) {
-        developer.log(
-          '  - mounted: true, _checkMatch 호출',
-          name: 'BusArrivalScreen',
-        );
+        // developer.log(
+        //   '  - mounted: true, _checkMatch 호출',
+        //   name: 'BusArrivalScreen',
+        // );
         setState(() {
           _lastResponseTimeMs = responseTimeMs;
         });
         _checkMatch(ocrResult);
       } else {
-        developer.log('  - mounted: false, 스킵', name: 'BusArrivalScreen');
+        // developer.log('  - mounted: false, 스킵', name: 'BusArrivalScreen');
       }
     };
 
@@ -166,21 +163,21 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
   // 매칭 로직
   void _checkMatch(String ocrResult) {
-    developer.log('🔍 [7.dart] _checkMatch 시작', name: 'BusArrivalScreen');
-    developer.log('  - ocrResult: $ocrResult', name: 'BusArrivalScreen');
-    developer.log(
-      '  - widget.busNumber: ${widget.busNumber}',
-      name: 'BusArrivalScreen',
-    );
+    // developer.log('🔍 [7.dart] _checkMatch 시작', name: 'BusArrivalScreen');
+    // developer.log('  - ocrResult: $ocrResult', name: 'BusArrivalScreen');
+    // developer.log(
+    //   '  - widget.busNumber: ${widget.busNumber}',
+    //   name: 'BusArrivalScreen',
+    // );
 
     _lastOcrResult = ocrResult;
 
     // 1. 버스 번호 매칭 (문자열 포함 여부)
     bool isNumberMatch = ocrResult.contains(widget.busNumber);
-    developer.log(
-      '  - isNumberMatch: $isNumberMatch',
-      name: 'BusArrivalScreen',
-    );
+    // developer.log(
+    //   '  - isNumberMatch: $isNumberMatch',
+    //   name: 'BusArrivalScreen',
+    // );
 
     // 2. 번호판 매칭 (뒤 4자리)
     bool isPlateMatch = false;
@@ -191,14 +188,14 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
           ? plate.substring(plate.length - 4)
           : plate;
       isPlateMatch = ocrResult.contains(last4);
-      developer.log(
-        '  - plateNo: $plate, last4: $last4, isPlateMatch: $isPlateMatch',
-        name: 'BusArrivalScreen',
-      );
+      // developer.log(
+      //   '  - plateNo: $plate, last4: $last4, isPlateMatch: $isPlateMatch',
+      //   name: 'BusArrivalScreen',
+      // );
     }
 
     if (isNumberMatch || isPlateMatch) {
-      developer.log('✅ [7.dart] 매칭 성공!', name: 'BusArrivalScreen');
+      // developer.log('✅ [7.dart] 매칭 성공!', name: 'BusArrivalScreen');
 
       // 중복 실행 방지
       if (_matchStatus != 'MATCH') {
@@ -207,6 +204,9 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         });
         _ttsService.speak("탑승할 버스입니다! ${widget.busNumber}번");
 
+        // 버스 탑승 상태 설정 (도보 경로 감지 비활성화)
+        RouteTracker.instance.setOnBus(true);
+
         // 매칭 성공 시 추론 중지 (배터리 절약)
         _busDetectorService.stopInference();
 
@@ -214,7 +214,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         _startTagRecognition();
       }
     } else {
-      developer.log('❌ [7.dart] 매칭 실패', name: 'BusArrivalScreen');
+      // developer.log('❌ [7.dart] 매칭 실패', name: 'BusArrivalScreen');
       if (_matchStatus != 'MATCH') {
         setState(() {
           _matchStatus = 'MISMATCH';
@@ -242,11 +242,11 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     });
 
     // 버스 탑승을 위해 5초 대기
-    developer.log('⏰ [태그 인식] 5초 후 시작...', name: 'BusArrivalScreen');
+    // developer.log('⏰ [태그 인식] 5초 후 시작...', name: 'BusArrivalScreen');
     _ttsService.speak('5초 후 태그 인식을 시작합니다');
     await Future.delayed(const Duration(seconds: 5));
 
-    developer.log('🏷️ [태그 인식] 시작', name: 'BusArrivalScreen');
+    // developer.log('🏷️ [태그 인식] 시작', name: 'BusArrivalScreen');
     _ttsService.speak('태그 인식 시작');
     await _recognizeTagSequentially();
   }
@@ -255,7 +255,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
   Future<void> _recognizeTagSequentially() async {
     if (_tagRecognitionCount >= 3) {
       // 3번 완료 → 8.dart로 이동
-      developer.log('🏷️ [태그 인식] 3번 완료 - 8.dart로 이동', name: 'BusArrivalScreen');
+      // developer.log('🏷️ [태그 인식] 3번 완료 - 8.dart로 이동', name: 'BusArrivalScreen');
       _navigateToBusOnlyScreen();
       return;
     }
@@ -264,54 +264,80 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     setState(() {
       _tagStatus = '태그 인식 중... ($_tagRecognitionCount/3)';
     });
-    developer.log(
-      '🏷️ [태그 인식] 시도 $_tagRecognitionCount/3 시작',
-      name: 'BusArrivalScreen',
-    );
+    // developer.log(
+    //   '🏷️ [태그 인식] 시도 $_tagRecognitionCount/3 시작',
+    //   name: 'BusArrivalScreen',
+    // );
 
     // API 서버로 전송 (mode: tag_)
     final result = await _busDetectorService.sendTagRecognition();
 
     if (result != null) {
+      // developer.log(
+      //   '📦 [태그 인식] 서버 응답 수신: ${result.response}',
+      //   name: 'BusArrivalScreen',
+      // );
+
       String displayText = '';
       String ttsText = '';
 
       // JSON 파싱하여 result 추출
       try {
         final jsonResponse = json.decode(result.response);
-        final resultData = jsonResponse['result'];
+        // developer.log(
+        //   '🔍 [태그 인식] 파싱된 JSON: $jsonResponse',
+        //   name: 'BusArrivalScreen',
+        // );
 
-        if (resultData != null) {
-          // found 필드 확인
-          final found = resultData['found'];
-          if (found == false || resultData['error'] != null) {
-            displayText = '승차태그를 찾을 수 없습니다';
-            ttsText = '승차태그를 찾을 수 없습니다';
-          } else {
-            // result 데이터를 문자열로 변환
-            final resultStr = resultData.toString();
-            displayText = resultStr;
+        // tag_ 모드 응답 처리 ("des" 필드 확인)
+        if (jsonResponse.containsKey('des')) {
+          displayText = jsonResponse['des'];
+          ttsText = displayText;
 
-            // TTS용으로 간결하게 변환
-            if (resultData is Map) {
-              final parts = <String>[];
-              resultData.forEach((key, value) {
-                if (key != 'found' && key != 'error') {
-                  parts.add('$key: $value');
-                }
-              });
-              ttsText = parts.join(', ');
-            } else {
-              ttsText = resultStr;
-            }
+          if (displayText == '대상을 찾을 수 없습니다.') {
+            // 실패로 처리하고 싶다면 여기 로직 추가 가능하지만,
+            // 현재 구조상 displayText가 있으면 성공 로그를 찍으므로
+            // 실패로 간주하려면 result.success를 false로 하거나 별도 처리가 필요함.
+            // 하지만 서버 응답이 200 OK면 result.success는 true임.
+            // 따라서 내용만 표시.
           }
-        } else {
-          displayText = result.response;
-          ttsText = '태그 인식 실패';
+        }
+        // 기존 result 필드 처리 (다른 모드 호환)
+        else {
+          final resultData = jsonResponse['result'];
+
+          if (resultData != null) {
+            // found 필드 확인
+            final found = resultData['found'];
+            if (found == false || resultData['error'] != null) {
+              displayText = '승차태그를 찾을 수 없습니다';
+              ttsText = '승차태그를 찾을 수 없습니다';
+            } else {
+              // result 데이터를 문자열로 변환
+              final resultStr = resultData.toString();
+              displayText = resultStr;
+
+              // TTS용으로 간결하게 변환
+              if (resultData is Map) {
+                final parts = <String>[];
+                resultData.forEach((key, value) {
+                  if (key != 'found' && key != 'error') {
+                    parts.add('$key: $value');
+                  }
+                });
+                ttsText = parts.join(', ');
+              } else {
+                ttsText = resultStr;
+              }
+            }
+          } else {
+            displayText = result.response;
+            ttsText = '태그 인식 실패 (데이터 없음)';
+          }
         }
       } catch (e) {
         // JSON 파싱 실패 시 원본 표시
-        developer.log('JSON 파싱 실패: $e', name: 'BusArrivalScreen');
+        // developer.log('JSON 파싱 실패: $e', name: 'BusArrivalScreen');
         displayText = result.response;
         ttsText = '태그 인식 실패';
       }
@@ -322,29 +348,29 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
       });
 
       if (result.success) {
-        developer.log(
-          '✅ [태그 인식] $_tagRecognitionCount/3 성공: $displayText',
-          name: 'BusArrivalScreen',
-        );
+        // developer.log(
+        //   '✅ [태그 인식] $_tagRecognitionCount/3 성공: $displayText',
+        //   name: 'BusArrivalScreen',
+        // );
         // TTS로 응답 읽어주기
         _ttsService.speak('태그 $_tagRecognitionCount번: $ttsText');
       } else {
-        developer.log(
-          '⚠️ [태그 인식] $_tagRecognitionCount/3 실패: $displayText',
-          name: 'BusArrivalScreen',
-        );
+        // developer.log(
+        //   '⚠️ [태그 인식] $_tagRecognitionCount/3 실패: $displayText',
+        //   name: 'BusArrivalScreen',
+        // );
         _ttsService.speak('태그 인식 실패');
       }
     } else {
-      developer.log(
-        '⚠️ [태그 인식] $_tagRecognitionCount/3 실패 (계속 진행)',
-        name: 'BusArrivalScreen',
-      );
+      // developer.log(
+      //   '⚠️ [태그 인식] $_tagRecognitionCount/3 실패 (계속 진행)',
+      //   name: 'BusArrivalScreen',
+      // );
       _ttsService.speak('태그 인식 실패');
     }
 
     // 다음 시도까지 1초 대기 (디버깅 용이성)
-    developer.log('⏰ [태그 인식] 1초 대기 후 다음 시도...', name: 'BusArrivalScreen');
+    // developer.log('⏰ [태그 인식] 1초 대기 후 다음 시도...', name: 'BusArrivalScreen');
     await Future.delayed(const Duration(seconds: 1));
 
     // 서버 응답 받은 후 다음 전송
@@ -357,81 +383,14 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => const BusOnlyScreen()),
-    );
-  }
-
-  /// 탑승 시뮬레이션 시작 (Debug)
-  Future<void> _startBoardingSimulation() async {
-    developer.log('🚀 탑승 시뮬레이션 시작', name: 'BusArrivalScreen');
-
-    setState(() {
-      _matchStatus = 'MATCH';
-    });
-
-    // 시뮬레이션 시작 시 추론 중지
-    await _busDetectorService.stopInference();
-
-    // 5초 대기 (탑승 준비)
-    for (int i = 5; i > 0; i--) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("탑승 준비 중... ${i}초"),
-          duration: const Duration(milliseconds: 800),
+      MaterialPageRoute(
+        builder: (context) => BusOnlyScreen(
+          returnMidLat: widget.exitLat,
+          returnMidLng: widget.exitLng,
+          returnDistanceMeters: 30.0, // 30m 반경으로 하차 감지
         ),
-      );
-      await Future.delayed(const Duration(seconds: 1));
-    }
-
-    // 3회 루프 (태그기 인식 시도)
-    for (int i = 1; i <= 3; i++) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("태그기 찾는 중... ($i/3)"),
-          duration: const Duration(milliseconds: 800),
-        ),
-      );
-
-      // 캡쳐 요청 및 대기
-      final completer = Completer<Uint8List>();
-      _busDetectorService.onSnapshotCaptured = (image) {
-        if (!completer.isCompleted) completer.complete(image);
-      };
-
-      await _busDetectorService.requestSnapshot();
-
-      try {
-        // 3초 타임아웃
-        final image = await completer.future.timeout(
-          const Duration(seconds: 3),
-        );
-
-        // 캡쳐된 이미지를 화면에 표시 (크롭 이미지 뷰 재사용)
-        if (mounted) {
-          setState(() {
-            _croppedBusImage = image;
-          });
-        }
-
-        await _busDetectorService.sendToVlmDummy(image);
-      } catch (e) {
-        developer.log("❌ 캡쳐/전송 실패: $e", name: 'BusArrivalScreen');
-      }
-
-      // 약간의 간격
-      await Future.delayed(const Duration(seconds: 1));
-    }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("✅ 탑승 완료! (시뮬레이션 종료)"),
-        backgroundColor: Colors.green,
       ),
     );
-    developer.log("✅ 탑승 시뮬레이션 종료", name: 'BusArrivalScreen');
   }
 
   /// 카메라 중지
@@ -439,7 +398,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     _busDetectorService.stopDetection();
     setState(() {
       _cameraActive = false;
-      _currentDetection = null;
+
       _croppedBusImage = null;
       _matchStatus = '';
     });
@@ -452,20 +411,20 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
   @override
   void dispose() {
-    developer.log(
-      '🗑️ [BusArrivalScreen] dispose() 시작',
-      name: 'BusArrivalScreen',
-    );
+    // developer.log(
+    //   '🗑️ [BusArrivalScreen] dispose() 시작',
+    //   name: 'BusArrivalScreen',
+    // );
 
     // 카메라가 활성화된 경우 명시적으로 중지
     if (_cameraActive) {
-      developer.log('  - 카메라 활성화 상태, 명시적 중지', name: 'BusArrivalScreen');
+      // developer.log('  - 카메라 활성화 상태, 명시적 중지', name: 'BusArrivalScreen');
       _busDetectorService.stopDetection();
       _cameraActive = false;
     }
 
     // 콜백 제거
-    developer.log('  - 콜백 제거', name: 'BusArrivalScreen');
+    // developer.log('  - 콜백 제거', name: 'BusArrivalScreen');
     _busDetectorService.onStatusChanged = null;
     _busDetectorService.onBusDetected = null;
     _busDetectorService.onBusCropped = null;
@@ -477,14 +436,15 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     _mismatchTimer = null;
 
     // 서비스 정리
-    developer.log('  - 서비스 정리', name: 'BusArrivalScreen');
-    _arrivalService.dispose();
+    // developer.log('  - 서비스 정리', name: 'BusArrivalScreen');
+    // _arrivalService.dispose(); // Singleton이므로 dispose하면 안 됨
+    _arrivalService.stopTracking();
     _busDetectorService.dispose();
 
-    developer.log(
-      '✅ [BusArrivalScreen] dispose() 완료',
-      name: 'BusArrivalScreen',
-    );
+    // developer.log(
+    //   '✅ [BusArrivalScreen] dispose() 완료',
+    //   name: 'BusArrivalScreen',
+    // );
     super.dispose();
   }
 
@@ -553,14 +513,6 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
           // 5. 타야할 버스 정보 표시 (좌측 상단)
           Positioned(top: 100, left: 16, child: _buildTargetBusInfo()),
-
-          // 6. 감지 상태 표시 (좌측 상단, 타야할 버스 정보 아래)
-          if (_cameraActive)
-            Positioned(
-              top: _arrival != null && _arrival!.plateNo.isNotEmpty ? 200 : 170,
-              left: 16,
-              child: _buildDetectionStatusBadge(),
-            ),
 
           // 7. 매칭 결과 텍스트 (중앙 상단)
           if (_matchStatus == 'MATCH')
@@ -707,20 +659,6 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
                 ),
               ),
             ),
-
-          // 8. DEBUG 버튼 (좌측 하단)
-          Positioned(
-            left: 16,
-            bottom: 140,
-            child: ElevatedButton(
-              onPressed: _startBoardingSimulation,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text("DEBUG: 매칭 성공"),
-            ),
-          ),
         ],
       ),
     );
@@ -782,6 +720,41 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
+                ),
+                // 새로고침 버튼 + 카운트다운
+                StreamBuilder<int>(
+                  stream: _arrivalService.countdownStream,
+                  initialData: 30,
+                  builder: (context, snapshot) {
+                    final remaining = snapshot.data ?? 30;
+                    return TextButton.icon(
+                      onPressed: _onRefresh,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        backgroundColor: Colors.white.withOpacity(0.1),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      icon: const Icon(
+                        Icons.refresh,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      label: Text(
+                        '${remaining}초',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -984,45 +957,6 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  /// 감지 상태 배지
-  Widget _buildDetectionStatusBadge() {
-    final isDetected = _currentDetection != null;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: isDetected
-            ? Colors.green.withValues(alpha: 0.9)
-            : Colors.black.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDetected ? Colors.green : Colors.grey,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isDetected ? Icons.check_circle : Icons.search,
-            color: isDetected ? Colors.white : Colors.grey,
-            size: 16,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            isDetected
-                ? '버스 감지됨 (${(_currentDetection!.confidence * 100).toStringAsFixed(0)}%)'
-                : _detectionStatus,
-            style: TextStyle(
-              color: isDetected ? Colors.white : Colors.grey,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
         ],
       ),
     );

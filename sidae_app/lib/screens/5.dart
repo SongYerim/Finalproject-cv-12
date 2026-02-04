@@ -2,15 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:async';
+import 'dart:convert';
+// import 'dart:developer' as developer;
 import 'dart:math' as math;
 import '../models/route_model.dart';
 import '../services/route_tracker.dart';
 import '../services/crosswalk_detector.dart';
 import '../services/bus_stop_detector.dart';
-import '../services/bus_arrival_service.dart';
+// import '../services/bus_arrival_service.dart'; // Unused
 import '../services/bus_popup_state_service.dart';
 import '../services/tts_service.dart';
+import '../services/porcupine_service.dart';
 import '../services/navigation_service.dart';
 import '../widgets/progress_indicator_widget.dart';
 import '../widgets/bus_arrival_overlay.dart';
@@ -41,12 +45,17 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   final RouteTracker _tracker = RouteTracker.instance;
   final NavigationService _navService = NavigationService.instance;
   final TtsService _ttsService = TtsService.instance;
+  final PorcupineService _porcupineService = PorcupineService.instance;
   final BusPopupStateService _popupState = BusPopupStateService.instance;
-  final BusArrivalService _busArrivalService = BusArrivalService.instance;
+  // final BusArrivalService _busArrivalService = BusArrivalService.instance; // Unused
   CrosswalkDetector? _crosswalkDetector;
   BusStopDetector? _busStopDetector;
   Position? _currentPosition;
   bool _isNavigatingToCrosswalk = false; // 화면 이동 중복 방지
+
+  static const MethodChannel _channel = MethodChannel(
+    'com.ctrlcv.sidae_app/yolo_native',
+  );
   double _distanceToTarget = 0.0;
 
   // 360-0 wrap-around 처리를 위한 이전 각도
@@ -71,17 +80,16 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       }
     };
 
-    // 팝업 상태 변경 리스너 등록
-    _popupState.onStateChanged = () {
-      if (mounted) {
-        setState(() {}); // 팝업 상태 변경 시 UI 갱신
-      }
-    };
+    // 팝업 상태 및 버스 도착 정보 변경 리스너 등록
+    _popupState.addListener(_onPopupStateChanged);
 
     // 단계 변경 TTS 콜백 등록
     _tracker.onStepChanged = (segmentIndex, stepIndex, description) {
       if (mounted) {
-        _ttsService.speak(description);
+        // "[도착] 도착" 문구는 TTS 출력 제외
+        if (!description.contains("[도착] 도착")) {
+          _ttsService.speak(description);
+        }
         setState(() {});
       }
     };
@@ -115,6 +123,113 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
     // GPS 위치 추적 시작
     _navService.startLocationTracking(onUpdate: _onPositionUpdate);
+
+    // Porcupine 초기화 및 시작 (비동기로 실행)
+    // developer.log('🚀 [5.dart] _initPorcupine() 호출 예정', name: 'Porcupine');
+    _initPorcupine().catchError((_) {
+      // developer.log(
+      //   '❌ [5.dart] _initPorcupine() 에러: $e',
+      //   name: 'Porcupine',
+      //   error: e,
+      //   stackTrace: stackTrace,
+      // );
+    });
+  }
+
+  // 팝업 상태 변경 핸들러
+  void _onPopupStateChanged() {
+    if (!mounted) return;
+    setState(() {}); // UI 갱신
+
+    // 버스 도착 정보 확인 및 화면 전환 로직
+    final arrival = _popupState.busArrival;
+    // 버스 도착 정보가 있고, 상태 메시지가 "곧 도착" 등일 때
+    if (arrival != null &&
+        bus_utils.isBusApproachingStatus(arrival.statusMsg)) {
+      // 중복 내비게이션 방지: 현재 화면이 최상위일 때만 이동
+      if (ModalRoute.of(context)?.isCurrent == true) {
+        // 추적 중지하고 팝업 닫기 (서비스에서 중앙 관리)
+        _popupState.stopBusTracking();
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BusArrivalScreen(
+              busNumber: arrival.busNumber,
+              stationName: _popupState.busStationName ?? "",
+              enableCamera: true, // 카메라 모드 활성화
+              // 팝업 서비스에 저장된 하차 지점 정보 사용 (없으면 0.0)
+              exitLat: _popupState.exitLat ?? 0.0,
+              exitLng: _popupState.exitLng ?? 0.0,
+            ),
+          ),
+        ).then((_) {
+          // 버스 탑승 화면에서 돌아오면
+          if (mounted) {
+            _popupState.closePopup();
+            _navService.ensureSensorRunning();
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _initPorcupine() async {
+    try {
+      // developer.log('🔧 [5.dart] Porcupine 초기화 시작', name: 'Porcupine');
+
+      // 콜백을 먼저 설정 (initialize 전에)
+      _porcupineService.onKeywordDetected = (keyword) {
+        // developer.log(
+        //   '📞 [5.dart] onKeywordDetected 콜백 호출됨: $keyword',
+        //   name: 'Porcupine',
+        // );
+        if (keyword == '시대야' && mounted) {
+          // developer.log(
+          //   '🎤 [5.dart] "시대야" 키워드 감지됨 - VLM 호출 시작',
+          //   name: 'Porcupine',
+          // );
+          _captureAndUploadVLM(context);
+        } else {
+          // developer.log(
+          //   '⚠️ [5.dart] 키워드 불일치 또는 화면이 마운트되지 않음: keyword=$keyword, mounted=$mounted',
+          //   name: 'Porcupine',
+          // );
+        }
+      };
+      // developer.log('✅ [5.dart] onKeywordDetected 콜백 등록 완료', name: 'Porcupine');
+
+      // developer.log(
+      //   '🔧 [5.dart] PorcupineService.initialize() 호출',
+      //   name: 'Porcupine',
+      // );
+      final initialized = await _porcupineService.initialize();
+
+      if (initialized) {
+        // developer.log(
+        //   '✅ [5.dart] Porcupine 초기화 성공, start() 호출',
+        //   name: 'Porcupine',
+        // );
+        final started = await _porcupineService.start();
+        if (started) {
+          // developer.log(
+          //   '✅ [5.dart] Porcupine 시작 완료 - 마이크 활성화됨',
+          //   name: 'Porcupine',
+          // );
+        } else {
+          // developer.log('❌ [5.dart] Porcupine 시작 실패', name: 'Porcupine');
+        }
+      } else {
+        // developer.log('❌ [5.dart] Porcupine 초기화 실패', name: 'Porcupine');
+      }
+    } catch (_) {
+      // developer.log(
+      //   '❌ [5.dart] _initPorcupine() 예외 발생: $e',
+      //   name: 'Porcupine',
+      //   error: e,
+      //   stackTrace: stackTrace,
+      // );
+    }
   }
 
   void _initCrosswalkDetector() {
@@ -142,6 +257,8 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
           // 카메라 화면에서 복귀 시 플래그 초기화
           if (mounted) {
             _isNavigatingToCrosswalk = false;
+            // 화면 복귀 시 센서 재시작
+            _navService.ensureSensorRunning();
           }
         });
       },
@@ -150,6 +267,17 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
   @override
   void dispose() {
+    // 리스너 제거
+    _popupState.removeListener(_onPopupStateChanged);
+
+    // Porcupine 중지하지 않음 (다른 화면에서도 사용 중일 수 있음)
+    // 대신 콜백만 제거
+    _porcupineService.onKeywordDetected = null;
+    // developer.log('🛑 [5.dart] Porcupine 콜백 제거 (화면 종료)', name: 'Porcupine');
+
+    // GPS 위치 추적 중지 (메모리 누수 방지)
+    _navService.stopLocationTracking();
+
     // NavigationService는 싱글톤 인스턴스로 dispose 하면 안 됨
     // _navService.dispose(); 제거
     super.dispose();
@@ -190,6 +318,11 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   void _checkCrosswalk(Position position) {
     // 이미 카메라 화면으로 이동 중이면 추가 횡단보도 감지 무시
     if (_isNavigatingToCrosswalk) return;
+    // 버스/지하철 탑승 중이면 도보 경로 감지 건너뛰기
+    if (_tracker.isOnBus) {
+      // print('🚌 [5.dart] 버스 탑승 중 - 횡단보도 감지 건너뛰기');
+      return;
+    }
     if (_crosswalkDetector == null) return;
     _crosswalkDetector!.checkCrosswalkProximity(position);
   }
@@ -212,46 +345,12 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         await _ttsService.speak("버스 정류장에 도착했습니다.");
         HapticFeedback.vibrate();
 
-        // 버스 도착 정보 오버레이 표시 (전역 상태)
-        _popupState.openPopup(busStopInfo.stationName);
-
-        // 버스 도착 정보 조회 시작
-        _busArrivalService.onArrivalUpdate = (arrival) {
-          if (!mounted) return;
-          // BusPopupStateService로 데이터 업데이트 (모든 화면에서 공유)
-          _popupState.updateBusArrival(arrival);
-          if (arrival != null) {
-            // 응답이 올 때마다 오버레이 다시 표시 (사용자가 닫아도 자동으로 다시 켜짐)
-            _popupState.openPopup(busStopInfo.stationName);
-          }
-          if (arrival != null) {
-            _ttsService.speak("${arrival.busNumber}번 버스, ${arrival.statusMsg}");
-
-            // "곧 도착" 상태 감지 시 BusArrivalScreen으로 화면 전환
-            if (bus_utils.isBusApproachingStatus(arrival.statusMsg)) {
-              // 곧 도착 상태일 때 추적 종료
-              _busArrivalService.stopTracking();
-              _closeBusArrivalOverlay();
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => BusArrivalScreen(
-                    busNumber: arrival.busNumber,
-                    stationName: busStopInfo.stationName,
-                    enableCamera: true, // 카메라 모드 활성화
-                  ),
-                ),
-              ).then((_) {
-                if (mounted) {
-                  _popupState.closePopup();
-                }
-              });
-            }
-          }
-        };
-        await _busArrivalService.startTracking(
+        // 버스 추적 시작 (서비스 위임)
+        await _popupState.startBusTracking(
           busStopInfo.busNumber,
           busStopInfo.stationName,
+          exitLat: busStopInfo.exitLat,
+          exitLng: busStopInfo.exitLng,
         );
       },
     );
@@ -273,6 +372,12 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
   // 현재 위치를 기준으로 지나간 점들을 체크 -> RouteTracker로 로직 이동
   void _checkAndUpdatePassedPoints(Position position) {
+    // 버스 탑승 중이면 경로 점 업데이트 건너뛰기 (도보 경로와 겹쳐도 통과 처리 방지)
+    if (_tracker.isOnBus) {
+      // print('🚌 [5.dart] 버스 탑승 중 - 경로 점 업데이트 건너뛰기');
+      return;
+    }
+
     final updated = _tracker.findClosestPointAndUpdate(
       position.latitude,
       position.longitude,
@@ -436,6 +541,43 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
                 // 버스 도착 정보 오버레이
                 if (_popupState.showPopup) _buildBusArrivalOverlay(),
+                // 시대야 버튼 (오른쪽 윗부분)
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => _captureAndUploadVLM(context),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFD400),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Center(
+                          child: Text(
+                            '시대야',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -465,6 +607,130 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   }
 
   // _normalizeAngle -> math_utils.normalizeAngle 로 이동됨
+
+  // VLM 모드로 이미지 캡처 및 업로드
+  Future<void> _captureAndUploadVLM(BuildContext context) async {
+    try {
+      final baseUrl = dotenv.env['SIDAE_SERVER_CLOUD_URL'];
+      if (baseUrl == null || baseUrl.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('SIDAE_SERVER_CLOUD_URL이 설정되지 않았습니다.'),
+            ),
+          );
+        }
+        return;
+      }
+
+      final uploadUrl = '$baseUrl/bus-ai/bus-recognition';
+
+      final result = await _channel.invokeMethod('captureAndUploadImage', {
+        'uploadUrl': uploadUrl,
+        'jpegQuality': 90,
+        'metadata': {'source': 'vlm', 'mode': 'vlm'},
+        'keepFile': true,
+      });
+
+      // 응답에서 description 파싱하여 TTS로 읽기 (먼저 처리)
+      if (result is Map && result['body'] != null) {
+        try {
+          final bodyStr = result['body'].toString();
+          // developer.log('📥 [5.dart] VLM 응답 수신: $bodyStr', name: 'VLM');
+
+          final jsonResponse = json.decode(bodyStr);
+          // developer.log('✅ [5.dart] JSON 파싱 성공: $jsonResponse', name: 'VLM');
+
+          // description 추출 시도 (두 가지 형태 지원)
+          String? description;
+
+          // 형태 1: {"description": "..."}
+          if (jsonResponse is Map && jsonResponse['description'] != null) {
+            description = jsonResponse['description'].toString();
+            // developer.log(
+            //   '📝 [5.dart] description 추출 (직접): $description',
+            //   name: 'VLM',
+            // );
+          }
+          // 형태 2: {"result": {"description": "..."}}
+          else if (jsonResponse is Map && jsonResponse['result'] != null) {
+            final result = jsonResponse['result'];
+            if (result is Map && result['description'] != null) {
+              description = result['description'].toString();
+              // developer.log(
+              //   '📝 [5.dart] description 추출 (result 내부): $description',
+              //   name: 'VLM',
+              // );
+            }
+          }
+
+          if (description != null && description.isNotEmpty) {
+            // developer.log('🔊 [5.dart] TTS 호출 시작: "$description"', name: 'VLM');
+            // TTS 초기화 보장
+            await _ttsService.initialize();
+            // TTS는 비동기로 시작 (카메라 종료를 기다리지 않음)
+            _ttsService.speak(description).catchError((_) {
+              // developer.log('❌ [5.dart] TTS 호출 실패: $e', name: 'VLM');
+            });
+            // developer.log('✅ [5.dart] TTS 호출 완료', name: 'VLM');
+          } else {
+            // developer.log(
+            //   '⚠️ [5.dart] description을 찾을 수 없음. JSON 구조: $jsonResponse',
+            //   name: 'VLM',
+            // );
+          }
+        } catch (_) {
+          // JSON 파싱 실패 시 무시 (기존 동작 유지)
+          // developer.log('❌ [5.dart] VLM 응답 파싱 실패: $e', name: 'VLM');
+        }
+      } else {
+        // developer.log('⚠️ [5.dart] 응답 body가 없음', name: 'VLM');
+      }
+
+      // TTS 시작 후 카메라 종료 (await하여 완료 보장)
+      try {
+        await _channel.invokeMethod('stopCamera');
+        // developer.log('✅ [5.dart] 카메라 종료 완료', name: 'VLM');
+        // print('✅ [5.dart] 카메라 종료 완료');
+      } catch (_) {
+        // developer.log('❌ [5.dart] 카메라 종료 실패: $e', name: 'VLM');
+        // print('❌ [5.dart] 카메라 종료 실패: $e');
+      }
+
+      // 카메라 종료 후 Porcupine이 계속 실행되도록 보장
+      // 약간의 지연을 두어 오디오 리소스가 완전히 해제되도록 함
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      try {
+        // print('🔄 [5.dart] Porcupine 재시작 시작');
+        // developer.log('🔄 [5.dart] Porcupine 재시작 시작', name: 'Porcupine');
+        await _porcupineService.ensureRunning();
+        // print('✅ [5.dart] Porcupine 재시작 완료');
+        // developer.log('✅ [5.dart] Porcupine 재시작 완료', name: 'Porcupine');
+      } catch (_) {
+        // print('❌ [5.dart] Porcupine 재시작 실패: $e');
+        // developer.log(
+        //   '❌ [5.dart] Porcupine 재시작 실패: $e',
+        //   name: 'Porcupine',
+        //   error: e,
+        //   stackTrace: stackTrace,
+        // );
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('업로드 완료: ${result['body'] ?? 'Success'}')),
+        );
+      }
+    } catch (e) {
+      await _channel.invokeMethod('stopCamera').catchError((_) {});
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
+      }
+    }
+  }
 
   Widget _buildDirectionInfo() {
     double targetDirection = _navService.routeBearing >= 0
