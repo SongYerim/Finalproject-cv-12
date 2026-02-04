@@ -14,6 +14,7 @@ import 'package:sidae_app/screens/7.dart';
 import 'package:sidae_app/screens/8.dart';
 import '../services/api_service.dart';
 import '../services/tts_service.dart';
+import '../services/porcupine_service.dart';
 import '../models/route_model.dart';
 import '../services/shared_event_channel.dart';
 
@@ -208,6 +209,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     await _ttsService.stop();
+    await PorcupineService.instance.stop(); // Porcupine 마이크 점유 해제
 
     if (!_isListening) {
       setState(() {
