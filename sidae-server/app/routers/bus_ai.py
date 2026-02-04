@@ -79,7 +79,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
                 "resize_time": resize_time, 
                 "model_time": model_time
             }
-
+        """
         if mode in ['bell', 'tag']:
             pos = final_data.get("selected_area", " ")
             reason = final_data.get("reason", "이유 없음")
@@ -100,6 +100,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
             else:
                 des = f'{mode} 위치는 {pos}에 있습니다.'
             return {"des": des, "resize_time": resize_time, "model_time": model_time}
+        """
         
         return {
             "result": final_data, "resize_time": resize_time, "model_time": model_time
