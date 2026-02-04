@@ -437,7 +437,8 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
     // 서비스 정리
     // developer.log('  - 서비스 정리', name: 'BusArrivalScreen');
-    _arrivalService.dispose();
+    // _arrivalService.dispose(); // Singleton이므로 dispose하면 안 됨
+    _arrivalService.stopTracking();
     _busDetectorService.dispose();
 
     // developer.log(

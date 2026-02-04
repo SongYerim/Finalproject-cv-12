@@ -11,7 +11,7 @@ import '../models/route_model.dart';
 import '../services/route_tracker.dart';
 import '../services/crosswalk_detector.dart';
 import '../services/bus_stop_detector.dart';
-import '../services/bus_arrival_service.dart';
+// import '../services/bus_arrival_service.dart'; // Unused
 import '../services/bus_popup_state_service.dart';
 import '../services/tts_service.dart';
 import '../services/porcupine_service.dart';
@@ -47,7 +47,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   final TtsService _ttsService = TtsService.instance;
   final PorcupineService _porcupineService = PorcupineService.instance;
   final BusPopupStateService _popupState = BusPopupStateService.instance;
-  final BusArrivalService _busArrivalService = BusArrivalService.instance;
+  // final BusArrivalService _busArrivalService = BusArrivalService.instance; // Unused
   CrosswalkDetector? _crosswalkDetector;
   BusStopDetector? _busStopDetector;
   Position? _currentPosition;
@@ -80,12 +80,8 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       }
     };
 
-    // 팝업 상태 변경 리스너 등록
-    _popupState.onStateChanged = () {
-      if (mounted) {
-        setState(() {}); // 팝업 상태 변경 시 UI 갱신
-      }
-    };
+    // 팝업 상태 및 버스 도착 정보 변경 리스너 등록
+    _popupState.addListener(_onPopupStateChanged);
 
     // 단계 변경 TTS 콜백 등록
     _tracker.onStepChanged = (segmentIndex, stepIndex, description) {
@@ -136,6 +132,47 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       // );
     });
   }
+
+  // 팝업 상태 변경 핸들러
+  void _onPopupStateChanged() {
+    if (!mounted) return;
+    setState(() {}); // UI 갱신
+
+    // 버스 도착 정보 확인 및 화면 전환 로직
+    final arrival = _popupState.busArrival;
+    // 버스 도착 정보가 있고, 상태 메시지가 "곧 도착" 등일 때
+    if (arrival != null &&
+        bus_utils.isBusApproachingStatus(arrival.statusMsg)) {
+      // 중복 내비게이션 방지: 현재 화면이 최상위일 때만 이동
+      if (ModalRoute.of(context)?.isCurrent == true) {
+        // 추적 중지하고 팝업 닫기 (서비스에서 중앙 관리)
+        _popupState.stopBusTracking();
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BusArrivalScreen(
+              busNumber: arrival.busNumber,
+              stationName: _popupState.busStationName ?? "",
+              enableCamera: true, // 카메라 모드 활성화
+              // 기존에 저장해둔 하차 지점 정보 사용
+              exitLat: _currentBusStopInfo?.exitLat ?? 0.0,
+              exitLng: _currentBusStopInfo?.exitLng ?? 0.0,
+            ),
+          ),
+        ).then((_) {
+          // 버스 탑승 화면에서 돌아오면
+          if (mounted) {
+            _popupState.closePopup();
+            _navService.ensureSensorRunning();
+          }
+        });
+      }
+    }
+  }
+
+  // 현재 감지된 버스 정류장 정보 (화면 전환용)
+  BusStopInfo? _currentBusStopInfo;
 
   Future<void> _initPorcupine() async {
     try {
@@ -230,6 +267,9 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
   @override
   void dispose() {
+    // 리스너 제거
+    _popupState.removeListener(_onPopupStateChanged);
+
     // Porcupine 중지하지 않음 (다른 화면에서도 사용 중일 수 있음)
     // 대신 콜백만 제거
     _porcupineService.onKeywordDetected = null;
@@ -301,48 +341,11 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         await _ttsService.speak("버스 정류장에 도착했습니다.");
         HapticFeedback.vibrate();
 
-        // 버스 도착 정보 오버레이 표시 (전역 상태)
-        _popupState.openPopup(busStopInfo.stationName);
+        // 정류장 정보 저장 (화면 전환 시 exitLat/Lng 사용 위해)
+        _currentBusStopInfo = busStopInfo;
 
-        // 버스 도착 정보 조회 시작
-        _busArrivalService.onArrivalUpdate = (arrival) {
-          if (!mounted) return;
-          // BusPopupStateService로 데이터 업데이트 (모든 화면에서 공유)
-          _popupState.updateBusArrival(arrival);
-          if (arrival != null) {
-            // 응답이 올 때마다 오버레이 다시 표시 (사용자가 닫아도 자동으로 다시 켜짐)
-            _popupState.openPopup(busStopInfo.stationName);
-          }
-          if (arrival != null) {
-            _ttsService.speak("${arrival.busNumber}번 버스, ${arrival.statusMsg}");
-
-            // "곧 도착" 상태 감지 시 BusArrivalScreen으로 화면 전환
-            if (bus_utils.isBusApproachingStatus(arrival.statusMsg)) {
-              // 곧 도착 상태일 때 추적 종료
-              _busArrivalService.stopTracking();
-              _closeBusArrivalOverlay();
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => BusArrivalScreen(
-                    busNumber: arrival.busNumber,
-                    stationName: busStopInfo.stationName,
-                    enableCamera: true, // 카메라 모드 활성화
-                    exitLat: busStopInfo.exitLat, // 버스 하차 지점
-                    exitLng: busStopInfo.exitLng,
-                  ),
-                ),
-              ).then((_) {
-                if (mounted) {
-                  _popupState.closePopup();
-                  // 화면 복귀 시 센서 재시작
-                  _navService.ensureSensorRunning();
-                }
-              });
-            }
-          }
-        };
-        await _busArrivalService.startTracking(
+        // 버스 추적 시작 (서비스 위임)
+        await _popupState.startBusTracking(
           busStopInfo.busNumber,
           busStopInfo.stationName,
         );
