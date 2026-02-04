@@ -112,15 +112,14 @@ class _HomeScreenState extends State<HomeScreen>
               // status handling
               break;
             case 'result':
-              // 최종 결과
+              if (!_isListening) return; // 듣고 있지 않을 때는 결과 무시
               _handleSttResult(data ?? '');
               break;
             case 'partial':
-              // 부분 결과 (필요시 UI 업데이트용)
-              // partial result
+              if (!_isListening) return; // 듣고 있지 않을 때는 부분 결과 무시
               break;
             case 'error':
-              // 에러 처리
+              if (!_isListening) return; // 듣고 있지 않을 때는 에러 무시
               _handleSttError(data ?? 'unknown_error');
               break;
           }
