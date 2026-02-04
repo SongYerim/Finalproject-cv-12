@@ -274,6 +274,10 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
     // 대신 콜백만 제거
     _porcupineService.onKeywordDetected = null;
     // developer.log('🛑 [5.dart] Porcupine 콜백 제거 (화면 종료)', name: 'Porcupine');
+
+    // GPS 위치 추적 중지 (메모리 누수 방지)
+    _navService.stopLocationTracking();
+
     // NavigationService는 싱글톤 인스턴스로 dispose 하면 안 됨
     // _navService.dispose(); 제거
     super.dispose();
