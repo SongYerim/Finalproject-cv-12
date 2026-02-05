@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../services/route_tracker.dart';
 import '../services/tts_service.dart';
 import '../services/porcupine_service.dart';
@@ -33,8 +34,13 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
   int? _responseTimeMs; // 응답 시간 (밀리초)
   Timer? _previewTimer;
   StreamSubscription? _exitDistanceSubscription;
+  StreamSubscription? _sttSubscription; // STT 구독 추가
   final PorcupineService _porcupineService = PorcupineService.instance;
   bool _hasArrived = false; // 중복 하차 처리 방지 플래그
+  String? _capturedVlmPrompt; // STT 결과 저장
+  Completer<String>? _sttResultCompleter; // STT 결과를 기다리는 Completer
+  bool _isListeningStt = false; // STT 진행 중 여부
+  String _sttText = ''; // STT 텍스트 (partial 및 final)
 
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
@@ -50,22 +56,174 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     return '$baseUrl/bus-ai/bus-recognition';
   }
 
-  // VLM 모드로 이미지 캡처 및 업로드
+  // STT 초기화 함수
+  void _initStt() {
+    try {
+      _sttSubscription = SharedEventChannel.instance.stream.listen((event) {
+        if (event is Map && event['type'] == 'stt') {
+          final eventType = event['eventType'] as String?;
+          final data = event['data'] as String?;
+
+          switch (eventType) {
+            case 'partial':
+              // 부분 결과 업데이트
+              if (mounted && _isListeningStt) {
+                setState(() {
+                  _sttText = data ?? '';
+                });
+              }
+              break;
+            case 'result':
+              // 최종 결과
+              if (mounted && _sttResultCompleter != null && !_sttResultCompleter!.isCompleted) {
+                setState(() {
+                  _capturedVlmPrompt = data ?? '';
+                  _sttText = data ?? '';
+                  // _isListeningStt는 2초 후에 false로 설정
+                });
+                _sttResultCompleter!.complete(data ?? '');
+                
+                // 최종 결과를 2초간 표시한 후 오버레이 숨김
+                Future.delayed(const Duration(seconds: 2), () {
+                  if (mounted) {
+                    setState(() {
+                      _isListeningStt = false;
+                    });
+                  }
+                });
+              }
+              break;
+            case 'error':
+              if (mounted && _sttResultCompleter != null && !_sttResultCompleter!.isCompleted) {
+                setState(() {
+                  _isListeningStt = false;
+                  _sttText = '';
+                });
+                TtsService.instance.speak("음성인식에 실패했습니다. 다시 시도해주세요.");
+                _sttResultCompleter!.complete('');
+              }
+              break;
+          }
+        }
+      });
+    } catch (e) {
+      developer.log('❌ [8.dart] STT 초기화 실패: $e', name: 'STT');
+    }
+  }
+
+  // VLM 모드로 이미지 캡처 및 업로드 (카메라와 STT 동시 시작)
   Future<void> _captureAndUploadVLM(BuildContext context) async {
     final stopwatch = Stopwatch()..start();
 
     try {
+      // 카메라 권한 확인 및 요청
+      final cameraStatus = await Permission.camera.status;
+      if (!cameraStatus.isGranted) {
+        final result = await Permission.camera.request();
+        if (!result.isGranted) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.'),
+              ),
+            );
+          }
+          return;
+        }
+      }
+
       if (mounted) {
         setState(() {
           _lastResponse = 'No response';
           _responseTimeMs = null;
+          _capturedVlmPrompt = null;
         });
       }
 
+      // STT 결과를 기다리는 Completer 생성
+      _sttResultCompleter = Completer<String>();
+
+      // Porcupine 중지 및 TTS 중지
+      await TtsService.instance.stop();
+      await _porcupineService.stop();
+
+      // STT 시작
+      if (mounted) {
+        setState(() {
+          _isListeningStt = true;
+          _sttText = '';
+        });
+        await TtsService.instance.speak("말씀하세요");
+      }
+
+      try {
+        await _channel.invokeMethod('startListening');
+      } catch (e) {
+        developer.log('❌ [8.dart] STT 시작 실패: $e', name: 'STT');
+        if (mounted) {
+          setState(() {
+            _isListeningStt = false;
+          });
+          TtsService.instance.speak("음성인식 시작에 실패했습니다.");
+        }
+        _sttResultCompleter!.complete('');
+      }
+
+      // 카메라 캡처를 백그라운드에서 시작 (STT와 동시에 시작)
+      // 하지만 업로드는 STT 결과를 기다린 후에 하도록 변경
+      final baseUrl = dotenv.env['SIDAE_SERVER_CLOUD_URL'];
+      if (baseUrl == null || baseUrl.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('SIDAE_SERVER_CLOUD_URL이 설정되지 않았습니다.'),
+            ),
+          );
+        }
+        return;
+      }
+
+      final uploadUrl = '$baseUrl/bus-ai/bus-recognition';
+
+      // STT 결과를 기다림 (최대 10초)
+      final sttResult = await _sttResultCompleter!.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          developer.log('⏱️ [8.dart] STT 타임아웃', name: 'STT');
+          // 타임아웃 시 오버레이 즉시 숨김
+          if (mounted) {
+            setState(() {
+              _isListeningStt = false;
+            });
+          }
+          return '';
+        },
+      );
+
+      // STT 중지
+      try {
+        await _channel.invokeMethod('stopListening');
+      } catch (_) {}
+      
+      // 정상적인 경우는 case 'result'에서 2초 후에 _isListeningStt = false로 설정됨
+      // 타임아웃의 경우는 onTimeout에서 처리됨
+
+      // STT 결과를 metadata에 포함하여 카메라 캡처 및 업로드
+      final metadata = <String, String>{
+        'source': 'vlm',
+        'mode': 'vlm',
+      };
+      
+      if (sttResult.isNotEmpty) {
+        metadata['vlm_prompt'] = sttResult;
+        developer.log('📝 [8.dart] STT 결과를 vlm_prompt로 포함: $sttResult', name: 'STT');
+      }
+
+      // 카메라 캡처 및 업로드 (vlm_prompt 포함)
       final result = await _channel.invokeMethod('captureAndUploadImage', {
-        'uploadUrl': _getCaptureUploadUrl(),
+        'uploadUrl': uploadUrl,
         'jpegQuality': 90,
-        'metadata': {'source': 'vlm', 'mode': 'vlm'},
+        'metadata': metadata,
         'keepFile': true,
       });
 
@@ -74,7 +232,8 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         final responseTime = stopwatch.elapsedMilliseconds;
 
         final path = result['localPath'];
-        final body = result['body'];
+        var body = result['body'];
+
         if (mounted) {
           setState(() {
             if (path is String) {
@@ -212,6 +371,24 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     final stopwatch = Stopwatch()..start();
 
     try {
+      // 카메라 권한 확인 및 요청
+      final cameraStatus = await Permission.camera.status;
+      if (!cameraStatus.isGranted) {
+        final result = await Permission.camera.request();
+        if (!result.isGranted) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.'),
+              ),
+            );
+          }
+          return;
+        }
+        // 권한 요청 후 약간의 지연 (권한 상태 업데이트 대기)
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+
       if (mounted) {
         setState(() {
           _lastResponse = 'No response';
@@ -470,6 +647,8 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     print('🚀 [8.dart] initState() 시작');
     developer.log('🚀 [8.dart] initState() 시작', name: '8.dart');
 
+    _initStt(); // STT 초기화 추가
+
     try {
       _startNativeReturnTrackingIfNeeded();
       print('✅ [8.dart] _startNativeReturnTrackingIfNeeded() 완료');
@@ -639,6 +818,9 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     _previewTimer = null;
     _exitDistanceSubscription?.cancel();
     _exitDistanceSubscription = null;
+    _sttSubscription?.cancel(); // STT 구독 취소
+    _sttSubscription = null;
+    _channel.invokeMethod('stopListening').catchError((_) {}); // STT 중지
     _channel.invokeMethod('stopExitTracking').catchError((_) {});
     _channel.invokeMethod('stopCamera').catchError((_) {});
     // 버스 하차 상태 설정 (dispose 시에도 보장)
@@ -743,11 +925,99 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                 ),
               ),
             ),
+            // STT 진행 중 오버레이
+            if (_isListeningStt)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.9),
+                    border: Border(
+                      bottom: BorderSide(
+                        color: const Color(0xFFFFD400),
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '시대에게 어떤 질문을 하고 싶으신가요?',
+                        style: TextStyle(
+                          color: Color(0xFFFFD400),
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      if (_sttText.isNotEmpty)
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 150),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade900,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.grey.shade700,
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.mic,
+                                color: Color(0xFFFFD400),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  child: Text(
+                                    _sttText,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                    ),
+                                    softWrap: true,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.mic,
+                              color: Color(0xFFFFD400),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '듣고 있어요...',
+                              style: TextStyle(
+                                color: Colors.grey.shade400,
+                                fontSize: 16,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             if (_lastImagePath != null)
               Positioned(
                 left: 16,
                 right: 16,
-                top: 12,
+                top: _isListeningStt ? 120 : 12,
                 child: AspectRatio(
                   aspectRatio: 3 / 4, // 카메라 비율 (일반적인 세로 모드)
                   child: Container(
