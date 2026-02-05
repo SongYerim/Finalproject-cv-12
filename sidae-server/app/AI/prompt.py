@@ -143,8 +143,6 @@ class PromptManager:
             """,
             "user": """
             출력 규칙:
-            - tool이 필요 없으면: {"description": "답변 내용"} 형식의 JSON으로만 답변한다.
-            - tool이 필요하면: 정해진 형식의 tool 호출만 출력한다.
             """
         }
     }

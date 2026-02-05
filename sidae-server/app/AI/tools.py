@@ -47,6 +47,19 @@ NAVIGATION_TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []}
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_remaining_distance",
+            "description": (
+                "목적지까지 남은 거리와 시간을 조회합니다. "
+                "사용자가 '얼마나 남았어?', '멀었어?', '도착까지 몇 분 걸려?'처럼 "
+                "남은 거리나 소요 시간이 궁금할 때 호출하세요. "
+                "반환 예: {remaining_distance, remaining_time_seconds, current_destination}"
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
 ]
 
 
@@ -104,6 +117,19 @@ def execute_tool(tool_name: str, context: Dict[str, Any]) -> Dict[str, Any]:
             "latitude": lat,
             "longitude": lng,
             "address": context.get("address", "주소 정보 없음")
+        }
+
+    elif tool_name == "get_remaining_distance":
+        dist = context.get("remaining_distance", 0)
+        time = context.get("remaining_time", 0)
+        # 하차 정류장이 있으면 그것을, 없으면 최종 목적지를 목표로 표시
+        dest = context.get("destination_stop") if context.get("destination_stop") else context.get("destination", "알 수 없는 목적지")
+        
+        return {
+            "current_destination": dest,
+            "remaining_distance": f"{dist}m",
+            "remaining_time_seconds": time,
+            "remaining_time_formatted": f"{time // 60}분 {time % 60}초" if time >= 60 else f"{time}초"
         }
     
     return {"error": f"알 수 없는 tool: {tool_name}"}

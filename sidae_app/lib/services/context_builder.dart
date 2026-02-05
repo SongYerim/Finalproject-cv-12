@@ -86,6 +86,22 @@ class ContextBuilder {
       }
     }
 
+    // 남은 거리 및 시간 계산 (현재 세그먼트 기준)
+    int remainingDistance = 0; // meter
+    int remainingTime = 0; // seconds
+
+    if (segment != null) {
+      // 단순화된 계산: 전체 거리 * (1 - 진행률)
+      // 진행률은 stepIndex 기준
+      double progress = 0.0;
+      if (segment.steps.isNotEmpty) {
+        progress = tracker.currentStepIndex / segment.steps.length;
+      }
+
+      remainingDistance = (segment.distance * (1 - progress)).toInt();
+      remainingTime = (segment.duration * (1 - progress)).toInt();
+    }
+
     final context = <String, dynamic>{
       // 목적지 정보
       'destination': destinationName ?? '',
@@ -109,6 +125,9 @@ class ContextBuilder {
       'total_stops': totalStops, // 전체 정류장 수
       'remaining_stops': remainingStops, // 남은 정류장 수
       'station_names': stationNames, // 정류장 이름 목록
+      // 거리/시간 정보 추가
+      'remaining_distance': remainingDistance,
+      'remaining_time': remainingTime,
     };
 
     return jsonEncode(context);
