@@ -7,43 +7,46 @@ import json
 from typing import Dict, Any, List
 
 # Tool 정의 (OpenAI 호환 형식)
-NAVIGATION_TOOLS: List[Dict[str, Any]] = [
+NAVIGATION_TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "get_navigation_context",
-            "description": "현재 네비게이션 상태를 조회합니다. 목적지, 진행률, 현재 단계, 이동 수단 등의 정보를 반환합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
+            "description": (
+                "현재 네비게이션 진행 상태를 조회합니다. "
+                "사용자가 '지금 어디까지 왔어?', '다음 단계 뭐야?', '제대로 가고 있어?'처럼 "
+                "경로 진행/다음 안내가 필요한 질문을 하면 호출하세요. "
+                "반환 예: {destination, mode, current_step, progress, next_instruction}"
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []}
         }
     },
     {
         "type": "function",
         "function": {
             "name": "get_target_bus_info",
-            "description": "사용자가 탑승해야 할 버스 정보를 조회합니다. 버스 번호, 하차 정류장 등을 반환합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
+            "description": (
+                "사용자가 탑승해야 할 버스 정보를 조회합니다. "
+                "사용자가 '몇 번 버스 타?', '어디서 내려?', '이 버스 맞아?'처럼 "
+                "탑승/하차 버스 정보가 필요한 질문을 하면 호출하세요. "
+                "반환 예: {bus_number, boarding_stop, alighting_stop, direction}"
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []}
         }
     },
     {
         "type": "function",
         "function": {
             "name": "get_current_location",
-            "description": "현재 위치 정보를 조회합니다. 좌표와 주소 정보를 반환합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
+            "description": (
+                "현재 위치를 조회합니다. "
+                "사용자가 '지금 어디야?', '정류장 근처야?', '길을 잘못 든 것 같아'처럼 "
+                "현재 위치 확인이나 경로 이탈 판단이 필요하면 호출하세요. "
+                "반환 예: {lat, lon, address}"
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []}
         }
-    }
+    },
 ]
 
 
