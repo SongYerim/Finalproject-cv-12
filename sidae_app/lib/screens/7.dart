@@ -511,70 +511,22 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
               child: _buildCroppedImagePreview(),
             ),
 
-          // 5. 타야할 버스 정보 표시 (좌측 상단)
-          Positioned(top: 100, left: 16, child: _buildTargetBusInfo()),
-
-          // 7. 매칭 결과 텍스트 (중앙 상단)
-          if (_matchStatus == 'MATCH')
-            Positioned(
-              top: 150,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
-                  color: Colors.green,
-                  child: const Text(
-                    "탑승할 버스입니다!",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            )
-          else if (_matchStatus == 'MISMATCH')
-            Positioned(
-              top: 150,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
-                  color: Colors.red.withOpacity(0.8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        "다른 버스입니다 ($_lastOcrResult)",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                        ),
-                      ),
-                      if (_lastResponseTimeMs != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          "응답 시간: ${_lastResponseTimeMs}ms",
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
+          // 5. 타야할 버스 정보 + OCR 결과 (좌우 분리 레이아웃)
+          Positioned(
+            top: 100,
+            left: 16,
+            right: 16,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 좌측: 타야할 버스 정보
+                _buildTargetBusInfo(),
+                const SizedBox(width: 12),
+                // 우측: OCR 결과 (있는 경우만)
+                if (_lastOcrResult.isNotEmpty) _buildOcrResultPanel(),
+              ],
             ),
+          ),
 
           // 태그 인식 결과 표시
           if (_isRecognizingTag && _tagCapturedImage != null)
@@ -926,27 +878,57 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
               ],
             ),
           ],
-          // OCR 결과 표시 (있는 경우만)
-          if (_lastOcrResult.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Divider(color: Colors.white38, height: 1),
-            const SizedBox(height: 8),
-            const Text(
-              'OCR 결과:',
-              style: TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _lastOcrResult,
-              style: TextStyle(
-                color: _matchStatus == 'MATCH'
-                    ? Colors.greenAccent
-                    : Colors.orange,
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
+        ],
+      ),
+    );
+  }
+
+  /// OCR 결과 표시 패널 (우측)
+  Widget _buildOcrResultPanel() {
+    final bool isMatch = _matchStatus == 'MATCH';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isMatch
+            ? Colors.green.withValues(alpha: 0.9)
+            : Colors.orange.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 제목
+          Row(
+            children: [
+              Icon(
+                isMatch ? Icons.check_circle : Icons.search,
+                color: Colors.white,
+                size: 16,
               ),
+              const SizedBox(width: 6),
+              Text(
+                isMatch ? '일치!' : 'OCR 감지',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // OCR 결과
+          Text(
+            _lastOcrResult,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
-          ],
+          ),
         ],
       ),
     );

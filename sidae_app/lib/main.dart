@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:developer' as developer;
 import 'screens/splash_screen.dart';
@@ -6,6 +7,9 @@ import 'theme/style.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized(); // 플러터 엔진 초기화
+
+  // Navigation Bar와 Status Bar 숨기기 (슬라이드하면 나타남)
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   // .env 파일 로드
   try {
