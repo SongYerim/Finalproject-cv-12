@@ -843,19 +843,9 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 이미지
-            Image.memory(
-              _croppedBusImage!,
-              width: 120,
-              height: 80,
-              fit: BoxFit.cover,
-            ),
-
-            // 라벨
-          ],
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 150, maxHeight: 150),
+          child: Image.memory(_croppedBusImage!, fit: BoxFit.contain),
         ),
       ),
     );
