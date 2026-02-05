@@ -75,14 +75,16 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
               break;
             case 'result':
               // 최종 결과
-              if (mounted && _sttResultCompleter != null && !_sttResultCompleter!.isCompleted) {
+              if (mounted &&
+                  _sttResultCompleter != null &&
+                  !_sttResultCompleter!.isCompleted) {
                 setState(() {
                   _capturedVlmPrompt = data ?? '';
                   _sttText = data ?? '';
                   // _isListeningStt는 2초 후에 false로 설정
                 });
                 _sttResultCompleter!.complete(data ?? '');
-                
+
                 // 최종 결과를 2초간 표시한 후 오버레이 숨김
                 Future.delayed(const Duration(seconds: 2), () {
                   if (mounted) {
@@ -94,7 +96,9 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
               }
               break;
             case 'error':
-              if (mounted && _sttResultCompleter != null && !_sttResultCompleter!.isCompleted) {
+              if (mounted &&
+                  _sttResultCompleter != null &&
+                  !_sttResultCompleter!.isCompleted) {
                 setState(() {
                   _isListeningStt = false;
                   _sttText = '';
@@ -123,9 +127,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         if (!result.isGranted) {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.'),
-              ),
+              const SnackBar(content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.')),
             );
           }
           return;
@@ -204,19 +206,19 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       try {
         await _channel.invokeMethod('stopListening');
       } catch (_) {}
-      
+
       // 정상적인 경우는 case 'result'에서 2초 후에 _isListeningStt = false로 설정됨
       // 타임아웃의 경우는 onTimeout에서 처리됨
 
       // STT 결과를 metadata에 포함하여 카메라 캡처 및 업로드
-      final metadata = <String, String>{
-        'source': 'vlm',
-        'mode': 'vlm',
-      };
-      
+      final metadata = <String, String>{'source': 'vlm', 'mode': 'vlm'};
+
       if (sttResult.isNotEmpty) {
         metadata['vlm_prompt'] = sttResult;
-        developer.log('📝 [8.dart] STT 결과를 vlm_prompt로 포함: $sttResult', name: 'STT');
+        developer.log(
+          '📝 [8.dart] STT 결과를 vlm_prompt로 포함: $sttResult',
+          name: 'STT',
+        );
       }
 
       // 카메라 캡처 및 업로드 (vlm_prompt 포함)
@@ -378,9 +380,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         if (!result.isGranted) {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.'),
-              ),
+              const SnackBar(content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.')),
             );
           }
           return;
@@ -932,7 +932,10 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                 left: 0,
                 right: 0,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.9),
                     border: Border(
