@@ -215,22 +215,28 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       if (sttResult.isEmpty) {
         developer.log('⚠️ [8.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀', name: 'STT');
         print('⚠️ [8.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀');
-        
+
         // Porcupine 재시작
         await Future.delayed(const Duration(milliseconds: 500));
         try {
           print('🔄 [8.dart] Porcupine 재시작 시작 (STT 실패 후)');
-          developer.log('🔄 [8.dart] Porcupine 재시작 시작 (STT 실패 후)', name: 'Porcupine');
-          
+          developer.log(
+            '🔄 [8.dart] Porcupine 재시작 시작 (STT 실패 후)',
+            name: 'Porcupine',
+          );
+
           _porcupineService.onKeywordDetected = (keyword) {
             if (keyword == '시대야' && mounted) {
               _captureAndUploadVLM(context);
             }
           };
-          
+
           await _porcupineService.ensureRunning();
           print('✅ [8.dart] Porcupine 재시작 완료 (STT 실패 후)');
-          developer.log('✅ [8.dart] Porcupine 재시작 완료 (STT 실패 후)', name: 'Porcupine');
+          developer.log(
+            '✅ [8.dart] Porcupine 재시작 완료 (STT 실패 후)',
+            name: 'Porcupine',
+          );
         } catch (e, stackTrace) {
           print('❌ [8.dart] Porcupine 재시작 실패 (STT 실패 후): $e');
           developer.log(
@@ -357,14 +363,14 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         try {
           print('🔄 [8.dart] Porcupine 재시작 시작');
           developer.log('🔄 [8.dart] Porcupine 재시작 시작', name: 'Porcupine');
-          
+
           // 콜백 재설정 (ensureRunning 전에)
           _porcupineService.onKeywordDetected = (keyword) {
             if (keyword == '시대야' && mounted) {
               _captureAndUploadVLM(context);
             }
           };
-          
+
           await _porcupineService.ensureRunning();
           print('✅ [8.dart] Porcupine 재시작 완료');
           developer.log('✅ [8.dart] Porcupine 재시작 완료', name: 'Porcupine');
@@ -386,7 +392,6 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
           });
         });
       }
-
     } catch (e) {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
       if (mounted) {
@@ -621,7 +626,6 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
           });
         });
       }
-
     } catch (e) {
       try {
         await _channel.invokeMethod('stopCamera');
@@ -1115,6 +1119,7 @@ class _ActionPanel extends StatelessWidget {
                           ),
                         ),
                       ],
+                    ),
                   ),
                 ),
               ),
@@ -1122,7 +1127,6 @@ class _ActionPanel extends StatelessWidget {
           ),
         ),
       ),
-    ),
     );
   }
 }
