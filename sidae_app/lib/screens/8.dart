@@ -11,6 +11,7 @@ import '../services/route_tracker.dart';
 import '../services/tts_service.dart';
 import '../services/porcupine_service.dart';
 import '../services/shared_event_channel.dart';
+import '../services/context_builder.dart';
 import '../widgets/sidae_overlay.dart';
 
 class BusOnlyScreen extends StatefulWidget {
@@ -215,22 +216,28 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       if (sttResult.isEmpty) {
         developer.log('⚠️ [8.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀', name: 'STT');
         print('⚠️ [8.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀');
-        
+
         // Porcupine 재시작
         await Future.delayed(const Duration(milliseconds: 500));
         try {
           print('🔄 [8.dart] Porcupine 재시작 시작 (STT 실패 후)');
-          developer.log('🔄 [8.dart] Porcupine 재시작 시작 (STT 실패 후)', name: 'Porcupine');
-          
+          developer.log(
+            '🔄 [8.dart] Porcupine 재시작 시작 (STT 실패 후)',
+            name: 'Porcupine',
+          );
+
           _porcupineService.onKeywordDetected = (keyword) {
             if (keyword == '시대야' && mounted) {
               _captureAndUploadVLM(context);
             }
           };
-          
+
           await _porcupineService.ensureRunning();
           print('✅ [8.dart] Porcupine 재시작 완료 (STT 실패 후)');
-          developer.log('✅ [8.dart] Porcupine 재시작 완료 (STT 실패 후)', name: 'Porcupine');
+          developer.log(
+            '✅ [8.dart] Porcupine 재시작 완료 (STT 실패 후)',
+            name: 'Porcupine',
+          );
         } catch (e, stackTrace) {
           print('❌ [8.dart] Porcupine 재시작 실패 (STT 실패 후): $e');
           developer.log(
@@ -247,9 +254,20 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       final metadata = <String, String>{'source': 'vlm', 'mode': 'vlm'};
 
       metadata['vlm_prompt'] = sttResult;
+
+      // VLM 프롬프트 주입을 위한 앱 컨텍스트 추가 (버스 탑승 상태)
+      final tracker = RouteTracker.instance;
+      final currentSegment = tracker.getCurrentSegment();
+      final vlmContext = ContextBuilder.buildContextJson(
+        tracker: tracker,
+        busNumber: currentSegment?.transportName,
+        destinationStop: currentSegment?.endStation,
+      );
+      metadata['context'] = vlmContext;
+
       developer.log(
-        '📝 [8.dart] STT 결과를 vlm_prompt로 포함: $sttResult',
-        name: 'STT',
+        '📝 [8.dart] VLM 요청: prompt=$sttResult, context=$vlmContext',
+        name: 'VLM',
       );
 
       // 카메라 캡처 및 업로드 (vlm_prompt 포함)
@@ -357,14 +375,14 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         try {
           print('🔄 [8.dart] Porcupine 재시작 시작');
           developer.log('🔄 [8.dart] Porcupine 재시작 시작', name: 'Porcupine');
-          
+
           // 콜백 재설정 (ensureRunning 전에)
           _porcupineService.onKeywordDetected = (keyword) {
             if (keyword == '시대야' && mounted) {
               _captureAndUploadVLM(context);
             }
           };
-          
+
           await _porcupineService.ensureRunning();
           print('✅ [8.dart] Porcupine 재시작 완료');
           developer.log('✅ [8.dart] Porcupine 재시작 완료', name: 'Porcupine');
@@ -386,7 +404,6 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
           });
         });
       }
-
     } catch (e) {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
       if (mounted) {
@@ -621,7 +638,6 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
           });
         });
       }
-
     } catch (e) {
       try {
         await _channel.invokeMethod('stopCamera');
@@ -1115,6 +1131,7 @@ class _ActionPanel extends StatelessWidget {
                           ),
                         ),
                       ],
+                    ),
                   ),
                 ),
               ),
@@ -1122,7 +1139,6 @@ class _ActionPanel extends StatelessWidget {
           ),
         ),
       ),
-    ),
     );
   }
 }
