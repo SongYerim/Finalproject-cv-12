@@ -70,12 +70,27 @@ def execute_tool(tool_name: str, context: Dict[str, Any]) -> Dict[str, Any]:
     elif tool_name == "get_target_bus_info":
         bus_number = context.get("bus_number")
         if not bus_number:
-            return {"message": "현재 버스 정보가 없습니다."}
-        return {
+            return {"message": "현재 버스 정보가 없습니다. 이 경로에는 버스 구간이 없을 수 있습니다."}
+        
+        remaining = context.get("remaining_stops", 0)
+        total = context.get("total_stops", 0)
+        is_on_bus = context.get("is_on_bus", False)
+        
+        result = {
             "bus_number": bus_number,
-            "destination_stop": context.get("destination_stop", "정보 없음"),
-            "remaining_stops": context.get("remaining_stops", "정보 없음")
+            "start_station": context.get("start_station", "정보 없음"),  # 승차 정류장
+            "destination_stop": context.get("destination_stop", "정보 없음"),  # 하차 정류장
+            "total_stops": total,  # 전체 정류장 수
+            "remaining_stops": remaining if is_on_bus else f"탑승 전 (총 {total}개 정류장)",  # 남은 정류장
+            "is_on_bus": is_on_bus
         }
+        
+        # 정류장 목록이 있으면 추가
+        station_names = context.get("station_names", [])
+        if station_names:
+            result["station_list"] = station_names
+        
+        return result
     
     elif tool_name == "get_current_location":
         lat = context.get("latitude")
