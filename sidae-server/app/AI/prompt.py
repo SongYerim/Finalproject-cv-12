@@ -137,7 +137,12 @@ class PromptManager:
             - 판단 과정이나 이유는 출력하지 않는다.
             """,
             "user": """
-            출력 규칙: json 형식으로 출력한다.
+            출력 규칙: 
+            {
+                "action": "call_tool | answer",
+                "tool_name": null,
+                "response": null
+            }
             """
         }
     }
