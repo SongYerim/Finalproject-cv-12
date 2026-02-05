@@ -1161,7 +1161,7 @@ class _ActionPanel extends StatelessWidget {
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: textColor,
-                              fontSize: 34,
+                              fontSize: 50,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.5,
                             ),
