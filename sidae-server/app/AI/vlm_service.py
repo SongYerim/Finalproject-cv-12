@@ -189,3 +189,140 @@ async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Request Error: {str(e)}")
+
+
+async def request_vlm_prediction_with_tools(
+    image_bytes: bytes,
+    mime_type: str,
+    user_prompt: str,
+    system_prompt: str = "",
+    tools: list = None,
+    context: dict = None,
+    max_tokens: int = 300,
+    max_tool_calls: int = 3
+):
+    """
+    Tool calling을 지원하는 VLM 호출.
+    VLM이 tool_calls를 반환하면 tool을 실행하고 결과를 다시 VLM에 전달.
+    
+    Args:
+        image_bytes: 이미지 바이트
+        mime_type: 이미지 MIME 타입
+        user_prompt: 사용자 질문
+        system_prompt: 시스템 프롬프트
+        tools: Tool 정의 목록
+        context: 앱에서 전달받은 컨텍스트
+        max_tokens: 최대 토큰 수
+        max_tool_calls: 최대 tool 호출 횟수 (무한 루프 방지)
+    
+    Returns:
+        [최종 응답 텍스트, resize_time, model_time]
+    """
+    from .tools import execute_tool
+    import json
+    
+    PROJECT_ID = os.getenv("PROJECT_ID")
+    REGION = os.getenv("REGION")
+    ENDPOINT_ID = os.getenv("ENDPOINT_ID")
+    if not all([PROJECT_ID, REGION, ENDPOINT_ID]):
+        raise HTTPException(status_code=500, detail="Server Configuration Error: Missing environment variables.")
+
+    url = f"https://{REGION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{REGION}/endpoints/{ENDPOINT_ID}:rawPredict"
+    
+    # 이미지 리사이징
+    resize_s = time.time()
+    optimized_image_bytes = resize_image_smart(image_bytes, min_pixels=147456, max_pixels=262144)
+    resize_e = time.time()
+    resize_time = (resize_e - resize_s) * 1000
+    
+    base64_image = base64.b64encode(optimized_image_bytes).decode("utf-8")
+    
+    # 메시지 초기화
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    
+    # 이미지 + 사용자 질문
+    messages.append({
+        "role": "user",
+        "content": [
+            {"type": "text", "text": user_prompt},
+            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
+        ]
+    })
+    
+    total_model_time = 0
+    
+    # Tool calling 루프
+    for i in range(max_tool_calls):
+        payload = {
+            "messages": messages,
+            "max_tokens": max_tokens
+        }
+        if tools and i == 0:  # 첫 번째 호출에서만 tools 전달
+            payload["tools"] = tools
+        
+        try:
+            token = get_access_token()
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "X-Goog-User-Project": PROJECT_ID
+            }
+            
+            model_s = time.time()
+            response = requests.post(url, json=payload, headers=headers)
+            model_e = time.time()
+            total_model_time += (model_e - model_s) * 1000
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=f"Vertex AI API Error: {response.text}")
+            
+            result = response.json()
+            choices = result.get("choices", [])
+            
+            if not choices:
+                return ["응답을 생성할 수 없습니다.", resize_time, total_model_time]
+            
+            choice = choices[0]
+            finish_reason = choice.get("finish_reason", "")
+            message = choice.get("message", {})
+            
+            # 최종 응답인 경우
+            if finish_reason == "stop":
+                content = message.get("content", "")
+                return [{"choices": [{"message": {"content": content}}]}, resize_time, total_model_time]
+            
+            # Tool 호출인 경우
+            tool_calls = message.get("tool_calls", [])
+            if tool_calls:
+                # Assistant 메시지 추가 (tool_calls 포함)
+                messages.append(message)
+                
+                # 각 Tool 실행 및 결과 추가
+                for tool_call in tool_calls:
+                    func = tool_call.get("function", {})
+                    tool_name = func.get("name", "")
+                    tool_call_id = tool_call.get("id", "")
+                    
+                    # Tool 실행
+                    tool_result = execute_tool(tool_name, context or {})
+                    
+                    # Tool 결과 메시지 추가
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": json.dumps(tool_result, ensure_ascii=False)
+                    })
+            else:
+                # Tool 호출도 아니고 stop도 아닌 경우 -> 현재 응답 반환
+                content = message.get("content", "응답을 생성할 수 없습니다.")
+                return [{"choices": [{"message": {"content": content}}]}, resize_time, total_model_time]
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Tool calling error: {str(e)}")
+    
+    # 최대 루프 도달
+    return [{"choices": [{"message": {"content": "응답을 생성할 수 없습니다."}}]}, resize_time, total_model_time]

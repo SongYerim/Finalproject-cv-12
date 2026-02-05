@@ -25,6 +25,7 @@ import '../utils/bus_utils.dart' as bus_utils;
 import '../utils/math_utils.dart' as math_utils;
 import '../constants.dart';
 import '../services/shared_event_channel.dart';
+import '../services/context_builder.dart';
 import '6.dart';
 import '7.dart';
 import '9.dart';
@@ -291,14 +292,16 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
               break;
             case 'result':
               // 최종 결과
-              if (mounted && _sttResultCompleter != null && !_sttResultCompleter!.isCompleted) {
+              if (mounted &&
+                  _sttResultCompleter != null &&
+                  !_sttResultCompleter!.isCompleted) {
                 setState(() {
                   _capturedVlmPrompt = data ?? '';
                   _sttText = data ?? '';
                   // _isListeningStt는 2초 후에 false로 설정
                 });
                 _sttResultCompleter!.complete(data ?? '');
-                
+
                 // 최종 결과를 2초간 표시한 후 오버레이 숨김
                 Future.delayed(const Duration(seconds: 2), () {
                   if (mounted) {
@@ -310,7 +313,9 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
               }
               break;
             case 'error':
-              if (mounted && _sttResultCompleter != null && !_sttResultCompleter!.isCompleted) {
+              if (mounted &&
+                  _sttResultCompleter != null &&
+                  !_sttResultCompleter!.isCompleted) {
                 setState(() {
                   _isListeningStt = false;
                   _sttText = '';
@@ -646,10 +651,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
                   ),
                 ),
                 // STT 진행 중 오버레이 (맨 앞에 표시)
-                SidaeOverlay(
-                  isListening: _isListeningStt,
-                  sttText: _sttText,
-                ),
+                SidaeOverlay(isListening: _isListeningStt, sttText: _sttText),
               ],
             ),
           ),
@@ -690,9 +692,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         if (!result.isGranted) {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.'),
-              ),
+              const SnackBar(content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.')),
             );
           }
           return;
@@ -771,7 +771,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       try {
         await _channel.invokeMethod('stopListening');
       } catch (_) {}
-      
+
       // 정상적인 경우는 case 'result'에서 2초 후에 _isListeningStt = false로 설정됨
       // 타임아웃의 경우는 onTimeout에서 처리됨
 
@@ -779,22 +779,28 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       if (sttResult.isEmpty) {
         print('⚠️ [5.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀');
         developer.log('⚠️ [5.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀', name: 'STT');
-        
+
         // Porcupine 재시작
         await Future.delayed(const Duration(milliseconds: 500));
         try {
           print('🔄 [5.dart] Porcupine 재시작 시작 (STT 실패 후)');
-          developer.log('🔄 [5.dart] Porcupine 재시작 시작 (STT 실패 후)', name: 'Porcupine');
-          
+          developer.log(
+            '🔄 [5.dart] Porcupine 재시작 시작 (STT 실패 후)',
+            name: 'Porcupine',
+          );
+
           _porcupineService.onKeywordDetected = (keyword) {
             if (keyword == '시대야' && mounted) {
               _captureAndUploadVLM(context);
             }
           };
-          
+
           await _porcupineService.ensureRunning();
           print('✅ [5.dart] Porcupine 재시작 완료 (STT 실패 후)');
-          developer.log('✅ [5.dart] Porcupine 재시작 완료 (STT 실패 후)', name: 'Porcupine');
+          developer.log(
+            '✅ [5.dart] Porcupine 재시작 완료 (STT 실패 후)',
+            name: 'Porcupine',
+          );
         } catch (e, stackTrace) {
           print('❌ [5.dart] Porcupine 재시작 실패 (STT 실패 후): $e');
           developer.log(
@@ -808,16 +814,25 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       }
 
       // STT 결과를 metadata에 포함하여 카메라 캡처 및 업로드
-      final metadata = <String, String>{
-        'source': 'vlm',
-        'mode': 'vlm',
-      };
-      
+      final metadata = <String, String>{'source': 'vlm', 'mode': 'vlm'};
+
       metadata['vlm_prompt'] = sttResult;
+
+      // VLM 프롬프트 주입을 위한 앱 컨텍스트 추가
+      final currentSegment = _tracker.getCurrentSegment();
+      final vlmContext = ContextBuilder.buildContextJson(
+        tracker: _tracker,
+        destinationName: widget.destinationName,
+        busNumber: currentSegment?.transportName,
+        destinationStop: currentSegment?.endStation,
+      );
+      metadata['context'] = vlmContext;
+
       print('📝 [5.dart] STT 결과를 vlm_prompt로 포함: $sttResult');
+      print('📝 [5.dart] Context: $vlmContext');
       developer.log(
-        '📝 [5.dart] STT 결과를 vlm_prompt로 포함: $sttResult',
-        name: 'STT',
+        '📝 [5.dart] VLM 요청: prompt=$sttResult, context=$vlmContext',
+        name: 'VLM',
       );
 
       // 카메라 캡처 및 업로드 (vlm_prompt 포함)
@@ -843,8 +858,8 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
             print('✅ [5.dart] JSON 파싱 성공: $jsonResponse');
             developer.log('✅ [5.dart] JSON 파싱 성공: $jsonResponse', name: 'VLM');
 
-          // description 추출 시도 (두 가지 형태 지원)
-          String? description;
+            // description 추출 시도 (두 가지 형태 지원)
+            String? description;
 
             // 형태 1: {"description": "..."}
             if (jsonResponse is Map && jsonResponse['description'] != null) {
@@ -870,7 +885,10 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
             if (description != null && description.isNotEmpty) {
               print('🔊 [5.dart] TTS 호출 시작: "$description"');
-              developer.log('🔊 [5.dart] TTS 호출 시작: "$description"', name: 'VLM');
+              developer.log(
+                '🔊 [5.dart] TTS 호출 시작: "$description"',
+                name: 'VLM',
+              );
               // TTS 초기화 보장
               await _ttsService.initialize();
               // TTS는 비동기로 시작 (카메라 종료를 기다리지 않음)
@@ -914,7 +932,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         try {
           print('🔄 [5.dart] Porcupine 재시작 시작');
           developer.log('🔄 [5.dart] Porcupine 재시작 시작', name: 'Porcupine');
-          
+
           // 콜백 재설정 (ensureRunning 전에)
           _porcupineService.onKeywordDetected = (keyword) {
             print('📞 [5.dart] onKeywordDetected 콜백 호출됨 (재시작 후): $keyword');
@@ -931,7 +949,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
               _captureAndUploadVLM(context);
             }
           };
-          
+
           await _porcupineService.ensureRunning();
           print('✅ [5.dart] Porcupine 재시작 완료');
           developer.log('✅ [5.dart] Porcupine 재시작 완료', name: 'Porcupine');
@@ -945,7 +963,6 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
           );
         }
       }
-
     } catch (e) {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
       if (mounted) {
