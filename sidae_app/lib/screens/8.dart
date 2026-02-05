@@ -12,6 +12,7 @@ import '../services/tts_service.dart';
 import '../services/porcupine_service.dart';
 import '../services/shared_event_channel.dart';
 import '../services/context_builder.dart';
+import '../services/navigation_service.dart';
 import '../widgets/sidae_overlay.dart';
 
 class BusOnlyScreen extends StatefulWidget {
@@ -260,6 +261,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       final currentSegment = tracker.getCurrentSegment();
       final vlmContext = ContextBuilder.buildContextJson(
         tracker: tracker,
+        navService: NavigationService.instance,
         busNumber: currentSegment?.transportName,
         destinationStop: currentSegment?.endStation,
       );
@@ -515,7 +517,10 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
               try {
                 _lastImageBytes = base64Decode(imageBase64);
               } catch (e) {
-                developer.log('❌ [8.dart] Base64 디코딩 실패: $e', name: 'BusAction');
+                developer.log(
+                  '❌ [8.dart] Base64 디코딩 실패: $e',
+                  name: 'BusAction',
+                );
                 print('❌ [8.dart] Base64 디코딩 실패: $e');
                 _lastImageBytes = null;
               }

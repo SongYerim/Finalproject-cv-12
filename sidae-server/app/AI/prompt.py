@@ -124,7 +124,7 @@ class PromptManager:
             """
         },
         "vlm_tool_check": {
-            "max_tokens": 50,
+            "max_tokens": 300,
             "system": """
 너는 사용자의 질문을 분석해 도구(Tool) 필요 여부를 판단하는 분류기다.
 
@@ -137,7 +137,7 @@ class PromptManager:
             "user": "" 
         },
         "vlm_assistant": {
-            "max_tokens": 300,
+            "max_tokens": 400,
             "system": """
 너는 시각장애인을 위한 대중교통 네비게이션 앱 '시대(Sidae)'의 AI 어시스턴트야.
 

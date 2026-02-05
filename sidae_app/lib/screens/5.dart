@@ -826,6 +826,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       final currentSegment = _tracker.getCurrentSegment();
       final vlmContext = ContextBuilder.buildContextJson(
         tracker: _tracker,
+        navService: _navService,
         destinationName: widget.destinationName,
         busNumber: currentSegment?.transportName,
         destinationStop: currentSegment?.endStation,
