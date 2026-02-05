@@ -2,7 +2,8 @@ from app.AI.prompt import PromptManager
 import logging
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from app.AI.vlm_service import request_vlm_prediction
+from app.AI.vlm_service import request_vlm_prediction, request_vlm_prediction_with_tools
+from app.AI.tools import NAVIGATION_TOOLS
 import json
 
 # 로거 설정 (Cloud Run 로그에서 확인 용이)
@@ -63,27 +64,32 @@ async def identify_bus(
         logger.info(f"Vertex AI 요청 시작: 파일명={file.filename}, 크기={len(image_bytes)} bytes")
         
         if vlm_prompt and vlm_prompt.strip() and vlm_prompt.strip().lower() != "null":
-            # VLM 모드: 프롬프트 주입 방식 (Option A)
-            # context가 있으면 프롬프트에 컨텍스트 정보 포함
-            if context:
-                context_dict = json.loads(context)
-                logger.info(f"VLM with Context 요청: context={context_dict}")
-                
-                # 컨텍스트를 사람이 읽기 쉬운 형태로 변환
-                context_text = _build_context_text(context_dict)
-                
-                # 컨텍스트 + 사용자 질문 + 출력 형식
-                vlm_prompt_with_context = f"{context_text}\n\n[사용자 질문]\n{vlm_prompt}\n\n출력 형식 (반드시 이 형식을 따르세요):{{\"description\": }}"
-            else:
-                vlm_prompt_with_context = vlm_prompt + ' 출력 형식 (반드시 이 형식을 따르세요):{"description": }'
+            # VLM 모드: Function Calling 방식 (Option B - Agentic)
+            context_dict = json.loads(context) if context else {}
             
-            result_ = await request_vlm_prediction(
-                image_bytes=image_bytes, 
-                mime_type=file.content_type,
-                system_prompt=system_instruction,
-                user_prompt=vlm_prompt_with_context,
-                max_tokens=token_limit
-            )
+            # Tool calling 활성화된 경우 (context가 있을 때)
+            if context:
+                logger.info(f"VLM with Tools 요청: context={context_dict}")
+                vlm_prompt_with_format = vlm_prompt + ' 출력 형식 (반드시 이 형식을 따르세요):{"description": }'
+                result_ = await request_vlm_prediction_with_tools(
+                    image_bytes=image_bytes, 
+                    mime_type=file.content_type,
+                    system_prompt=system_instruction,
+                    user_prompt=vlm_prompt_with_format,
+                    tools=NAVIGATION_TOOLS,
+                    context=context_dict,
+                    max_tokens=token_limit
+                )
+            else:
+                # 기존 방식 (context 없는 경우)
+                vlm_prompt += ' 출력 형식 (반드시 이 형식을 따르세요):{"description": }'
+                result_ = await request_vlm_prediction(
+                    image_bytes=image_bytes, 
+                    mime_type=file.content_type,
+                    system_prompt=system_instruction,
+                    user_prompt=vlm_prompt,
+                    max_tokens=token_limit
+                )
 
         else:
             result_ = await request_vlm_prediction(
