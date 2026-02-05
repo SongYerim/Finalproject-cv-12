@@ -322,7 +322,6 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         val jpegQuality = call.argument<Int>("jpegQuality") ?: 90
         val useFront = call.argument<Boolean>("useFront") ?: false
         val metadata = call.argument<Map<String, String>>("metadata") ?: emptyMap()
-        val keepFile = call.argument<Boolean>("keepFile") ?: false
 
         // 기존 scope가 있으면 취소
         captureUploadScope?.cancel()
@@ -383,47 +382,50 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                     return@launch
                 }
 
-                val photoFile = File(cacheDir, "bus_capture_${System.currentTimeMillis()}.jpg")
-                val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-
+                // 메모리에서 직접 캡처 및 업로드
                 imageCapture.takePicture(
-                    outputOptions,
                     cameraExecutor,
-                    object : ImageCapture.OnImageSavedCallback {
+                    object : ImageCapture.OnImageCapturedCallback() {
                         override fun onError(exception: ImageCaptureException) {
                             Log.e(TAG, "이미지 캡처 실패", exception)
-                    mainHandler.post {
+                            mainHandler.post {
                                 result.error("CAPTURE_ERROR", exception.message, null)
                             }
                         }
 
-                        override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                        override fun onCaptureSuccess(image: ImageProxy) {
                             CoroutineScope(Dispatchers.IO).launch {
                                 try {
-                                    val uploadResult = uploadImageFile(uploadUrl, photoFile, metadata)
+                                    // ImageProxy를 JPEG ByteArray로 변환
+                                    val jpegBytes = imageProxyToJpegBytes(image)
+                                    
+                                    // 메모리에서 직접 업로드 (파일 저장 없음)
+                                    val uploadResult = uploadImageBytes(uploadUrl, jpegBytes, metadata)
+                                    
                                     withContext(Dispatchers.Main) {
                                         result.success(
                                             mapOf(
                                                 "success" to uploadResult.success,
                                                 "statusCode" to uploadResult.statusCode,
-                                                "body" to uploadResult.body,
-                                                "localPath" to photoFile.absolutePath
+                                                "body" to uploadResult.body
                                             )
                                         )
                                     }
-                } catch (e: Exception) {
+                                } catch (e: Exception) {
                                     Log.e(TAG, "업로드 실패", e)
                                     withContext(Dispatchers.Main) {
                                         result.success(
                                             mapOf(
                                                 "success" to false,
                                                 "statusCode" to -1,
-                                                "body" to (e.message ?: ""),
-                                                "localPath" to photoFile.absolutePath
+                                                "body" to (e.message ?: "")
                                             )
                                         )
                                     }
                                 } finally {
+                                    // ImageProxy 닫기 (중요: 리소스 해제)
+                                    image.close()
+                                    
                                     // 업로드 완료 후 즉시 카메라 해제 (메인 스레드에서 실행)
                                     withContext(Dispatchers.Main) {
                                         try {
@@ -434,9 +436,6 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                                             Log.e(TAG, "카메라 해제 실패: ${e.message}", e)
                                             captureUploadProvider = null
                                         }
-                                    }
-                                    if (!keepFile && photoFile.exists()) {
-                                        photoFile.delete()
                                     }
                                 }
                             }
@@ -460,24 +459,32 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         val body: String
     )
 
-    private fun uploadImageFile(
+    /**
+     * ImageProxy를 JPEG ByteArray로 변환
+     * ImageCapture는 항상 JPEG를 반환하므로 버퍼에서 직접 읽습니다.
+     */
+    private fun imageProxyToJpegBytes(image: ImageProxy): ByteArray {
+        val buffer = image.planes[0].buffer
+        val bytes = ByteArray(buffer.remaining())
+        buffer.get(bytes)
+        return bytes
+    }
+
+    /**
+     * ByteArray를 직접 업로드 (파일 저장 없이)
+     */
+    private fun uploadImageBytes(
         uploadUrl: String,
-        photoFile: File,
+        imageBytes: ByteArray,
         metadata: Map<String, String>
     ): UploadResult {
-        // 파일 존재 및 크기 확인
-        if (!photoFile.exists()) {
-            Log.e(TAG, "❌ 파일이 존재하지 않음: ${photoFile.absolutePath}")
-            return UploadResult(false, -1, "File does not exist: ${photoFile.absolutePath}")
+        val imageSize = imageBytes.size
+        if (imageSize == 0) {
+            Log.e(TAG, "❌ 이미지 데이터가 비어있음")
+            return UploadResult(false, -1, "Image data is empty")
         }
         
-        val fileSize = photoFile.length()
-        if (fileSize == 0L) {
-            Log.e(TAG, "❌ 파일 크기가 0: ${photoFile.absolutePath}")
-            return UploadResult(false, -1, "File is empty: ${photoFile.absolutePath}")
-        }
-        
-        Log.d(TAG, "📤 파일 업로드 시작: ${photoFile.name}, 크기: $fileSize bytes")
+        Log.d(TAG, "📤 메모리에서 직접 업로드 시작, 크기: $imageSize bytes")
         Log.d(TAG, "📤 업로드 URL: $uploadUrl")
         Log.d(TAG, "📤 메타데이터: $metadata")
         
@@ -495,6 +502,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
         }
 
         DataOutputStream(connection.outputStream).use { outputStream ->
+            // 메타데이터 전송
             for ((key, value) in metadata) {
                 outputStream.writeBytes(twoHyphens + boundary + lineEnd)
                 outputStream.writeBytes("Content-Disposition: form-data; name=\"$key\"$lineEnd")
@@ -505,6 +513,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 outputStream.writeBytes(lineEnd)
             }
 
+            // 이미지 데이터 전송
             outputStream.writeBytes(twoHyphens + boundary + lineEnd)
             outputStream.writeBytes(
                 "Content-Disposition: form-data; name=\"file\"; filename=\"capture.jpg\"$lineEnd"
@@ -512,19 +521,10 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
             outputStream.writeBytes("Content-Type: image/jpeg$lineEnd")
             outputStream.writeBytes(lineEnd)
 
-            var totalBytesWritten = 0L
-            FileInputStream(photoFile).use { fileInput ->
-                BufferedInputStream(fileInput).use { bufferedInput ->
-                    val buffer = ByteArray(4096)
-                    var bytesRead: Int
-                    while (bufferedInput.read(buffer).also { bytesRead = it } != -1) {
-                        outputStream.write(buffer, 0, bytesRead)
-                        totalBytesWritten += bytesRead
-                    }
-                }
-            }
+            // ByteArray를 직접 전송
+            outputStream.write(imageBytes)
             
-            Log.d(TAG, "✅ 파일 데이터 전송 완료: $totalBytesWritten bytes")
+            Log.d(TAG, "✅ 이미지 데이터 전송 완료: $imageSize bytes")
 
             outputStream.writeBytes(lineEnd)
             outputStream.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd)

@@ -775,27 +775,57 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       // 정상적인 경우는 case 'result'에서 2초 후에 _isListeningStt = false로 설정됨
       // 타임아웃의 경우는 onTimeout에서 처리됨
 
+      // STT 실패 시 카메라 캡처하지 않고 종료
+      if (sttResult.isEmpty) {
+        print('⚠️ [5.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀');
+        developer.log('⚠️ [5.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀', name: 'STT');
+        
+        // Porcupine 재시작
+        await Future.delayed(const Duration(milliseconds: 500));
+        try {
+          print('🔄 [5.dart] Porcupine 재시작 시작 (STT 실패 후)');
+          developer.log('🔄 [5.dart] Porcupine 재시작 시작 (STT 실패 후)', name: 'Porcupine');
+          
+          _porcupineService.onKeywordDetected = (keyword) {
+            if (keyword == '시대야' && mounted) {
+              _captureAndUploadVLM(context);
+            }
+          };
+          
+          await _porcupineService.ensureRunning();
+          print('✅ [5.dart] Porcupine 재시작 완료 (STT 실패 후)');
+          developer.log('✅ [5.dart] Porcupine 재시작 완료 (STT 실패 후)', name: 'Porcupine');
+        } catch (e, stackTrace) {
+          print('❌ [5.dart] Porcupine 재시작 실패 (STT 실패 후): $e');
+          developer.log(
+            '❌ [5.dart] Porcupine 재시작 실패 (STT 실패 후): $e',
+            name: 'Porcupine',
+            error: e,
+            stackTrace: stackTrace,
+          );
+        }
+        return;
+      }
+
       // STT 결과를 metadata에 포함하여 카메라 캡처 및 업로드
       final metadata = <String, String>{
         'source': 'vlm',
         'mode': 'vlm',
       };
       
-      if (sttResult.isNotEmpty) {
-        metadata['vlm_prompt'] = sttResult;
-        print('📝 [5.dart] STT 결과를 vlm_prompt로 포함: $sttResult');
-        developer.log(
-          '📝 [5.dart] STT 결과를 vlm_prompt로 포함: $sttResult',
-          name: 'STT',
-        );
-      }
+      metadata['vlm_prompt'] = sttResult;
+      print('📝 [5.dart] STT 결과를 vlm_prompt로 포함: $sttResult');
+      developer.log(
+        '📝 [5.dart] STT 결과를 vlm_prompt로 포함: $sttResult',
+        name: 'STT',
+      );
 
       // 카메라 캡처 및 업로드 (vlm_prompt 포함)
+      // 메모리에서 직접 전송 (파일 저장 없음)
       final result = await _channel.invokeMethod('captureAndUploadImage', {
         'uploadUrl': uploadUrl,
         'jpegQuality': 90,
         'metadata': metadata,
-        'keepFile': true,
       });
 
       if (result is Map) {
