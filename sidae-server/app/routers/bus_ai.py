@@ -11,47 +11,6 @@ logger = logging.getLogger("uvicorn")
 
 router = APIRouter(tags=["Bus AI"])
 
-
-def _format_tool_result(tool_name: str, result: dict) -> str:
-    """
-    Tool 실행 결과를 시각장애인이 듣기 좋은 자연어로 변환
-    """
-    if "error" in result:
-        return f"정보를 가져오는데 실패했어요. {result.get('error', '')}"
-    
-    if "message" in result:
-        return result["message"]
-    
-    if tool_name == "get_navigation_context":
-        dest = result.get("destination", "목적지")
-        progress = result.get("progress", "0%")
-        step = result.get("current_step", "")
-        return f"현재 {dest}까지 {progress} 진행했어요. {step}"
-    
-    elif tool_name == "get_target_bus_info":
-        bus = result.get("bus_number", "버스")
-        dest_stop = result.get("destination_stop", "")
-        remaining = result.get("remaining_stops", "")
-        is_on = result.get("is_on_bus", False)
-        
-        if is_on:
-            return f"{bus}번 버스 탑승 중이에요. {dest_stop}까지 {remaining}개 정류장 남았어요."
-        else:
-            return f"{bus}번 버스를 타야 해요. {dest_stop}에서 내리면 돼요."
-    
-    elif tool_name == "get_current_location":
-        addr = result.get("address", "현재 위치")
-        return f"현재 위치는 {addr} 근처예요."
-    
-    elif tool_name == "get_remaining_distance":
-        dest = result.get("current_destination", "목적지")
-        dist = result.get("remaining_distance", "")
-        time_fmt = result.get("remaining_time_formatted", "")
-        return f"{dest}까지 약 {dist}, {time_fmt} 정도 남았어요."
-    
-    # 기본: JSON을 문자열로 반환
-    return str(result)
-
 @router.post("/bus-recognition")
 async def identify_bus(
     file: UploadFile = File(...), 
@@ -125,54 +84,15 @@ async def identify_bus(
             logger.error(f"유효하지 않은 응답 포맷: {result}")
             raw_text_content = "인식 실패 (응답 없음)"
 
-        # VLM with Tools 모드: JSON 응답 후처리
+        # VLM with Tools 모드: 자연어 응답을 바로 반환
         if vlm_prompt and vlm_prompt.strip() and vlm_prompt.strip().lower() != "null" and context:
-            from app.AI.tools import execute_tool
-            
-            logger.info(f"VLM 원본 응답: {raw_text_content}")
-            
-            try:
-                # JSON 파싱 (마크다운 코드블록 제거)
-                clean_text = raw_text_content.replace("```json", "").replace("```", "").strip()
-                vlm_response = json.loads(clean_text)
-                
-                action = vlm_response.get("action", "answer")
-                tool_name = vlm_response.get("tool_name")
-                response_text = vlm_response.get("response")
-                
-                logger.info(f"VLM 파싱 결과: action={action}, tool_name={tool_name}")
-                
-                # action이 "call_tool"인 경우: Tool 실행 후 결과 반환
-                if action == "call_tool" and tool_name:
-                    tool_result = execute_tool(tool_name, context_dict)
-                    logger.info(f"Tool 실행 결과: {tool_result}")
-                    
-                    # Tool 결과를 자연어로 변환해서 반환
-                    des = _format_tool_result(tool_name, tool_result)
-                    return {
-                        "des": des,
-                        "tool_name": tool_name,
-                        "tool_result": tool_result,
-                        "resize_time": resize_time,
-                        "model_time": model_time
-                    }
-                
-                # action이 "answer"인 경우: 응답 텍스트 반환
-                else:
-                    return {
-                        "des": response_text or raw_text_content,
-                        "resize_time": resize_time,
-                        "model_time": model_time
-                    }
-                    
-            except json.JSONDecodeError:
-                # JSON 파싱 실패 시 원본 텍스트 반환
-                logger.warning(f"VLM JSON 파싱 실패. 원본 반환: {raw_text_content}")
-                return {
-                    "des": raw_text_content,
-                    "resize_time": resize_time,
-                    "model_time": model_time
-                }
+            # Native Tool Calling: vlm_service가 도구 실행 후 최종 텍스트를 반환함
+            logger.info(f"VLM 최종 응답: {raw_text_content}")
+            return {
+                "des": raw_text_content,
+                "resize_time": resize_time,
+                "model_time": model_time
+            }
 
         # 기존 모드 (bell, tag 등): JSON 파싱 필요
         final_data = {}
