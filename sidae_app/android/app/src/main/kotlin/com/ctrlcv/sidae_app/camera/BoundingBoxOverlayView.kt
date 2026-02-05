@@ -107,6 +107,10 @@ class BoundingBoxOverlayView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         
+        // 사용자가 바운딩 박스 표시 제거를 요청함 (UI 클린업)
+        // 로직은 유지하되 그리기는 수행하지 않음.
+        
+        /* 
         val viewWidth = width.toFloat()
         val viewHeight = height.toFloat()
         
@@ -171,6 +175,7 @@ class BoundingBoxOverlayView(context: Context) : View(context) {
             // 텍스트 그리기
             canvas.drawText(labelText, x1 + 8, y1 - 8, textPaint)
         }
+        */
     }
     
     /**
