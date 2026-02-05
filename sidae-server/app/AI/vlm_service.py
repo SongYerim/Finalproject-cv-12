@@ -206,8 +206,12 @@ async def request_vlm_prediction_with_tools(
     max_tool_calls: int = 3
 ):
     """
-    Tool calling을 지원하는 VLM 호출.
-    VLM이 tool_calls를 반환하면 tool을 실행하고 결과를 다시 VLM에 전달.
+    Tool calling을 지원하는 VLM 호출 (최적화 버전).
+    
+    흐름:
+    1. 첫 호출: 텍스트만 + tools (이미지 X) → Tool 필요 여부 체크
+    2-A. Tool 필요 → Tool 실행 → 두 번째 호출: 텍스트 + tool 결과 (이미지 X)
+    2-B. Tool 불필요 → 두 번째 호출: 텍스트 + 이미지 (직접 답변)
     
     Args:
         image_bytes: 이미지 바이트
@@ -233,7 +237,7 @@ async def request_vlm_prediction_with_tools(
 
     url = f"https://{REGION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{REGION}/endpoints/{ENDPOINT_ID}:rawPredict"
     
-    # 이미지 리사이징
+    # 이미지 리사이징 (나중에 필요할 때 사용)
     resize_s = time.time()
     optimized_image_bytes = resize_image_smart(image_bytes, min_pixels=147456, max_pixels=262144)
     resize_e = time.time()
@@ -241,21 +245,19 @@ async def request_vlm_prediction_with_tools(
     
     base64_image = base64.b64encode(optimized_image_bytes).decode("utf-8")
     
-    # 메시지 초기화
+    # 메시지 초기화 (첫 호출: 텍스트만, 이미지 X)
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     
-    # 이미지 + 사용자 질문
+    # 첫 호출은 텍스트만 (이미지 없음)
     messages.append({
         "role": "user",
-        "content": [
-            {"type": "text", "text": user_prompt},
-            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
-        ]
+        "content": user_prompt  # 텍스트만
     })
     
     total_model_time = 0
+    tool_was_used = False  # Tool 사용 여부 추적
     
     # Tool calling 루프
     for i in range(max_tool_calls):
@@ -263,8 +265,8 @@ async def request_vlm_prediction_with_tools(
             "messages": messages,
             "max_tokens": max_tokens
         }
-        # 모든 턴에서 tools 정보 전달 (OpenAI API 표준)
-        if tools:
+        # 첫 번째 호출에서만 tools 전달
+        if tools and i == 0:
             payload["tools"] = tools
         
         try:
@@ -293,9 +295,10 @@ async def request_vlm_prediction_with_tools(
             finish_reason = choice.get("finish_reason", "")
             message = choice.get("message", {})
             
-            # Tool 호출인 경우 (finish_reason이 "tool_calls" 또는 tool_calls 필드가 있는 경우)
+            # Tool 호출인 경우
             tool_calls = message.get("tool_calls", [])
             if tool_calls or finish_reason == "tool_calls":
+                tool_was_used = True
                 logger.info(f"Tool 호출 감지: {len(tool_calls)}개 도구")
                 # Assistant 메시지 추가 (tool_calls 포함)
                 messages.append(message)
@@ -307,7 +310,6 @@ async def request_vlm_prediction_with_tools(
                     tool_call_id = tool_call.get("id", "")
                     
                     logger.info(f"Tool 실행: {tool_name}")
-                    # Tool 실행
                     tool_result = execute_tool(tool_name, context or {})
                     logger.info(f"Tool 결과: {tool_result}")
                     
@@ -317,15 +319,30 @@ async def request_vlm_prediction_with_tools(
                         "tool_call_id": tool_call_id,
                         "content": json.dumps(tool_result, ensure_ascii=False)
                     })
-                # 다음 루프에서 모델이 결과를 해석하도록 계속 진행
+                # 다음 루프에서 모델이 결과를 해석하도록 계속 진행 (이미지 없이)
                 continue
             
-            # 최종 응답인 경우 (stop 또는 tool 호출 없이 content만 있는 경우)
+            # 첫 호출에서 Tool 사용 안 함 → 이미지 포함하여 재호출
+            if i == 0 and not tool_was_used:
+                logger.info("Tool 미사용 → 이미지 포함하여 재호출")
+                # 기존 user 메시지를 이미지 포함 버전으로 교체
+                messages[-1] = {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
+                    ]
+                }
+                # tools 없이 다시 호출
+                continue
+            
+            # 최종 응답인 경우
             content = message.get("content", "")
             if content or finish_reason == "stop":
+                logger.info(f"최종 응답: {content[:100]}...")
                 return [{"choices": [{"message": {"content": content}}]}, resize_time, total_model_time]
             
-            # 예상치 못한 상황 - 현재 응답 반환
+            # 예상치 못한 상황
             return [{"choices": [{"message": {"content": content or "응답을 생성할 수 없습니다."}}]}, resize_time, total_model_time]
                 
         except HTTPException:
