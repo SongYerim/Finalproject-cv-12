@@ -96,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen>
       Permission.microphone,
       Permission.speech, // iOS 필수 권한
       Permission.location,
+      Permission.camera,
     ].request();
   }
 
@@ -405,12 +406,16 @@ class _HomeScreenState extends State<HomeScreen>
       child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         // 화면 아무 곳이나 누르면 듣기 시작
-        body: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () {
-            if (_step == SttStep.ready) _listen();
-          },
-          child: SafeArea(child: _buildByStep()),
+        body: Semantics(
+          label: _step == SttStep.ready ? '이 버튼을 눌러 목적지를 말씀해주세요.' : null,
+          button: _step == SttStep.ready,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () {
+              if (_step == SttStep.ready) _listen();
+            },
+            child: SafeArea(child: _buildByStep()),
+          ),
         ),
       ),
     );

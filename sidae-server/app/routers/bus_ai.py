@@ -2,7 +2,8 @@ from app.AI.prompt import PromptManager
 import logging
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from app.AI.vlm_service import request_vlm_prediction
+from app.AI.vlm_service import request_vlm_prediction, request_vlm_prediction_with_tools
+from app.AI.tools import NAVIGATION_TOOLS
 import json
 
 # 로거 설정 (Cloud Run 로그에서 확인 용이)
@@ -11,7 +12,12 @@ logger = logging.getLogger("uvicorn")
 router = APIRouter(tags=["Bus AI"])
 
 @router.post("/bus-recognition")
-async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_prompt: Optional[str] = Form(None)):
+async def identify_bus(
+    file: UploadFile = File(...), 
+    mode: str = Form(...), 
+    vlm_prompt: Optional[str] = Form(None),
+    context: Optional[str] = Form(None)  # 앱 컨텍스트 (JSON 문자열)
+):
     # 1. 파일 확장자 검증
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="이미지 파일만 업로드 가능합니다.")
@@ -27,15 +33,40 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
         # 3. Vertex AI 엔드포인트 호출
         logger.info(f"Vertex AI 요청 시작: 파일명={file.filename}, 크기={len(image_bytes)} bytes")
         
-        if vlm_prompt:
-            vlm_prompt += vlm_prompt + '출력 형식 (반드시 이 형식을 따르세요):{"description": }'
-            result_ = await request_vlm_prediction(
-                image_bytes=image_bytes, 
-                mime_type=file.content_type,
-                system_prompt=system_instruction,
-                user_prompt=vlm_prompt,
-                max_tokens = token_limit
-            )
+        if vlm_prompt and vlm_prompt.strip() and vlm_prompt.strip().lower() != "null":
+            # VLM 모드: Function Calling 방식 (Option B - Agentic)
+            context_dict = json.loads(context) if context else {}
+            
+            # Tool calling 활성화된 경우 (context가 있을 때)
+            if context:
+                logger.info(f"VLM with Tools 요청: context={context_dict}")
+                
+                # 2개의 시스템 프롬프트 로드
+                prompt_tool_check = PromptManager.get_prompt("vlm_tool_check")
+                prompt_assistant = PromptManager.get_prompt("vlm_assistant")
+                
+                vlm_prompt_with_format = vlm_prompt 
+                
+                result_ = await request_vlm_prediction_with_tools(
+                    image_bytes=image_bytes, 
+                    mime_type=file.content_type,
+                    user_prompt=vlm_prompt_with_format,
+                    system_prompt_tool_check=prompt_tool_check.get("system", ""),
+                    system_prompt_assistant=prompt_assistant.get("system", ""),
+                    tools=NAVIGATION_TOOLS,
+                    context=context_dict,
+                    max_tokens=token_limit
+                )
+            else:
+                # 기존 방식 (context 없는 경우 - 예: 일반 VLM 질문)
+                vlm_prompt += ' 출력 형식 (반드시 이 형식을 따르세요):{"description": }'
+                result_ = await request_vlm_prediction(
+                    image_bytes=image_bytes, 
+                    mime_type=file.content_type,
+                    system_prompt=system_instruction,
+                    user_prompt=vlm_prompt,
+                    max_tokens=token_limit
+                )
 
         else:
             result_ = await request_vlm_prediction(
@@ -60,26 +91,37 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
             logger.error(f"유효하지 않은 응답 포맷: {result}")
             raw_text_content = "인식 실패 (응답 없음)"
 
+        # VLM with Tools 모드: 자연어 응답을 바로 반환
+        if vlm_prompt and vlm_prompt.strip() and vlm_prompt.strip().lower() != "null" and context:
+            # Native Tool Calling: vlm_service가 도구 실행 후 최종 텍스트를 반환함
+            logger.info(f"VLM 최종 응답: {raw_text_content}")
+            return {
+                "des": raw_text_content,
+                "resize_time": resize_time,
+                "model_time": model_time
+            }
+
+        # 기존 모드 (bell, tag 등): JSON 파싱 필요
         final_data = {}
         
         try:
             # 1. 마크다운 코드블록 제거 (```json ... ```)
             clean_text = raw_text_content.replace("```json", "").replace("```", "").strip()
-            
+            logger.info(f"clean_text: {clean_text}")   
             # 2. 문자열을 진짜 딕셔너리(객체)로 변환
             final_data = json.loads(clean_text)
-            
+            logger.info(f"final_data: {final_data}")   
         except json.JSONDecodeError:
             # 파싱 실패 시 (AI가 이상한 텍스트를 줬을 때)
             logger.warning(f"JSON 파싱 실패. 원본 텍스트 반환. Raw: {raw_text_content}")
             return {
-                "des": "AI 응답을 해석할 수 없습니다.",
-                "reason": "데이터 형식 오류", 
-                "raw_text": raw_text_content, # 디버깅용: AI가 뭐라고 했는지 확인
+                "des": raw_text_content, # 오류 메시지 대신 원본 텍스트를 그대로 반환
+                "reason": "데이터 형식 오류 (Raw Text Fallback)", 
+                "raw_text": raw_text_content, 
                 "resize_time": resize_time, 
                 "model_time": model_time
             }
-        """
+        
         if mode in ['bell', 'tag']:
             pos = final_data.get("selected_area", " ")
             reason = final_data.get("reason", "이유 없음")
@@ -100,7 +142,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
             else:
                 des = f'{mode} 위치는 {pos}에 있습니다.'
             return {"des": des, "resize_time": resize_time, "model_time": model_time}
-        """
+        
         
         return {
             "result": final_data, "resize_time": resize_time, "model_time": model_time

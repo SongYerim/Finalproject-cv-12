@@ -10,6 +10,24 @@ import io
 import time
 import cv2
 import numpy as np
+import logging
+
+# 로거 설정
+logger = logging.getLogger("uvicorn")
+
+# 256x256 검정 플레이스홀더 이미지 (Tool 체크용)
+_PLACEHOLDER_IMAGE_BASE64 = None
+
+def get_placeholder_image_base64():
+    """256x256 검정 이미지를 Base64로 반환 (캐싱)"""
+    global _PLACEHOLDER_IMAGE_BASE64
+    if _PLACEHOLDER_IMAGE_BASE64 is None:
+        # 256x256 검정 이미지 생성
+        black_image = Image.new('RGB', (256, 256), color=(0, 0, 0))
+        buffer = io.BytesIO()
+        black_image.save(buffer, format='JPEG', quality=50)
+        _PLACEHOLDER_IMAGE_BASE64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+    return _PLACEHOLDER_IMAGE_BASE64
 
 def resize_image_smart(
     image_bytes: bytes, 
@@ -51,7 +69,7 @@ def resize_image_smart(
 
         # 4. 이미지 인코딩 (다시 Bytes로)
         # quality: 85 (Pillow와 동일하게 설정)
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 85]
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
         success, encoded_img = cv2.imencode(".jpg", img, encode_param)
         
         if success:
@@ -189,3 +207,180 @@ async def request_vlm_prediction(image_bytes: bytes, mime_type: str, user_prompt
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Request Error: {str(e)}")
+
+
+async def request_vlm_prediction_with_tools(
+    image_bytes: bytes,
+    mime_type: str,
+    user_prompt: str,
+    system_prompt_tool_check: str, # 첫 호출용 (Tool 판단)
+    system_prompt_assistant: str,  # 이후 호출용 (답변 생성)
+    tools: list = None,
+    context: dict = None,
+    max_tokens: int = 300,
+    max_tool_calls: int = 3
+):
+    """
+    Tool calling을 지원하는 VLM 호출 (최적화 버전).
+    
+    흐름:
+    1. 첫 호출: 검정 이미지 + system_prompt_tool_check + tools → Tool 필요 여부 체크
+    2-A. Tool 필요 → Tool 실행 → 두 번째 호출: 검정 이미지(그대로 유지) + system_prompt_assistant + tool 결과
+    2-B. Tool 불필요 → 두 번째 호출: 실제 이미지 + system_prompt_assistant (직접 답변)
+    
+    Args:
+        image_bytes: 이미지 바이트
+        mime_type: 이미지 MIME 타입
+        user_prompt: 사용자 질문
+        system_prompt_tool_check: 도구 사용 판단용 짧은 시스템 프롬프트
+        system_prompt_assistant: 최종 답변용 상세 시스템 프롬프트
+        tools: Tool 정의 목록
+        context: 앱에서 전달받은 컨텍스트
+        max_tokens: 최대 토큰 수
+        max_tool_calls: 최대 tool 호출 횟수 (무한 루프 방지)
+    
+    Returns:
+        [최종 응답 텍스트, resize_time, model_time]
+    """
+    from .tools import execute_tool
+    import json
+    
+    PROJECT_ID = os.getenv("PROJECT_ID")
+    REGION = os.getenv("REGION")
+    ENDPOINT_ID = os.getenv("ENDPOINT_ID")
+    if not all([PROJECT_ID, REGION, ENDPOINT_ID]):
+        raise HTTPException(status_code=500, detail="Server Configuration Error: Missing environment variables.")
+
+    url = f"https://{REGION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{REGION}/endpoints/{ENDPOINT_ID}:rawPredict"
+    
+    # 이미지 리사이징 (실제 이미지가 필요할 때만 인코딩하면 좋겠지만, 미리 준비해둠)
+    resize_s = time.time()
+    optimized_image_bytes = resize_image_smart(image_bytes, min_pixels=147456, max_pixels=262144)
+    resize_e = time.time()
+    resize_time = (resize_e - resize_s) * 1000
+    
+    base64_image = base64.b64encode(optimized_image_bytes).decode("utf-8")
+    
+    # 메시지 초기화
+    messages = []
+    
+    # 첫 호출: Tool Check 프롬프트
+    if system_prompt_tool_check:
+        messages.append({"role": "system", "content": system_prompt_tool_check})
+    
+    # 첫 호출: 플레이스홀더 이미지 + 텍스트 (Tool 체크용, 토큰 절약)
+    placeholder_b64 = get_placeholder_image_base64()
+    messages.append({
+        "role": "user",
+        "content": [
+            {"type": "text", "text": user_prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{placeholder_b64}"}}
+        ]
+    })
+    
+    total_model_time = 0
+    tool_was_used = False  # Tool 사용 여부 추적
+    
+    # Tool calling 루프
+    for i in range(max_tool_calls):
+        payload = {
+            "messages": messages,
+            "max_tokens": max_tokens
+        }
+        # 첫 번째 호출에서만 tools 전달
+        if tools and i == 0:
+            payload["tools"] = tools
+            # 첫 호출은 tool check용이므로 max_tokens 줄임 (선택사항, 일단 파라미터 따름)
+            
+        try:
+            token = get_access_token()
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "X-Goog-User-Project": PROJECT_ID
+            }
+            
+            model_s = time.time()
+            response = requests.post(url, json=payload, headers=headers)
+            model_e = time.time()
+            total_model_time += (model_e - model_s) * 1000
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=f"Vertex AI API Error: {response.text}")
+            
+            result = response.json()
+            choices = result.get("choices", [])
+            
+            if not choices:
+                return [{"choices": [{"message": {"content": "응답을 생성할 수 없습니다."}}]}, resize_time, total_model_time]
+            
+            choice = choices[0]
+            finish_reason = choice.get("finish_reason", "")
+            message = choice.get("message", {})
+            
+            # Tool 호출인 경우
+            tool_calls = message.get("tool_calls", [])
+            if tool_calls or finish_reason == "tool_calls":
+                tool_was_used = True
+                logger.info(f"Tool 호출 감지: {len(tool_calls)}개 도구")
+                
+                # 시스템 프롬프트 교체 (Assistant 모드)
+                if i == 0:
+                     messages[0] = {"role": "system", "content": system_prompt_assistant}
+                
+                # Assistant 메시지 추가 (tool_calls 포함)
+                messages.append(message)
+                
+                # 각 Tool 실행 및 결과 추가
+                for tool_call in tool_calls:
+                    func = tool_call.get("function", {})
+                    tool_name = func.get("name", "")
+                    tool_call_id = tool_call.get("id", "")
+                    
+                    logger.info(f"Tool 실행: {tool_name}")
+                    tool_result = execute_tool(tool_name, context or {})
+                    logger.info(f"Tool 결과: {tool_result}")
+                    
+                    # Tool 결과 메시지 추가
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": json.dumps(tool_result, ensure_ascii=False)
+                    })
+                # 다음 루프 진행 (이미지는 검정 이미지 그대로 유지 - 요청사항)
+                continue
+            
+            # 첫 호출에서 Tool 사용 안 함 → 실제 이미지로 교체하여 재호출
+            if i == 0 and not tool_was_used:
+                logger.info("Tool 미사용 → 실제 이미지로 교체하여 재호출")
+                
+                # 시스템 프롬프트 교체 (Assistant 모드)
+                messages[0] = {"role": "system", "content": system_prompt_assistant}
+                
+                # 기존 user 메시지를 실제 이미지 포함 버전으로 교체
+                messages[-1] = {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
+                    ]
+                }
+                # tools 없이 다시 호출
+                continue
+            
+            # 최종 응답인 경우
+            content = message.get("content", "")
+            if content or finish_reason == "stop":
+                logger.info(f"최종 응답: {content[:100]}...")
+                return [{"choices": [{"message": {"content": content}}]}, resize_time, total_model_time]
+            
+            # 예상치 못한 상황
+            return [{"choices": [{"message": {"content": content or "응답을 생성할 수 없습니다."}}]}, resize_time, total_model_time]
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Tool calling error: {str(e)}")
+    
+    # 최대 루프 도달
+    return [{"choices": [{"message": {"content": "응답을 생성할 수 없습니다."}}]}, resize_time, total_model_time]

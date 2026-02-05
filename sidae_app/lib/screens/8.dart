@@ -1,15 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../services/route_tracker.dart';
 import '../services/tts_service.dart';
 import '../services/porcupine_service.dart';
 import '../services/shared_event_channel.dart';
+import '../services/context_builder.dart';
+import '../services/navigation_service.dart';
+import '../widgets/sidae_overlay.dart';
+import '../widgets/vlm_result_overlay.dart';
 
 class BusOnlyScreen extends StatefulWidget {
   final double? returnMidLat;
@@ -28,13 +33,18 @@ class BusOnlyScreen extends StatefulWidget {
 }
 
 class _BusOnlyScreenState extends State<BusOnlyScreen> {
-  String? _lastImagePath;
+  Uint8List? _lastImageBytes; // 캡처된 이미지 데이터 (메모리, 오버레이 표시용)
   String _lastResponse = 'No response';
   int? _responseTimeMs; // 응답 시간 (밀리초)
   Timer? _previewTimer;
   StreamSubscription? _exitDistanceSubscription;
+  StreamSubscription? _sttSubscription; // STT 구독 추가
   final PorcupineService _porcupineService = PorcupineService.instance;
   bool _hasArrived = false; // 중복 하차 처리 방지 플래그
+  String? _capturedVlmPrompt; // STT 결과 저장
+  Completer<String>? _sttResultCompleter; // STT 결과를 기다리는 Completer
+  bool _isListeningStt = false; // STT 진행 중 여부
+  String _sttText = ''; // STT 텍스트 (partial 및 final)
 
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
@@ -50,35 +60,247 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     return '$baseUrl/bus-ai/bus-recognition';
   }
 
-  // VLM 모드로 이미지 캡처 및 업로드
+  // STT 초기화 함수
+  void _initStt() {
+    try {
+      _sttSubscription = SharedEventChannel.instance.stream.listen((event) {
+        if (event is Map && event['type'] == 'stt') {
+          final eventType = event['eventType'] as String?;
+          final data = event['data'] as String?;
+
+          switch (eventType) {
+            case 'partial':
+              // 부분 결과 업데이트
+              if (mounted && _isListeningStt) {
+                setState(() {
+                  _sttText = data ?? '';
+                });
+              }
+              break;
+            case 'result':
+              // 최종 결과
+              if (mounted &&
+                  _sttResultCompleter != null &&
+                  !_sttResultCompleter!.isCompleted) {
+                setState(() {
+                  _capturedVlmPrompt = data ?? '';
+                  _sttText = data ?? '';
+                  // _isListeningStt는 2초 후에 false로 설정
+                });
+                _sttResultCompleter!.complete(data ?? '');
+
+                // 최종 결과를 2초간 표시한 후 오버레이 숨김
+                Future.delayed(const Duration(seconds: 2), () {
+                  if (mounted) {
+                    setState(() {
+                      _isListeningStt = false;
+                    });
+                  }
+                });
+              }
+              break;
+            case 'error':
+              if (mounted &&
+                  _sttResultCompleter != null &&
+                  !_sttResultCompleter!.isCompleted) {
+                setState(() {
+                  _isListeningStt = false;
+                  _sttText = '';
+                });
+                TtsService.instance.speak("음성인식에 실패했습니다. 다시 시도해주세요.");
+                _sttResultCompleter!.complete('');
+              }
+              break;
+          }
+        }
+      });
+    } catch (e) {
+      developer.log('❌ [8.dart] STT 초기화 실패: $e', name: 'STT');
+    }
+  }
+
+  // VLM 모드로 이미지 캡처 및 업로드 (카메라와 STT 동시 시작)
   Future<void> _captureAndUploadVLM(BuildContext context) async {
     final stopwatch = Stopwatch()..start();
 
     try {
+      // 카메라 권한 확인 및 요청
+      final cameraStatus = await Permission.camera.status;
+      if (!cameraStatus.isGranted) {
+        final result = await Permission.camera.request();
+        if (!result.isGranted) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.')),
+            );
+          }
+          return;
+        }
+      }
+
       if (mounted) {
         setState(() {
           _lastResponse = 'No response';
           _responseTimeMs = null;
+          _capturedVlmPrompt = null;
         });
       }
 
+      // STT 결과를 기다리는 Completer 생성
+      _sttResultCompleter = Completer<String>();
+
+      // Porcupine 중지 및 TTS 중지
+      await TtsService.instance.stop();
+      await _porcupineService.stop();
+
+      // STT 시작
+      if (mounted) {
+        setState(() {
+          _isListeningStt = true;
+          _sttText = '';
+        });
+        await TtsService.instance.speak("말씀하세요");
+      }
+
+      try {
+        await _channel.invokeMethod('startListening');
+      } catch (e) {
+        developer.log('❌ [8.dart] STT 시작 실패: $e', name: 'STT');
+        if (mounted) {
+          setState(() {
+            _isListeningStt = false;
+          });
+          TtsService.instance.speak("음성인식 시작에 실패했습니다.");
+        }
+        _sttResultCompleter!.complete('');
+      }
+
+      // 카메라 캡처를 백그라운드에서 시작 (STT와 동시에 시작)
+      // 하지만 업로드는 STT 결과를 기다린 후에 하도록 변경
+      final baseUrl = dotenv.env['SIDAE_SERVER_CLOUD_URL'];
+      if (baseUrl == null || baseUrl.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('SIDAE_SERVER_CLOUD_URL이 설정되지 않았습니다.'),
+            ),
+          );
+        }
+        return;
+      }
+
+      final uploadUrl = '$baseUrl/bus-ai/bus-recognition';
+
+      // STT 결과를 기다림 (최대 10초)
+      final sttResult = await _sttResultCompleter!.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          developer.log('⏱️ [8.dart] STT 타임아웃', name: 'STT');
+          // 타임아웃 시 오버레이 즉시 숨김
+          if (mounted) {
+            setState(() {
+              _isListeningStt = false;
+            });
+          }
+          return '';
+        },
+      );
+
+      // STT 중지
+      try {
+        await _channel.invokeMethod('stopListening');
+      } catch (_) {}
+
+      // 정상적인 경우는 case 'result'에서 2초 후에 _isListeningStt = false로 설정됨
+      // 타임아웃의 경우는 onTimeout에서 처리됨
+
+      // STT 실패 시 카메라 캡처하지 않고 종료
+      if (sttResult.isEmpty) {
+        developer.log('⚠️ [8.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀', name: 'STT');
+        print('⚠️ [8.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀');
+
+        // Porcupine 재시작
+        await Future.delayed(const Duration(milliseconds: 500));
+        try {
+          print('🔄 [8.dart] Porcupine 재시작 시작 (STT 실패 후)');
+          developer.log(
+            '🔄 [8.dart] Porcupine 재시작 시작 (STT 실패 후)',
+            name: 'Porcupine',
+          );
+
+          _porcupineService.onKeywordDetected = (keyword) {
+            if (keyword == '시대야' && mounted) {
+              _captureAndUploadVLM(context);
+            }
+          };
+
+          await _porcupineService.ensureRunning();
+          print('✅ [8.dart] Porcupine 재시작 완료 (STT 실패 후)');
+          developer.log(
+            '✅ [8.dart] Porcupine 재시작 완료 (STT 실패 후)',
+            name: 'Porcupine',
+          );
+        } catch (e, stackTrace) {
+          print('❌ [8.dart] Porcupine 재시작 실패 (STT 실패 후): $e');
+          developer.log(
+            '❌ [8.dart] Porcupine 재시작 실패 (STT 실패 후): $e',
+            name: 'Porcupine',
+            error: e,
+            stackTrace: stackTrace,
+          );
+        }
+        return;
+      }
+
+      // STT 결과를 metadata에 포함하여 카메라 캡처 및 업로드
+      final metadata = <String, String>{'source': 'vlm', 'mode': 'vlm'};
+
+      metadata['vlm_prompt'] = sttResult;
+
+      // VLM 프롬프트 주입을 위한 앱 컨텍스트 추가 (버스 탑승 상태)
+      final tracker = RouteTracker.instance;
+      final currentSegment = tracker.getCurrentSegment();
+      final vlmContext = ContextBuilder.buildContextJson(
+        tracker: tracker,
+        navService: NavigationService.instance,
+        busNumber: currentSegment?.transportName,
+        destinationStop: currentSegment?.endStation,
+      );
+      metadata['context'] = vlmContext;
+
+      developer.log(
+        '📝 [8.dart] VLM 요청: prompt=$sttResult, context=$vlmContext',
+        name: 'VLM',
+      );
+
+      // 카메라 캡처 및 업로드 (vlm_prompt 포함)
+      // 메모리에서 직접 전송 (파일 저장 없음)
       final result = await _channel.invokeMethod('captureAndUploadImage', {
-        'uploadUrl': _getCaptureUploadUrl(),
+        'uploadUrl': uploadUrl,
         'jpegQuality': 90,
-        'metadata': {'source': 'vlm', 'mode': 'vlm'},
-        'keepFile': true,
+        'metadata': metadata,
       });
 
       if (result is Map) {
         stopwatch.stop();
         final responseTime = stopwatch.elapsedMilliseconds;
 
-        final path = result['localPath'];
-        final body = result['body'];
+        final imageBase64 = result['imageBase64'];
+        var body = result['body'];
+
+        // Base64 이미지 데이터를 디코딩하여 메모리에 저장 (오버레이 표시용)
         if (mounted) {
           setState(() {
-            if (path is String) {
-              _lastImagePath = path;
+            if (imageBase64 is String) {
+              try {
+                _lastImageBytes = base64Decode(imageBase64);
+              } catch (e) {
+                developer.log('❌ [8.dart] Base64 디코딩 실패: $e', name: 'VLM');
+                print('❌ [8.dart] Base64 디코딩 실패: $e');
+                _lastImageBytes = null;
+              }
+            } else {
+              _lastImageBytes = null;
             }
             final bodyText = body?.toString() ?? '';
             final normalized = bodyText.trim();
@@ -121,8 +343,21 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                 );
               }
             }
+            // 형태 3: {"des": "..."} (새로운 VLM 모드)
+            else if (jsonResponse is Map && jsonResponse['des'] != null) {
+              description = jsonResponse['des'].toString();
+              developer.log(
+                '📝 [8.dart] description 추출 (des): $description',
+                name: 'VLM',
+              );
+            }
 
             if (description != null && description.isNotEmpty) {
+              if (mounted) {
+                setState(() {
+                  _lastResponse = description!;
+                });
+              }
               developer.log(
                 '🔊 [8.dart] TTS 호출 시작: "$description"',
                 name: 'VLM',
@@ -165,6 +400,14 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         try {
           print('🔄 [8.dart] Porcupine 재시작 시작');
           developer.log('🔄 [8.dart] Porcupine 재시작 시작', name: 'Porcupine');
+
+          // 콜백 재설정 (ensureRunning 전에)
+          _porcupineService.onKeywordDetected = (keyword) {
+            if (keyword == '시대야' && mounted) {
+              _captureAndUploadVLM(context);
+            }
+          };
+
           await _porcupineService.ensureRunning();
           print('✅ [8.dart] Porcupine 재시작 완료');
           developer.log('✅ [8.dart] Porcupine 재시작 완료', name: 'Porcupine');
@@ -182,23 +425,12 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         _previewTimer = Timer(const Duration(seconds: 3), () {
           if (!mounted) return;
           setState(() {
-            _lastImagePath = null;
+            _lastImageBytes = null;
           });
         });
       }
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('업로드 완료: $result')));
-      }
     } catch (e) {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
-      }
       if (mounted) {
         setState(() {
           _lastResponse = 'No response';
@@ -212,6 +444,22 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     final stopwatch = Stopwatch()..start();
 
     try {
+      // 카메라 권한 확인 및 요청
+      final cameraStatus = await Permission.camera.status;
+      if (!cameraStatus.isGranted) {
+        final result = await Permission.camera.request();
+        if (!result.isGranted) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.')),
+            );
+          }
+          return;
+        }
+        // 권한 요청 후 약간의 지연 (권한 상태 업데이트 대기)
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+
       if (mounted) {
         setState(() {
           _lastResponse = 'No response';
@@ -231,7 +479,6 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
           'source': source,
           'mode': mode, // source에 따라 mode 설정
         },
-        'keepFile': true,
       });
 
       // 업로드 완료 후 즉시 카메라 종료
@@ -276,10 +523,23 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
 
         final path = result['localPath'];
         final body = result['body'];
+        // Base64 이미지 데이터를 디코딩하여 메모리에 저장 (오버레이 표시용)
+        final imageBase64 = result['imageBase64'];
         if (mounted) {
           setState(() {
-            if (path is String) {
-              _lastImagePath = path;
+            if (imageBase64 is String) {
+              try {
+                _lastImageBytes = base64Decode(imageBase64);
+              } catch (e) {
+                developer.log(
+                  '❌ [8.dart] Base64 디코딩 실패: $e',
+                  name: 'BusAction',
+                );
+                print('❌ [8.dart] Base64 디코딩 실패: $e');
+                _lastImageBytes = null;
+              }
+            } else {
+              _lastImageBytes = null;
             }
             final bodyText = body?.toString() ?? '';
             final normalized = bodyText.trim();
@@ -412,15 +672,9 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         _previewTimer = Timer(const Duration(seconds: 3), () {
           if (!mounted) return;
           setState(() {
-            _lastImagePath = null;
+            _lastImageBytes = null;
           });
         });
-      }
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('업로드 완료: $result')));
       }
     } catch (e) {
       try {
@@ -451,11 +705,6 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         );
       }
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
-      }
       if (mounted) {
         setState(() {
           _lastResponse = 'No response';
@@ -469,6 +718,8 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     super.initState();
     print('🚀 [8.dart] initState() 시작');
     developer.log('🚀 [8.dart] initState() 시작', name: '8.dart');
+
+    _initStt(); // STT 초기화 추가
 
     try {
       _startNativeReturnTrackingIfNeeded();
@@ -537,22 +788,18 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       final initialized = await _porcupineService.initialize();
 
       if (initialized) {
-        print('✅ [8.dart] Porcupine 초기화 성공, start() 호출');
+        print('✅ [8.dart] Porcupine 초기화 성공, ensureRunning() 호출');
         developer.log(
-          '✅ [8.dart] Porcupine 초기화 성공, start() 호출',
+          '✅ [8.dart] Porcupine 초기화 성공, ensureRunning() 호출',
           name: 'Porcupine',
         );
-        final started = await _porcupineService.start();
-        if (started) {
-          print('✅ [8.dart] Porcupine 시작 완료 - 마이크 활성화됨');
-          developer.log(
-            '✅ [8.dart] Porcupine 시작 완료 - 마이크 활성화됨',
-            name: 'Porcupine',
-          );
-        } else {
-          print('❌ [8.dart] Porcupine 시작 실패');
-          developer.log('❌ [8.dart] Porcupine 시작 실패', name: 'Porcupine');
-        }
+        // ensureRunning()을 사용하여 이미 시작되어 있어도 재시작 보장
+        await _porcupineService.ensureRunning();
+        print('✅ [8.dart] Porcupine ensureRunning() 완료 - 마이크 활성화됨');
+        developer.log(
+          '✅ [8.dart] Porcupine ensureRunning() 완료 - 마이크 활성화됨',
+          name: 'Porcupine',
+        );
       } else {
         print('❌ [8.dart] Porcupine 초기화 실패');
         developer.log('❌ [8.dart] Porcupine 초기화 실패', name: 'Porcupine');
@@ -639,6 +886,9 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
     _previewTimer = null;
     _exitDistanceSubscription?.cancel();
     _exitDistanceSubscription = null;
+    _sttSubscription?.cancel(); // STT 구독 취소
+    _sttSubscription = null;
+    _channel.invokeMethod('stopListening').catchError((_) {}); // STT 중지
     _channel.invokeMethod('stopExitTracking').catchError((_) {});
     _channel.invokeMethod('stopCamera').catchError((_) {});
     // 버스 하차 상태 설정 (dispose 시에도 보장)
@@ -663,6 +913,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                       accentColor: const Color(0xFFFFD400),
                       textColor: const Color(0xFFFFD400),
                       alignment: Alignment.center,
+                      semanticLabel: '하차벨을 찾고 싶을 때 눌러주세요',
                       onTap: () => _captureAndUpload(context, 'stop_bell'),
                     ),
                   ),
@@ -673,6 +924,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                       accentColor: Colors.black,
                       textColor: Colors.black,
                       alignment: Alignment.center,
+                      semanticLabel: '태그기를 찾고 싶을 때 눌러주세요',
                       onTap: () => _captureAndUpload(context, 'card_tagger'),
                     ),
                   ),
@@ -743,88 +995,24 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                 ),
               ),
             ),
-            if (_lastImagePath != null)
+            if (_lastImageBytes != null)
               Positioned(
                 left: 16,
                 right: 16,
-                top: 12,
-                child: AspectRatio(
-                  aspectRatio: 3 / 4, // 카메라 비율 (일반적인 세로 모드)
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: const Color(0xFFFFD400),
-                        width: 2,
-                      ),
-                    ),
-                    padding: const EdgeInsets.all(8),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.file(File(_lastImagePath!), fit: BoxFit.cover),
-                          Positioned.fill(
-                            child: Align(
-                              alignment: Alignment.bottomCenter,
-                              child: Container(
-                                margin: const EdgeInsets.all(8),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.7),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  _lastResponse.isNotEmpty
-                                      ? _lastResponse
-                                      : 'No response',
-                                  textAlign: TextAlign.center,
-                                  maxLines: 4,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          // 응답 시간 표시 (우상단)
-                          if (_responseTimeMs != null)
-                            Positioned(
-                              top: 8,
-                              right: 8,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFD400),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  '응답 시간: ${_responseTimeMs}ms',
-                                  style: const TextStyle(
-                                    color: Colors.black,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
+                top: _isListeningStt ? 120 : 12,
+                child: VlmResultOverlay(
+                  imageBytes: _lastImageBytes,
+                  response: _lastResponse,
+                  responseTimeMs: _responseTimeMs,
+                  onClose: () => setState(() => _lastImageBytes = null),
                 ),
               ),
+            // STT 진행 중 오버레이 (맨 앞에 표시)
+            SidaeOverlay(
+              isListening: _isListeningStt,
+              sttText: _sttText,
+              primaryColor: const Color(0xFFFFD400),
+            ),
           ],
         ),
       ),
@@ -838,6 +1026,7 @@ class _ActionPanel extends StatelessWidget {
   final Color accentColor;
   final Color textColor;
   final Alignment alignment;
+  final String? semanticLabel;
   final VoidCallback? onTap;
 
   const _ActionPanel({
@@ -846,66 +1035,71 @@ class _ActionPanel extends StatelessWidget {
     required this.accentColor,
     required this.textColor,
     required this.alignment,
+    this.semanticLabel,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: backgroundColor,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: SizedBox.expand(
-          child: Material(
-            color: Colors.transparent,
-            child: Ink(
-              decoration: BoxDecoration(
-                color: backgroundColor,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: accentColor, width: 3),
-                boxShadow: [
-                  BoxShadow(
-                    color: accentColor.withOpacity(0.2),
-                    blurRadius: 10,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(18),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 26,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: Align(
-                          alignment: alignment,
-                          child: Text(
-                            title,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: textColor,
-                              fontSize: 34,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
+    return Semantics(
+      label: semanticLabel ?? title,
+      button: true,
+      child: Container(
+        color: backgroundColor,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: SizedBox.expand(
+            child: Material(
+              color: Colors.transparent,
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: backgroundColor,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: accentColor, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accentColor.withOpacity(0.2),
+                      blurRadius: 10,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(18),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 26,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: Align(
+                            alignment: alignment,
+                            child: Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: textColor,
+                                fontSize: 50,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      Container(
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: accentColor,
-                          borderRadius: BorderRadius.circular(99),
+                        Container(
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: accentColor,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

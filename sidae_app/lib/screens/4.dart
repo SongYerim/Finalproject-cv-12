@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import 'dart:convert';
-// import 'dart:developer' as developer;
+import 'dart:developer' as developer;
+import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/route_model.dart';
 import '../services/route_tracker.dart';
 import '../services/crosswalk_detector.dart';
@@ -20,8 +22,12 @@ import '../services/navigation_service.dart';
 import '../widgets/progress_indicator_widget.dart';
 import '../widgets/bus_arrival_overlay.dart';
 import '../widgets/route_timeline_widget.dart';
+import '../widgets/sidae_overlay.dart';
+import '../widgets/vlm_result_overlay.dart';
 import '../utils/bus_utils.dart' as bus_utils;
 import '../utils/math_utils.dart' as math_utils;
+import '../services/shared_event_channel.dart';
+import '../services/context_builder.dart';
 import '5.dart';
 import '6.dart';
 import '7.dart';
@@ -50,6 +56,14 @@ class _Screen4State extends State<Screen4> {
   CrosswalkDetector? _crosswalkDetector;
   BusStopDetector? _busStopDetector;
   bool _isNavigatingToCrosswalk = false; // 카메라 중복 실행 방지 플래그
+  StreamSubscription? _sttSubscription; // STT 구독 추가
+  String? _capturedVlmPrompt; // STT 결과 저장
+  Completer<String>? _sttResultCompleter; // STT 결과를 기다리는 Completer
+  bool _isListeningStt = false; // STT 진행 중 여부
+  String _sttText = ''; // STT 텍스트 (partial 및 final)
+  Uint8List? _lastImageBytes; // 캡처된 이미지 데이터 (메모리, 오버레이 표시용)
+  String _lastResponse = 'No response'; // 서버 응답 텍스트
+  Timer? _previewTimer; // 이미지 프리뷰 타이머
 
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
@@ -72,6 +86,7 @@ class _Screen4State extends State<Screen4> {
     _initBusStopDetector();
     _ttsService.initialize();
     _navService.initSensor();
+    _initStt(); // STT 초기화 추가
 
     // 센서 방향 업데이트 시 UI 갱신 (60Hz)
     _navService.onBearingUpdate = () {
@@ -115,14 +130,16 @@ class _Screen4State extends State<Screen4> {
     });
 
     // Porcupine 초기화 및 시작 (비동기로 실행)
-    // developer.log('🚀 [4.dart] _initPorcupine() 호출 예정', name: 'Porcupine');
-    _initPorcupine().catchError((_) {
-      // developer.log(
-      //   '❌ [4.dart] _initPorcupine() 에러: $e',
-      //   name: 'Porcupine',
-      //   error: e,
-      //   stackTrace: stackTrace,
-      // );
+    print('🚀 [4.dart] _initPorcupine() 호출 예정');
+    developer.log('🚀 [4.dart] _initPorcupine() 호출 예정', name: 'Porcupine');
+    _initPorcupine().catchError((e, stackTrace) {
+      print('❌ [4.dart] _initPorcupine() 에러: $e');
+      developer.log(
+        '❌ [4.dart] _initPorcupine() 에러: $e',
+        name: 'Porcupine',
+        error: e,
+        stackTrace: stackTrace,
+      );
     });
   }
 
@@ -166,59 +183,69 @@ class _Screen4State extends State<Screen4> {
 
   Future<void> _initPorcupine() async {
     try {
-      // developer.log('🔧 [4.dart] Porcupine 초기화 시작', name: 'Porcupine');
+      print('🔧 [4.dart] Porcupine 초기화 시작');
+      developer.log('🔧 [4.dart] Porcupine 초기화 시작', name: 'Porcupine');
 
       // 콜백을 먼저 설정 (initialize 전에)
       _porcupineService.onKeywordDetected = (keyword) {
-        // developer.log(
-        //   '📞 [4.dart] onKeywordDetected 콜백 호출됨: $keyword',
-        //   name: 'Porcupine',
-        // );
+        print('📞 [4.dart] onKeywordDetected 콜백 호출됨: $keyword');
+        developer.log(
+          '📞 [4.dart] onKeywordDetected 콜백 호출됨: $keyword',
+          name: 'Porcupine',
+        );
         if (keyword == '시대야' && mounted) {
-          // developer.log(
-          //   '🎤 [4.dart] "시대야" 키워드 감지됨 - VLM 호출 시작',
-          //   name: 'Porcupine',
-          // );
+          print('🎤 [4.dart] "시대야" 키워드 감지됨 - VLM 호출 시작');
+          developer.log(
+            '🎤 [4.dart] "시대야" 키워드 감지됨 - VLM 호출 시작',
+            name: 'Porcupine',
+          );
           _captureAndUploadVLM(context);
         } else {
-          // developer.log(
-          //   '⚠️ [4.dart] 키워드 불일치 또는 화면이 마운트되지 않음: keyword=$keyword, mounted=$mounted',
-          //   name: 'Porcupine',
-          // );
+          print(
+            '⚠️ [4.dart] 키워드 불일치 또는 화면이 마운트되지 않음: keyword=$keyword, mounted=$mounted',
+          );
+          developer.log(
+            '⚠️ [4.dart] 키워드 불일치 또는 화면이 마운트되지 않음: keyword=$keyword, mounted=$mounted',
+            name: 'Porcupine',
+          );
         }
       };
-      // developer.log('✅ [4.dart] onKeywordDetected 콜백 등록 완료', name: 'Porcupine');
+      print('✅ [4.dart] onKeywordDetected 콜백 등록 완료');
+      developer.log('✅ [4.dart] onKeywordDetected 콜백 등록 완료', name: 'Porcupine');
 
-      // developer.log(
-      //   '🔧 [4.dart] PorcupineService.initialize() 호출',
-      //   name: 'Porcupine',
-      // );
+      print('🔧 [4.dart] PorcupineService.initialize() 호출');
+      developer.log(
+        '🔧 [4.dart] PorcupineService.initialize() 호출',
+        name: 'Porcupine',
+      );
       final initialized = await _porcupineService.initialize();
 
       if (initialized) {
-        // developer.log(
-        //   '✅ [4.dart] Porcupine 초기화 성공, start() 호출',
-        //   name: 'Porcupine',
-        // );
-        final started = await _porcupineService.start();
-        if (started) {
-          // developer.log(
-          //   '✅ [4.dart] Porcupine 시작 완료 - 마이크 활성화됨',
-          //   name: 'Porcupine',
-          // );
-        } else {
-          // developer.log('❌ [4.dart] Porcupine 시작 실패', name: 'Porcupine');
-        }
+        print('✅ [4.dart] Porcupine 초기화 성공, ensureRunning() 호출');
+        developer.log(
+          '✅ [4.dart] Porcupine 초기화 성공, ensureRunning() 호출',
+          name: 'Porcupine',
+        );
+        // ensureRunning()을 사용하여 이미 시작되어 있어도 재시작 보장
+        await _porcupineService.ensureRunning();
+        print('✅ [4.dart] Porcupine ensureRunning() 완료 - 마이크 활성화됨');
+        developer.log(
+          '✅ [4.dart] Porcupine ensureRunning() 완료 - 마이크 활성화됨',
+          name: 'Porcupine',
+        );
       } else {
-        // developer.log('❌ [4.dart] Porcupine 초기화 실패', name: 'Porcupine');
+        print('❌ [4.dart] Porcupine 초기화 실패');
+        developer.log('❌ [4.dart] Porcupine 초기화 실패', name: 'Porcupine');
       }
-    } catch (_) {
-      // developer.log(
-      //   '❌ [4.dart] _initPorcupine() 예외 발생: $e',
-      //   name: 'Porcupine',
-      //   error: e,
-      //   stackTrace: stackTrace,
-      // );
+    } catch (e, stackTrace) {
+      print('❌ [4.dart] _initPorcupine() 예외 발생: $e');
+      print('❌ [4.dart] 스택 트레이스: $stackTrace');
+      developer.log(
+        '❌ [4.dart] _initPorcupine() 예외 발생: $e',
+        name: 'Porcupine',
+        error: e,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -277,6 +304,65 @@ class _Screen4State extends State<Screen4> {
     setState(() {});
   }
 
+  // STT 초기화 함수
+  void _initStt() {
+    try {
+      _sttSubscription = SharedEventChannel.instance.stream.listen((event) {
+        if (event is Map && event['type'] == 'stt') {
+          final eventType = event['eventType'] as String?;
+          final data = event['data'] as String?;
+
+          switch (eventType) {
+            case 'partial':
+              // 부분 결과 업데이트
+              if (mounted && _isListeningStt) {
+                setState(() {
+                  _sttText = data ?? '';
+                });
+              }
+              break;
+            case 'result':
+              // 최종 결과
+              if (mounted &&
+                  _sttResultCompleter != null &&
+                  !_sttResultCompleter!.isCompleted) {
+                setState(() {
+                  _capturedVlmPrompt = data ?? '';
+                  _sttText = data ?? '';
+                  // _isListeningStt는 2초 후에 false로 설정
+                });
+                _sttResultCompleter!.complete(data ?? '');
+
+                // 최종 결과를 2초간 표시한 후 오버레이 숨김
+                Future.delayed(const Duration(seconds: 2), () {
+                  if (mounted) {
+                    setState(() {
+                      _isListeningStt = false;
+                    });
+                  }
+                });
+              }
+              break;
+            case 'error':
+              if (mounted &&
+                  _sttResultCompleter != null &&
+                  !_sttResultCompleter!.isCompleted) {
+                setState(() {
+                  _isListeningStt = false;
+                  _sttText = '';
+                });
+                _ttsService.speak("음성인식에 실패했습니다. 다시 시도해주세요.");
+                _sttResultCompleter!.complete('');
+              }
+              break;
+          }
+        }
+      });
+    } catch (e) {
+      print('❌ [4.dart] STT 초기화 실패: $e');
+    }
+  }
+
   @override
   void dispose() {
     // 리스너 제거
@@ -287,11 +373,19 @@ class _Screen4State extends State<Screen4> {
     _porcupineService.onKeywordDetected = null;
     // developer.log('🛑 [4.dart] Porcupine 콜백 제거 (화면 종료)', name: 'Porcupine');
 
+    // STT 구독 취소
+    _sttSubscription?.cancel();
+    _sttSubscription = null;
+    _channel.invokeMethod('stopListening').catchError((_) {}); // STT 중지
+
     // GPS 위치 추적 중지 (메모리 누수 방지)
     _navService.stopLocationTracking();
 
     // NavigationService는 싱글톤 인스턴스로 dispose 하면 안 됨
     // _navService.dispose(); 제거
+
+    // 타이머 정리
+    _previewTimer?.cancel();
     super.dispose();
   }
 
@@ -343,9 +437,61 @@ class _Screen4State extends State<Screen4> {
     );
   }
 
-  // VLM 모드로 이미지 캡처 및 업로드
+  // VLM 모드로 이미지 캡처 및 업로드 (카메라와 STT 동시 시작)
   Future<void> _captureAndUploadVLM(BuildContext context) async {
     try {
+      // 카메라 권한 확인 및 요청
+      final cameraStatus = await Permission.camera.status;
+      if (!cameraStatus.isGranted) {
+        final result = await Permission.camera.request();
+        if (!result.isGranted) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.')),
+            );
+          }
+          return;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _capturedVlmPrompt = null;
+        });
+      }
+
+      // STT 결과를 기다리는 Completer 생성
+      _sttResultCompleter = Completer<String>();
+
+      // Porcupine 중지 및 TTS 중지
+      await _ttsService.stop();
+      await _porcupineService.stop();
+
+      // STT 시작
+      if (mounted) {
+        setState(() {
+          _isListeningStt = true;
+          _sttText = '';
+        });
+        await _ttsService.speak("말씀하세요");
+      }
+
+      try {
+        await _channel.invokeMethod('startListening');
+      } catch (e) {
+        print('❌ [4.dart] STT 시작 실패: $e');
+        developer.log('❌ [4.dart] STT 시작 실패: $e', name: 'STT');
+        if (mounted) {
+          setState(() {
+            _isListeningStt = false;
+          });
+          _ttsService.speak("음성인식 시작에 실패했습니다.");
+        }
+        _sttResultCompleter!.complete('');
+      }
+
+      // 카메라 캡처를 백그라운드에서 시작 (STT와 동시에 시작)
+      // 하지만 업로드는 STT 결과를 기다린 후에 하도록 변경
       final baseUrl = dotenv.env['SIDAE_SERVER_CLOUD_URL'];
       if (baseUrl == null || baseUrl.isEmpty) {
         if (context.mounted) {
@@ -360,109 +506,281 @@ class _Screen4State extends State<Screen4> {
 
       final uploadUrl = '$baseUrl/bus-ai/bus-recognition';
 
+      // STT 결과를 기다림 (최대 10초)
+      final sttResult = await _sttResultCompleter!.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          print('⏱️ [4.dart] STT 타임아웃');
+          developer.log('⏱️ [4.dart] STT 타임아웃', name: 'STT');
+          // 타임아웃 시 오버레이 즉시 숨김
+          if (mounted) {
+            setState(() {
+              _isListeningStt = false;
+            });
+          }
+          return '';
+        },
+      );
+
+      // STT 중지
+      try {
+        await _channel.invokeMethod('stopListening');
+      } catch (_) {}
+
+      // 정상적인 경우는 case 'result'에서 2초 후에 _isListeningStt = false로 설정됨
+      // 타임아웃의 경우는 onTimeout에서 처리됨
+
+      // STT 실패 시 카메라 캡처하지 않고 종료
+      if (sttResult.isEmpty) {
+        print('⚠️ [4.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀');
+        developer.log('⚠️ [4.dart] STT 결과가 비어있음 - 카메라 캡처 건너뜀', name: 'STT');
+
+        // Porcupine 재시작
+        await Future.delayed(const Duration(milliseconds: 500));
+        try {
+          print('🔄 [4.dart] Porcupine 재시작 시작 (STT 실패 후)');
+          developer.log(
+            '🔄 [4.dart] Porcupine 재시작 시작 (STT 실패 후)',
+            name: 'Porcupine',
+          );
+
+          _porcupineService.onKeywordDetected = (keyword) {
+            if (keyword == '시대야' && mounted) {
+              _captureAndUploadVLM(context);
+            }
+          };
+
+          await _porcupineService.ensureRunning();
+          print('✅ [4.dart] Porcupine 재시작 완료 (STT 실패 후)');
+          developer.log(
+            '✅ [4.dart] Porcupine 재시작 완료 (STT 실패 후)',
+            name: 'Porcupine',
+          );
+        } catch (e, stackTrace) {
+          print('❌ [4.dart] Porcupine 재시작 실패 (STT 실패 후): $e');
+          developer.log(
+            '❌ [4.dart] Porcupine 재시작 실패 (STT 실패 후): $e',
+            name: 'Porcupine',
+            error: e,
+            stackTrace: stackTrace,
+          );
+        }
+        return;
+      }
+
+      // STT 결과를 metadata에 포함하여 카메라 캡처 및 업로드
+      final metadata = <String, String>{'source': 'vlm', 'mode': 'vlm'};
+
+      metadata['vlm_prompt'] = sttResult;
+
+      // VLM Function Calling을 위한 앱 컨텍스트 추가
+      // 현재 segment에서 버스 정보 가져오기
+      final currentSegment = _tracker.getCurrentSegment();
+      final vlmContext = ContextBuilder.buildContextJson(
+        tracker: _tracker,
+        navService: _navService,
+        destinationName: widget.destinationName,
+        busNumber: currentSegment?.transportName,
+        destinationStop: currentSegment?.endStation,
+      );
+      metadata['context'] = vlmContext;
+
+      print('📝 [4.dart] STT 결과를 vlm_prompt로 포함: $sttResult');
+      print('📝 [4.dart] Context: $vlmContext');
+      developer.log(
+        '📝 [4.dart] VLM 요청: prompt=$sttResult, context=$vlmContext',
+        name: 'VLM',
+      );
+
+      // 카메라 캡처 및 업로드 (vlm_prompt 포함)
+      // 메모리에서 직접 전송 (파일 저장 없음)
       final result = await _channel.invokeMethod('captureAndUploadImage', {
         'uploadUrl': uploadUrl,
         'jpegQuality': 90,
-        'metadata': {'source': 'vlm', 'mode': 'vlm'},
-        'keepFile': true,
+        'metadata': metadata,
       });
 
-      // 응답에서 description 파싱하여 TTS로 읽기 (먼저 처리)
-      if (result is Map && result['body'] != null) {
-        try {
-          final bodyStr = result['body'].toString();
-          // developer.log('📥 [4.dart] VLM 응답 수신: $bodyStr', name: 'VLM');
+      if (result is Map) {
+        final imageBase64 = result['imageBase64'];
+        var body = result['body'];
 
-          final jsonResponse = json.decode(bodyStr);
-          // developer.log('✅ [4.dart] JSON 파싱 성공: $jsonResponse', name: 'VLM');
-
-          // description 추출 시도 (두 가지 형태 지원)
-          String? description;
-
-          // 형태 1: {"description": "..."}
-          if (jsonResponse is Map && jsonResponse['description'] != null) {
-            description = jsonResponse['description'].toString();
-            // developer.log(
-            //   '📝 [4.dart] description 추출 (직접): $description',
-            //   name: 'VLM',
-            // );
-          }
-          // 형태 2: {"result": {"description": "..."}}
-          else if (jsonResponse is Map && jsonResponse['result'] != null) {
-            final result = jsonResponse['result'];
-            if (result is Map && result['description'] != null) {
-              description = result['description'].toString();
-              // developer.log(
-              //   '📝 [4.dart] description 추출 (result 내부): $description',
-              //   name: 'VLM',
-              // );
+        // Base64 이미지 데이터를 디코딩하여 메모리에 저장 (오버레이 표시용)
+        if (mounted) {
+          setState(() {
+            if (imageBase64 is String) {
+              try {
+                _lastImageBytes = base64Decode(imageBase64);
+              } catch (e) {
+                print('❌ [4.dart] Base64 디코딩 실패: $e');
+                developer.log('❌ [4.dart] Base64 디코딩 실패: $e', name: 'VLM');
+                _lastImageBytes = null;
+              }
+            } else {
+              _lastImageBytes = null;
             }
-          }
+            final bodyText = body?.toString() ?? '';
+            final normalized = bodyText.trim();
+            _lastResponse =
+                normalized.isNotEmpty && normalized.toLowerCase() != 'null'
+                ? normalized
+                : 'No response';
 
-          if (description != null && description.isNotEmpty) {
-            // developer.log('🔊 [4.dart] TTS 호출 시작: "$description"', name: 'VLM');
-            // TTS 초기화 보장
-            await _ttsService.initialize();
-            // TTS는 비동기로 시작 (카메라 종료를 기다리지 않음)
-            _ttsService.speak(description).catchError((e) {
-              // developer.log('❌ [4.dart] TTS 호출 실패: $e', name: 'VLM');
+            // 3초 후 이미지 및 텍스트 닫기 타이머 시작 (응답 수신 시점부터)
+            _previewTimer?.cancel();
+            _previewTimer = Timer(const Duration(seconds: 3), () {
+              if (!mounted) return;
+              setState(() {
+                _lastImageBytes = null;
+              });
             });
-            // developer.log('✅ [4.dart] TTS 호출 완료', name: 'VLM');
-          } else {
-            // developer.log(
-            //   '⚠️ [4.dart] description을 찾을 수 없음. JSON 구조: $jsonResponse',
-            //   name: 'VLM',
-            // );
-          }
-        } catch (e) {
-          // JSON 파싱 실패 시 무시 (기존 동작 유지)
-          // developer.log('❌ [4.dart] VLM 응답 파싱 실패: $e', name: 'VLM');
+          });
         }
-      } else {
-        // developer.log('⚠️ [4.dart] 응답 body가 없음', name: 'VLM');
-      }
 
-      // TTS 시작 후 카메라 종료 (await하여 완료 보장)
-      try {
-        await _channel.invokeMethod('stopCamera');
-        // developer.log('✅ [4.dart] 카메라 종료 완료', name: 'VLM');
-        // print('✅ [4.dart] 카메라 종료 완료');
-      } catch (e) {
-        // developer.log('❌ [4.dart] 카메라 종료 실패: $e', name: 'VLM');
-        // print('❌ [4.dart] 카메라 종료 실패: $e');
-      }
+        // 응답에서 description 파싱하여 TTS로 읽기 (먼저 처리)
+        if (body != null) {
+          try {
+            final bodyStr = body.toString();
+            print('📥 [4.dart] VLM 응답 수신: $bodyStr');
+            developer.log('📥 [4.dart] VLM 응답 수신: $bodyStr', name: 'VLM');
 
-      // 카메라 종료 후 Porcupine이 계속 실행되도록 보장
-      // 약간의 지연을 두어 오디오 리소스가 완전히 해제되도록 함
-      await Future.delayed(const Duration(milliseconds: 500));
+            final jsonResponse = json.decode(bodyStr);
+            print('✅ [4.dart] JSON 파싱 성공: $jsonResponse');
+            developer.log('✅ [4.dart] JSON 파싱 성공: $jsonResponse', name: 'VLM');
 
-      try {
-        // print('🔄 [4.dart] Porcupine 재시작 시작');
-        // developer.log('🔄 [4.dart] Porcupine 재시작 시작', name: 'Porcupine');
-        await _porcupineService.ensureRunning();
-        // print('✅ [4.dart] Porcupine 재시작 완료');
-        // developer.log('✅ [4.dart] Porcupine 재시작 완료', name: 'Porcupine');
-      } catch (_) {
-        // print('❌ [4.dart] Porcupine 재시작 실패: $e');
-        // developer.log(
-        //   '❌ [4.dart] Porcupine 재시작 실패: $e',
-        //   name: 'Porcupine',
-        //   error: e,
-        //   stackTrace: stackTrace,
-        // );
-      }
+            // description 추출 시도 (두 가지 형태 지원)
+            String? description;
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('업로드 완료: ${result['body'] ?? 'Success'}')),
-        );
+            // 형태 1: {"description": "..."}
+            if (jsonResponse is Map && jsonResponse['description'] != null) {
+              description = jsonResponse['description'].toString();
+              print('📝 [4.dart] description 추출 (직접): $description');
+              developer.log(
+                '📝 [4.dart] description 추출 (직접): $description',
+                name: 'VLM',
+              );
+            }
+            // 형태 2: {"result": {"description": "..."}}
+            else if (jsonResponse is Map && jsonResponse['result'] != null) {
+              final result = jsonResponse['result'];
+              if (result is Map && result['description'] != null) {
+                description = result['description'].toString();
+                print('📝 [4.dart] description 추출 (result 내부): $description');
+                developer.log(
+                  '📝 [4.dart] description 추출 (result 내부): $description',
+                  name: 'VLM',
+                );
+              }
+            }
+            // 형태 3: {"des": "..."} (새로운 VLM 모드)
+            else if (jsonResponse is Map && jsonResponse['des'] != null) {
+              description = jsonResponse['des'].toString();
+              print('📝 [4.dart] description 추출 (des): $description');
+              developer.log(
+                '📝 [4.dart] description 추출 (des): $description',
+                name: 'VLM',
+              );
+            }
+
+            if (description != null && description.isNotEmpty) {
+              if (mounted) {
+                setState(() {
+                  _lastResponse = description!;
+                });
+              }
+              print('🔊 [4.dart] TTS 호출 시작: "$description"');
+              developer.log(
+                '🔊 [4.dart] TTS 호출 시작: "$description"',
+                name: 'VLM',
+              );
+              // TTS 초기화 보장
+              await _ttsService.initialize();
+              // TTS는 비동기로 시작 (카메라 종료를 기다리지 않음)
+              _ttsService.speak(description).catchError((e) {
+                print('❌ [4.dart] TTS 호출 실패: $e');
+                developer.log('❌ [4.dart] TTS 호출 실패: $e', name: 'VLM');
+              });
+              print('✅ [4.dart] TTS 호출 완료');
+              developer.log('✅ [4.dart] TTS 호출 완료', name: 'VLM');
+            } else {
+              print('⚠️ [4.dart] description을 찾을 수 없음. JSON 구조: $jsonResponse');
+              developer.log(
+                '⚠️ [4.dart] description을 찾을 수 없음. JSON 구조: $jsonResponse',
+                name: 'VLM',
+              );
+            }
+          } catch (e) {
+            // JSON 파싱 실패 시 무시 (기존 동작 유지)
+            print('❌ [4.dart] VLM 응답 파싱 실패: $e');
+            developer.log('❌ [4.dart] VLM 응답 파싱 실패: $e', name: 'VLM');
+          }
+        } else {
+          print('⚠️ [4.dart] 응답 body가 없음');
+          developer.log('⚠️ [4.dart] 응답 body가 없음', name: 'VLM');
+        }
+
+        // TTS 시작 후 카메라 종료 (await하여 완료 보장)
+        try {
+          await _channel.invokeMethod('stopCamera');
+          print('✅ [4.dart] 카메라 종료 완료');
+          developer.log('✅ [4.dart] 카메라 종료 완료', name: 'VLM');
+        } catch (e) {
+          print('❌ [4.dart] 카메라 종료 실패: $e');
+          developer.log('❌ [4.dart] 카메라 종료 실패: $e', name: 'VLM');
+        }
+
+        // 카메라 종료 후 Porcupine이 계속 실행되도록 보장
+        // 약간의 지연을 두어 오디오 리소스가 완전히 해제되도록 함
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        try {
+          print('🔄 [4.dart] Porcupine 재시작 시작');
+          developer.log('🔄 [4.dart] Porcupine 재시작 시작', name: 'Porcupine');
+
+          // 콜백 재설정 (ensureRunning 전에)
+          _porcupineService.onKeywordDetected = (keyword) {
+            print('📞 [4.dart] onKeywordDetected 콜백 호출됨 (재시작 후): $keyword');
+            developer.log(
+              '📞 [4.dart] onKeywordDetected 콜백 호출됨 (재시작 후): $keyword',
+              name: 'Porcupine',
+            );
+            if (keyword == '시대야' && mounted) {
+              print('🎤 [4.dart] "시대야" 키워드 감지됨 (재시작 후) - VLM 호출 시작');
+              developer.log(
+                '🎤 [4.dart] "시대야" 키워드 감지됨 (재시작 후) - VLM 호출 시작',
+                name: 'Porcupine',
+              );
+              _captureAndUploadVLM(context);
+            }
+          };
+
+          await _porcupineService.ensureRunning();
+          print('✅ [4.dart] Porcupine 재시작 완료');
+          developer.log('✅ [4.dart] Porcupine 재시작 완료', name: 'Porcupine');
+        } catch (e, stackTrace) {
+          print('❌ [4.dart] Porcupine 재시작 실패: $e');
+          developer.log(
+            '❌ [4.dart] Porcupine 재시작 실패: $e',
+            name: 'Porcupine',
+            error: e,
+            stackTrace: stackTrace,
+          );
+        }
+
+        // 이미지 프리뷰 타이머 (3초 후 숨김)
+        _previewTimer?.cancel();
+        _previewTimer = Timer(const Duration(seconds: 3), () {
+          if (!mounted) return;
+          setState(() {
+            _lastImageBytes = null;
+          });
+        });
       }
     } catch (e) {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
+      if (mounted) {
+        setState(() {
+          _isListeningStt = false;
+        });
       }
     }
   }
@@ -748,6 +1066,20 @@ class _Screen4State extends State<Screen4> {
               ),
             ),
           ),
+          // 이미지 오버레이 (캡처된 이미지 표시 - 메모리에서)
+          if (_lastImageBytes != null)
+            Positioned(
+              left: 16,
+              right: 16,
+              top: _isListeningStt ? 120 : 12,
+              child: VlmResultOverlay(
+                imageBytes: _lastImageBytes,
+                response: _lastResponse,
+                onClose: () => setState(() => _lastImageBytes = null),
+              ),
+            ),
+          // STT 진행 중 오버레이 (맨 앞에 표시)
+          SidaeOverlay(isListening: _isListeningStt, sttText: _sttText),
         ],
       ),
       bottomNavigationBar: Container(
@@ -791,6 +1123,66 @@ class _Screen4State extends State<Screen4> {
                   _navService.startLocationTracking(
                     onUpdate: _onPositionUpdate,
                   );
+
+                  // Porcupine 콜백 재등록: addPostFrameCallback 사용하여 다음 프레임에서 실행
+                  // 5.dart의 dispose()가 완료된 후에 콜백을 등록하도록 보장
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+
+                    // 추가 딜레이로 오디오 리소스 해제 보장
+                    Future.delayed(const Duration(milliseconds: 500), () {
+                      if (!mounted) return;
+
+                      print('🔄 [4.dart] Porcupine 콜백 재등록 시작 (5.dart에서 복귀 후)');
+                      developer.log(
+                        '🔄 [4.dart] Porcupine 콜백 재등록 시작 (5.dart에서 복귀 후)',
+                        name: 'Porcupine',
+                      );
+
+                      // Porcupine 콜백 재등록
+                      _porcupineService.onKeywordDetected = (keyword) {
+                        print(
+                          '📞 [4.dart] onKeywordDetected 콜백 호출됨 (5.dart 복귀 후): $keyword',
+                        );
+                        developer.log(
+                          '📞 [4.dart] onKeywordDetected 콜백 호출됨 (5.dart 복귀 후): $keyword',
+                          name: 'Porcupine',
+                        );
+                        if (keyword == '시대야' && mounted) {
+                          print(
+                            '🎤 [4.dart] "시대야" 키워드 감지됨 (5.dart 복귀 후) - VLM 호출 시작',
+                          );
+                          developer.log(
+                            '🎤 [4.dart] "시대야" 키워드 감지됨 (5.dart 복귀 후) - VLM 호출 시작',
+                            name: 'Porcupine',
+                          );
+                          _captureAndUploadVLM(context);
+                        }
+                      };
+
+                      // Porcupine 재시작
+                      _porcupineService
+                          .ensureRunning()
+                          .then((_) {
+                            print('✅ [4.dart] Porcupine 재시작 완료 (5.dart 복귀 후)');
+                            developer.log(
+                              '✅ [4.dart] Porcupine 재시작 완료 (5.dart 복귀 후)',
+                              name: 'Porcupine',
+                            );
+                          })
+                          .catchError((e, stackTrace) {
+                            print(
+                              '❌ [4.dart] Porcupine 재시작 실패 (5.dart 복귀 후): $e',
+                            );
+                            developer.log(
+                              '❌ [4.dart] Porcupine 재시작 실패 (5.dart 복귀 후): $e',
+                              name: 'Porcupine',
+                              error: e,
+                              stackTrace: stackTrace,
+                            );
+                          });
+                    });
+                  });
                 }
               });
             },
