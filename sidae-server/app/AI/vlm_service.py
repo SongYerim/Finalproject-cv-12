@@ -15,6 +15,20 @@ import logging
 # 로거 설정
 logger = logging.getLogger("uvicorn")
 
+# 256x256 검정 플레이스홀더 이미지 (Tool 체크용)
+_PLACEHOLDER_IMAGE_BASE64 = None
+
+def get_placeholder_image_base64():
+    """256x256 검정 이미지를 Base64로 반환 (캐싱)"""
+    global _PLACEHOLDER_IMAGE_BASE64
+    if _PLACEHOLDER_IMAGE_BASE64 is None:
+        # 256x256 검정 이미지 생성
+        black_image = Image.new('RGB', (256, 256), color=(0, 0, 0))
+        buffer = io.BytesIO()
+        black_image.save(buffer, format='JPEG', quality=50)
+        _PLACEHOLDER_IMAGE_BASE64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+    return _PLACEHOLDER_IMAGE_BASE64
+
 def resize_image_smart(
     image_bytes: bytes, 
     min_pixels: int = 256 * 256,
@@ -250,10 +264,14 @@ async def request_vlm_prediction_with_tools(
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     
-    # 첫 호출은 텍스트만 (이미지 없음)
+    # 첫 호출: 플레이스홀더 이미지 + 텍스트 (Tool 체크용, 토큰 절약)
+    placeholder_b64 = get_placeholder_image_base64()
     messages.append({
         "role": "user",
-        "content": user_prompt  # 텍스트만
+        "content": [
+            {"type": "text", "text": user_prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{placeholder_b64}"}}
+        ]
     })
     
     total_model_time = 0
