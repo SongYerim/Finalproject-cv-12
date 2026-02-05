@@ -199,11 +199,17 @@ class SpeechRecognizerManager(private val context: Context) {
      */
     fun stopListening() {
         try {
+            // 이미 종료된 상태면 호출하지 않음 (onResults나 onError에서 이미 종료됨)
+            if (!isListening) {
+                Log.d(TAG, "⚠️ 이미 음성인식이 중지된 상태입니다")
+                return
+            }
             speechRecognizer?.stopListening()
             isListening = false
             Log.d(TAG, "🛑 음성인식 중지")
         } catch (e: Exception) {
             Log.e(TAG, "❌ 음성인식 중지 실패: ${e.message}")
+            isListening = false
         }
     }
     

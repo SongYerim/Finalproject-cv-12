@@ -3,6 +3,7 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'dart:convert';
 // import 'dart:developer' as developer;
@@ -22,6 +23,7 @@ import '../widgets/route_timeline_widget.dart';
 import '../utils/bus_utils.dart' as bus_utils;
 import '../utils/math_utils.dart' as math_utils;
 import '../constants.dart';
+import '../services/shared_event_channel.dart';
 import '6.dart';
 import '7.dart';
 import '9.dart';
@@ -52,6 +54,11 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   BusStopDetector? _busStopDetector;
   Position? _currentPosition;
   bool _isNavigatingToCrosswalk = false; // 화면 이동 중복 방지
+  StreamSubscription? _sttSubscription; // STT 구독 추가
+  String? _capturedVlmPrompt; // STT 결과 저장
+  Completer<String>? _sttResultCompleter; // STT 결과를 기다리는 Completer
+  bool _isListeningStt = false; // STT 진행 중 여부
+  String _sttText = ''; // STT 텍스트 (partial 및 final)
 
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
@@ -72,6 +79,7 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
     _initBusStopDetector();
     _ttsService.initialize();
     _navService.initSensor();
+    _initStt(); // STT 초기화 추가
 
     // 센서 방향 업데이트 시 UI 갱신 (60Hz)
     _navService.onBearingUpdate = () {
@@ -265,6 +273,61 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
     );
   }
 
+  // STT 초기화 함수
+  void _initStt() {
+    try {
+      _sttSubscription = SharedEventChannel.instance.stream.listen((event) {
+        if (event is Map && event['type'] == 'stt') {
+          final eventType = event['eventType'] as String?;
+          final data = event['data'] as String?;
+
+          switch (eventType) {
+            case 'partial':
+              // 부분 결과 업데이트
+              if (mounted && _isListeningStt) {
+                setState(() {
+                  _sttText = data ?? '';
+                });
+              }
+              break;
+            case 'result':
+              // 최종 결과
+              if (mounted && _sttResultCompleter != null && !_sttResultCompleter!.isCompleted) {
+                setState(() {
+                  _capturedVlmPrompt = data ?? '';
+                  _sttText = data ?? '';
+                  // _isListeningStt는 2초 후에 false로 설정
+                });
+                _sttResultCompleter!.complete(data ?? '');
+                
+                // 최종 결과를 2초간 표시한 후 오버레이 숨김
+                Future.delayed(const Duration(seconds: 2), () {
+                  if (mounted) {
+                    setState(() {
+                      _isListeningStt = false;
+                    });
+                  }
+                });
+              }
+              break;
+            case 'error':
+              if (mounted && _sttResultCompleter != null && !_sttResultCompleter!.isCompleted) {
+                setState(() {
+                  _isListeningStt = false;
+                  _sttText = '';
+                });
+                _ttsService.speak("음성인식에 실패했습니다. 다시 시도해주세요.");
+                _sttResultCompleter!.complete('');
+              }
+              break;
+          }
+        }
+      });
+    } catch (e) {
+      print('❌ [5.dart] STT 초기화 실패: $e');
+    }
+  }
+
   @override
   void dispose() {
     // 리스너 제거
@@ -274,6 +337,11 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
     // 대신 콜백만 제거
     _porcupineService.onKeywordDetected = null;
     // developer.log('🛑 [5.dart] Porcupine 콜백 제거 (화면 종료)', name: 'Porcupine');
+
+    // STT 구독 취소
+    _sttSubscription?.cancel();
+    _sttSubscription = null;
+    _channel.invokeMethod('stopListening').catchError((_) {}); // STT 중지
 
     // GPS 위치 추적 중지 (메모리 누수 방지)
     _navService.stopLocationTracking();
@@ -522,6 +590,94 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
           Expanded(
             child: Stack(
               children: [
+                // STT 진행 중 오버레이
+                if (_isListeningStt)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.9),
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Theme.of(context).primaryColor,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '시대에게 어떤 질문을 하고 싶으신가요?',
+                            style: TextStyle(
+                              color: Theme.of(context).primaryColor,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (_sttText.isNotEmpty)
+                            Container(
+                              constraints: const BoxConstraints(maxHeight: 150),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade900,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.grey.shade700,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.mic,
+                                    color: Theme.of(context).primaryColor,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: SingleChildScrollView(
+                                      child: Text(
+                                        _sttText,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                        ),
+                                        softWrap: true,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.mic,
+                                  color: Theme.of(context).primaryColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '듣고 있어요...',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade400,
+                                    fontSize: 16,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
                 NaverMap(
                   options: const NaverMapViewOptions(
                     locale: NLocale('ko'),
@@ -608,9 +764,25 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
   // _normalizeAngle -> math_utils.normalizeAngle 로 이동됨
 
-  // VLM 모드로 이미지 캡처 및 업로드
+  // VLM 모드로 이미지 캡처 및 업로드 (카메라와 STT 동시 시작)
   Future<void> _captureAndUploadVLM(BuildContext context) async {
     try {
+      // 카메라 권한 확인 및 요청
+      final cameraStatus = await Permission.camera.status;
+      if (!cameraStatus.isGranted) {
+        final result = await Permission.camera.request();
+        if (!result.isGranted) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('카메라 권한이 필요합니다. 설정에서 권한을 허용해주세요.'),
+              ),
+            );
+          }
+          return;
+        }
+      }
+
       final baseUrl = dotenv.env['SIDAE_SERVER_CLOUD_URL'];
       if (baseUrl == null || baseUrl.isEmpty) {
         if (context.mounted) {
@@ -623,12 +795,82 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         return;
       }
 
+      if (mounted) {
+        setState(() {
+          _capturedVlmPrompt = null;
+        });
+      }
+
+      // STT 결과를 기다리는 Completer 생성
+      _sttResultCompleter = Completer<String>();
+
+      // Porcupine 중지 및 TTS 중지
+      await _ttsService.stop();
+      await _porcupineService.stop();
+
+      // STT 시작
+      if (mounted) {
+        setState(() {
+          _isListeningStt = true;
+          _sttText = '';
+        });
+        await _ttsService.speak("말씀하세요");
+      }
+
+      try {
+        await _channel.invokeMethod('startListening');
+      } catch (e) {
+        print('❌ [5.dart] STT 시작 실패: $e');
+        if (mounted) {
+          setState(() {
+            _isListeningStt = false;
+          });
+          _ttsService.speak("음성인식 시작에 실패했습니다.");
+        }
+        _sttResultCompleter!.complete('');
+      }
+
       final uploadUrl = '$baseUrl/bus-ai/bus-recognition';
 
+      // STT 결과를 기다림 (최대 10초)
+      final sttResult = await _sttResultCompleter!.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          print('⏱️ [5.dart] STT 타임아웃');
+          // 타임아웃 시 오버레이 즉시 숨김
+          if (mounted) {
+            setState(() {
+              _isListeningStt = false;
+            });
+          }
+          return '';
+        },
+      );
+
+      // STT 중지
+      try {
+        await _channel.invokeMethod('stopListening');
+      } catch (_) {}
+      
+      // 정상적인 경우는 case 'result'에서 2초 후에 _isListeningStt = false로 설정됨
+      // 타임아웃의 경우는 onTimeout에서 처리됨
+
+      // STT 결과를 metadata에 포함하여 카메라 캡처 및 업로드
+      final metadata = <String, String>{
+        'source': 'vlm',
+        'mode': 'vlm',
+      };
+      
+      if (sttResult.isNotEmpty) {
+        metadata['vlm_prompt'] = sttResult;
+        print('📝 [5.dart] STT 결과를 vlm_prompt로 포함: $sttResult');
+      }
+
+      // 카메라 캡처 및 업로드 (vlm_prompt 포함)
       final result = await _channel.invokeMethod('captureAndUploadImage', {
         'uploadUrl': uploadUrl,
         'jpegQuality': 90,
-        'metadata': {'source': 'vlm', 'mode': 'vlm'},
+        'metadata': metadata,
         'keepFile': true,
       });
 

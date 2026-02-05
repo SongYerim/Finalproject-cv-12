@@ -28,6 +28,10 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.content.Context
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -308,6 +312,13 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
             return
         }
 
+        // 카메라 권한 확인
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "❌ 카메라 권한이 없습니다")
+            result.error("PERMISSION_DENIED", "Camera permission not granted", null)
+            return
+        }
+
         val jpegQuality = call.argument<Int>("jpegQuality") ?: 90
         val useFront = call.argument<Boolean>("useFront") ?: false
         val metadata = call.argument<Map<String, String>>("metadata") ?: emptyMap()
@@ -315,10 +326,37 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
 
         // 기존 scope가 있으면 취소
         captureUploadScope?.cancel()
+        
+        // 기존 카메라 인스턴스 해제 (중요: 리소스 충돌 방지)
+        try {
+            if (captureUploadProvider != null) {
+                captureUploadProvider?.unbindAll()
+                captureUploadProvider = null
+                Log.d(TAG, "✅ 기존 captureUploadProvider 해제 완료")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "기존 captureUploadProvider 해제 실패: ${e.message}", e)
+            captureUploadProvider = null
+        }
+        
+        // 일반 카메라 provider도 해제 (YOLO 카메라가 실행 중일 수 있음)
+        try {
+            if (cameraProvider != null) {
+                cameraProvider?.unbindAll()
+                Log.d(TAG, "✅ 기존 cameraProvider 해제 완료")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "기존 cameraProvider 해제 실패: ${e.message}", e)
+        }
+        
+        // 약간의 지연을 두어 카메라 리소스가 완전히 해제되도록 함
         val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
         captureUploadScope = scope
         scope.launch {
             try {
+                // 카메라 리소스 해제 대기
+                delay(200)
+                
                 val cameraProviderFuture: ListenableFuture<ProcessCameraProvider> =
                     ProcessCameraProvider.getInstance(this@MainActivity)
                 val provider = cameraProviderFuture.await()
@@ -338,6 +376,7 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                 try {
                     provider.unbindAll()
                     provider.bindToLifecycle(this@MainActivity, selector, imageCapture)
+                    Log.d(TAG, "✅ 카메라 바인딩 완료 (captureAndUploadImage)")
                 } catch (e: Exception) {
                     Log.e(TAG, "카메라 바인딩 실패", e)
                     result.error("CAMERA_BIND_ERROR", e.message, null)
@@ -459,8 +498,10 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
             for ((key, value) in metadata) {
                 outputStream.writeBytes(twoHyphens + boundary + lineEnd)
                 outputStream.writeBytes("Content-Disposition: form-data; name=\"$key\"$lineEnd")
+                outputStream.writeBytes("Content-Type: text/plain; charset=UTF-8$lineEnd")
                 outputStream.writeBytes(lineEnd)
-                outputStream.writeBytes(value)
+                // 한글 텍스트를 UTF-8로 명시적 인코딩
+                outputStream.write(value.toByteArray(Charsets.UTF_8))
                 outputStream.writeBytes(lineEnd)
             }
 
