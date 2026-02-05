@@ -1009,16 +1009,6 @@ class _Screen4State extends State<Screen4> {
                   // 센서 재시작
                   _navService.ensureSensorRunning();
 
-                  // Porcupine 재시작
-                  _porcupineService.onKeywordDetected = (keyword) {
-                    if (keyword == '시대야' && mounted) {
-                      _captureAndUploadVLM(context);
-                    }
-                  };
-                  _porcupineService.ensureRunning().catchError((e) {
-                    print('❌ [4.dart] Porcupine 재시작 실패: $e');
-                  });
-
                   // 단계 변경 TTS 콜백 재등록
                   _tracker.onStepChanged =
                       (segmentIndex, stepIndex, description) {
@@ -1039,6 +1029,57 @@ class _Screen4State extends State<Screen4> {
                   _navService.startLocationTracking(
                     onUpdate: _onPositionUpdate,
                   );
+
+                  // Porcupine 콜백 재등록: addPostFrameCallback 사용하여 다음 프레임에서 실행
+                  // 5.dart의 dispose()가 완료된 후에 콜백을 등록하도록 보장
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    
+                    // 추가 딜레이로 오디오 리소스 해제 보장
+                    Future.delayed(const Duration(milliseconds: 500), () {
+                      if (!mounted) return;
+                      
+                      print('🔄 [4.dart] Porcupine 콜백 재등록 시작 (5.dart에서 복귀 후)');
+                      developer.log(
+                        '🔄 [4.dart] Porcupine 콜백 재등록 시작 (5.dart에서 복귀 후)',
+                        name: 'Porcupine',
+                      );
+                      
+                      // Porcupine 콜백 재등록
+                      _porcupineService.onKeywordDetected = (keyword) {
+                        print('📞 [4.dart] onKeywordDetected 콜백 호출됨 (5.dart 복귀 후): $keyword');
+                        developer.log(
+                          '📞 [4.dart] onKeywordDetected 콜백 호출됨 (5.dart 복귀 후): $keyword',
+                          name: 'Porcupine',
+                        );
+                        if (keyword == '시대야' && mounted) {
+                          print('🎤 [4.dart] "시대야" 키워드 감지됨 (5.dart 복귀 후) - VLM 호출 시작');
+                          developer.log(
+                            '🎤 [4.dart] "시대야" 키워드 감지됨 (5.dart 복귀 후) - VLM 호출 시작',
+                            name: 'Porcupine',
+                          );
+                          _captureAndUploadVLM(context);
+                        }
+                      };
+                      
+                      // Porcupine 재시작
+                      _porcupineService.ensureRunning().then((_) {
+                        print('✅ [4.dart] Porcupine 재시작 완료 (5.dart 복귀 후)');
+                        developer.log(
+                          '✅ [4.dart] Porcupine 재시작 완료 (5.dart 복귀 후)',
+                          name: 'Porcupine',
+                        );
+                      }).catchError((e, stackTrace) {
+                        print('❌ [4.dart] Porcupine 재시작 실패 (5.dart 복귀 후): $e');
+                        developer.log(
+                          '❌ [4.dart] Porcupine 재시작 실패 (5.dart 복귀 후): $e',
+                          name: 'Porcupine',
+                          error: e,
+                          stackTrace: stackTrace,
+                        );
+                      });
+                    });
+                  });
                 }
               });
             },
