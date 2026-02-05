@@ -346,18 +346,8 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         });
       }
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('업로드 완료: $result')));
-      }
     } catch (e) {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
-      }
       if (mounted) {
         setState(() {
           _lastResponse = 'No response';
@@ -594,11 +584,6 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         });
       }
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('업로드 완료: $result')));
-      }
     } catch (e) {
       try {
         await _channel.invokeMethod('stopCamera');
@@ -628,11 +613,6 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         );
       }
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
-      }
       if (mounted) {
         setState(() {
           _lastResponse = 'No response';
@@ -845,6 +825,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                       accentColor: const Color(0xFFFFD400),
                       textColor: const Color(0xFFFFD400),
                       alignment: Alignment.center,
+                      semanticLabel: '하차벨을 찾고 싶을 때 눌러주세요',
                       onTap: () => _captureAndUpload(context, 'stop_bell'),
                     ),
                   ),
@@ -855,6 +836,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                       accentColor: Colors.black,
                       textColor: Colors.black,
                       alignment: Alignment.center,
+                      semanticLabel: '태그기를 찾고 싶을 때 눌러주세요',
                       onTap: () => _captureAndUpload(context, 'card_tagger'),
                     ),
                   ),
@@ -1108,6 +1090,7 @@ class _ActionPanel extends StatelessWidget {
   final Color accentColor;
   final Color textColor;
   final Alignment alignment;
+  final String? semanticLabel;
   final VoidCallback? onTap;
 
   const _ActionPanel({
@@ -1116,66 +1099,70 @@ class _ActionPanel extends StatelessWidget {
     required this.accentColor,
     required this.textColor,
     required this.alignment,
+    this.semanticLabel,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: backgroundColor,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: SizedBox.expand(
-          child: Material(
-            color: Colors.transparent,
-            child: Ink(
-              decoration: BoxDecoration(
-                color: backgroundColor,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: accentColor, width: 3),
-                boxShadow: [
-                  BoxShadow(
-                    color: accentColor.withOpacity(0.2),
-                    blurRadius: 10,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(18),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 26,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: Align(
-                          alignment: alignment,
-                          child: Text(
-                            title,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: textColor,
-                              fontSize: 50,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
+    return Semantics(
+      label: semanticLabel ?? title,
+      button: true,
+      child: Container(
+        color: backgroundColor,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: SizedBox.expand(
+            child: Material(
+              color: Colors.transparent,
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: backgroundColor,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: accentColor, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accentColor.withOpacity(0.2),
+                      blurRadius: 10,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(18),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 26,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: Align(
+                            alignment: alignment,
+                            child: Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: textColor,
+                                fontSize: 50,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      Container(
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: accentColor,
-                          borderRadius: BorderRadius.circular(99),
+                        Container(
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: accentColor,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
                   ),
                 ),
               ),
@@ -1183,6 +1170,7 @@ class _ActionPanel extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }

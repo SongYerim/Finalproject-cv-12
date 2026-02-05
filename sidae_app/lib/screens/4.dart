@@ -606,18 +606,8 @@ class _Screen4State extends State<Screen4> {
         // );
       }
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('업로드 완료: ${result['body'] ?? 'Success'}')),
-        );
-      }
     } catch (e) {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
-      }
     }
   }
 

@@ -959,18 +959,8 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
         // );
       }
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('업로드 완료: ${result['body'] ?? 'Success'}')),
-        );
-      }
     } catch (e) {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
-      }
     }
   }
 
