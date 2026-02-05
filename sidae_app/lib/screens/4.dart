@@ -3,6 +3,7 @@ import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
@@ -59,6 +60,9 @@ class _Screen4State extends State<Screen4> {
   Completer<String>? _sttResultCompleter; // STT 결과를 기다리는 Completer
   bool _isListeningStt = false; // STT 진행 중 여부
   String _sttText = ''; // STT 텍스트 (partial 및 final)
+  Uint8List? _lastImageBytes; // 캡처된 이미지 데이터 (메모리, 오버레이 표시용)
+  String _lastResponse = 'No response'; // 서버 응답 텍스트
+  Timer? _previewTimer; // 이미지 프리뷰 타이머
 
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
@@ -592,8 +596,31 @@ class _Screen4State extends State<Screen4> {
       });
 
       if (result is Map) {
-        final path = result['localPath'];
+        final imageBase64 = result['imageBase64'];
         var body = result['body'];
+
+        // Base64 이미지 데이터를 디코딩하여 메모리에 저장 (오버레이 표시용)
+        if (mounted) {
+          setState(() {
+            if (imageBase64 is String) {
+              try {
+                _lastImageBytes = base64Decode(imageBase64);
+              } catch (e) {
+                print('❌ [4.dart] Base64 디코딩 실패: $e');
+                developer.log('❌ [4.dart] Base64 디코딩 실패: $e', name: 'VLM');
+                _lastImageBytes = null;
+              }
+            } else {
+              _lastImageBytes = null;
+            }
+            final bodyText = body?.toString() ?? '';
+            final normalized = bodyText.trim();
+            _lastResponse =
+                normalized.isNotEmpty && normalized.toLowerCase() != 'null'
+                ? normalized
+                : 'No response';
+          });
+        }
 
         // 응답에서 description 파싱하여 TTS로 읽기 (먼저 처리)
         if (body != null) {
@@ -710,6 +737,15 @@ class _Screen4State extends State<Screen4> {
             stackTrace: stackTrace,
           );
         }
+
+        // 이미지 프리뷰 타이머 (3초 후 숨김)
+        _previewTimer?.cancel();
+        _previewTimer = Timer(const Duration(seconds: 3), () {
+          if (!mounted) return;
+          setState(() {
+            _lastImageBytes = null;
+          });
+        });
       }
     } catch (e) {
       await _channel.invokeMethod('stopCamera').catchError((_) {});
@@ -1002,6 +1038,65 @@ class _Screen4State extends State<Screen4> {
               ),
             ),
           ),
+          // 이미지 오버레이 (캡처된 이미지 표시 - 메모리에서)
+          if (_lastImageBytes != null)
+            Positioned(
+              left: 16,
+              right: 16,
+              top: _isListeningStt ? 120 : 12,
+              child: AspectRatio(
+                aspectRatio: 3 / 4, // 카메라 비율 (일반적인 세로 모드)
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: const Color(0xFFFFD400),
+                      width: 2,
+                    ),
+                  ),
+                  padding: const EdgeInsets.all(8),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.memory(_lastImageBytes!, fit: BoxFit.cover),
+                        Positioned.fill(
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Container(
+                              margin: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.7),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                _lastResponse.isNotEmpty
+                                    ? _lastResponse
+                                    : 'No response',
+                                textAlign: TextAlign.center,
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           // STT 진행 중 오버레이 (맨 앞에 표시)
           SidaeOverlay(isListening: _isListeningStt, sttText: _sttText),
         ],

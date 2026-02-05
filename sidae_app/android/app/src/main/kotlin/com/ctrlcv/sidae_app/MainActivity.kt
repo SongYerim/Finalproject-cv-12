@@ -402,12 +402,16 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                                     // 메모리에서 직접 업로드 (파일 저장 없음)
                                     val uploadResult = uploadImageBytes(uploadUrl, jpegBytes, metadata)
                                     
+                                    // 이미지 데이터를 Base64로 인코딩 (오버레이 표시용)
+                                    val imageBase64 = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
+                                    
                                     withContext(Dispatchers.Main) {
                                         result.success(
                                             mapOf(
                                                 "success" to uploadResult.success,
                                                 "statusCode" to uploadResult.statusCode,
-                                                "body" to uploadResult.body
+                                                "body" to uploadResult.body,
+                                                "imageBase64" to imageBase64
                                             )
                                         )
                                     }
@@ -418,7 +422,8 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
                                             mapOf(
                                                 "success" to false,
                                                 "statusCode" to -1,
-                                                "body" to (e.message ?: "")
+                                                "body" to (e.message ?: ""),
+                                                "imageBase64" to null
                                             )
                                         )
                                     }

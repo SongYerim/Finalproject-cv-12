@@ -1,6 +1,7 @@
 import 'dart:async';
 // import 'dart:developer' as developer;
-import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'ocr_service.dart';
 import 'vlm_service.dart';
@@ -192,26 +193,20 @@ class BusDetectorService {
         'uploadUrl': uploadUrl,
         'jpegQuality': 90,
         'metadata': {'source': 'bus_detector', 'mode': 'tag_'},
-        'keepFile': true, // 결과 이미지 표시를 위해 파일 유지
       });
 
       if (result is Map) {
-        final localPath = result['localPath'] as String?;
+        final imageBase64 = result['imageBase64'] as String?;
         final body = result['body'] as String?;
 
         Uint8List? imageBytes;
 
-        // 로컬 파일에서 이미지 바이트 읽기
-        if (localPath != null) {
+        // Base64 이미지 데이터를 디코딩하여 메모리에 저장
+        if (imageBase64 != null) {
           try {
-            final file = File(localPath);
-            if (await file.exists()) {
-              imageBytes = await file.readAsBytes();
-              // 필요하다면 파일 삭제 (지금은 유지)
-              // await file.delete();
-            }
+            imageBytes = base64Decode(imageBase64);
           } catch (e) {
-            // developer.log('⚠️ 이미지 파일 읽기 실패: $e', name: 'BusDetectorService');
+            // developer.log('⚠️ Base64 디코딩 실패: $e', name: 'BusDetectorService');
           }
         }
 

@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:typed_data';
 import 'dart:math' as math;
 import '../models/route_model.dart';
 import '../services/route_tracker.dart';
@@ -61,6 +62,9 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
   Completer<String>? _sttResultCompleter; // STT 결과를 기다리는 Completer
   bool _isListeningStt = false; // STT 진행 중 여부
   String _sttText = ''; // STT 텍스트 (partial 및 final)
+  Uint8List? _lastImageBytes; // 캡처된 이미지 데이터 (메모리, 오버레이 표시용)
+  String _lastResponse = 'No response'; // 서버 응답 텍스트
+  Timer? _previewTimer; // 이미지 프리뷰 타이머
 
   static const MethodChannel _channel = MethodChannel(
     'com.ctrlcv.sidae_app/yolo_native',
@@ -844,8 +848,31 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       });
 
       if (result is Map) {
-        final path = result['localPath'];
+        final imageBase64 = result['imageBase64'];
         var body = result['body'];
+
+        // Base64 이미지 데이터를 디코딩하여 메모리에 저장 (오버레이 표시용)
+        if (mounted) {
+          setState(() {
+            if (imageBase64 is String) {
+              try {
+                _lastImageBytes = base64Decode(imageBase64);
+              } catch (e) {
+                print('❌ [5.dart] Base64 디코딩 실패: $e');
+                developer.log('❌ [5.dart] Base64 디코딩 실패: $e', name: 'VLM');
+                _lastImageBytes = null;
+              }
+            } else {
+              _lastImageBytes = null;
+            }
+            final bodyText = body?.toString() ?? '';
+            final normalized = bodyText.trim();
+            _lastResponse =
+                normalized.isNotEmpty && normalized.toLowerCase() != 'null'
+                ? normalized
+                : 'No response';
+          });
+        }
 
         // 응답에서 description 파싱하여 TTS로 읽기 (먼저 처리)
         if (body != null) {

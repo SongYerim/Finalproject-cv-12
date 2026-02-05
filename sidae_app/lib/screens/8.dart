@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,7 +31,7 @@ class BusOnlyScreen extends StatefulWidget {
 }
 
 class _BusOnlyScreenState extends State<BusOnlyScreen> {
-  String? _lastImagePath;
+  Uint8List? _lastImageBytes; // 캡처된 이미지 데이터 (메모리, 오버레이 표시용)
   String _lastResponse = 'No response';
   int? _responseTimeMs; // 응답 시간 (밀리초)
   Timer? _previewTimer;
@@ -282,13 +282,22 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         stopwatch.stop();
         final responseTime = stopwatch.elapsedMilliseconds;
 
-        final path = result['localPath'];
+        final imageBase64 = result['imageBase64'];
         var body = result['body'];
 
+        // Base64 이미지 데이터를 디코딩하여 메모리에 저장 (오버레이 표시용)
         if (mounted) {
           setState(() {
-            if (path is String) {
-              _lastImagePath = path;
+            if (imageBase64 is String) {
+              try {
+                _lastImageBytes = base64Decode(imageBase64);
+              } catch (e) {
+                developer.log('❌ [8.dart] Base64 디코딩 실패: $e', name: 'VLM');
+                print('❌ [8.dart] Base64 디코딩 실패: $e');
+                _lastImageBytes = null;
+              }
+            } else {
+              _lastImageBytes = null;
             }
             final bodyText = body?.toString() ?? '';
             final normalized = bodyText.trim();
@@ -400,7 +409,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         _previewTimer = Timer(const Duration(seconds: 3), () {
           if (!mounted) return;
           setState(() {
-            _lastImagePath = null;
+            _lastImageBytes = null;
           });
         });
       }
@@ -498,10 +507,20 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
 
         final path = result['localPath'];
         final body = result['body'];
+        // Base64 이미지 데이터를 디코딩하여 메모리에 저장 (오버레이 표시용)
+        final imageBase64 = result['imageBase64'];
         if (mounted) {
           setState(() {
-            if (path is String) {
-              _lastImagePath = path;
+            if (imageBase64 is String) {
+              try {
+                _lastImageBytes = base64Decode(imageBase64);
+              } catch (e) {
+                developer.log('❌ [8.dart] Base64 디코딩 실패: $e', name: 'BusAction');
+                print('❌ [8.dart] Base64 디코딩 실패: $e');
+                _lastImageBytes = null;
+              }
+            } else {
+              _lastImageBytes = null;
             }
             final bodyText = body?.toString() ?? '';
             final normalized = bodyText.trim();
@@ -634,7 +653,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         _previewTimer = Timer(const Duration(seconds: 3), () {
           if (!mounted) return;
           setState(() {
-            _lastImagePath = null;
+            _lastImageBytes = null;
           });
         });
       }
@@ -957,7 +976,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                 ),
               ),
             ),
-            if (_lastImagePath != null)
+            if (_lastImageBytes != null)
               Positioned(
                 left: 16,
                 right: 16,
@@ -979,7 +998,7 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          Image.file(File(_lastImagePath!), fit: BoxFit.cover),
+                          Image.memory(_lastImageBytes!, fit: BoxFit.cover),
                           Positioned.fill(
                             child: Align(
                               alignment: Alignment.bottomCenter,
