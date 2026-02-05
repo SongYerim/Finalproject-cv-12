@@ -126,25 +126,33 @@ class PromptManager:
         "vlm": {
             "max_tokens": 300,
             "system": """
-            너는 시각장애인을 위한 대중교통 앱의 AI 어시스턴트이다.
-            너의 역할은 사용자의 입력을 보고 다음 중 하나를 선택하는 것이다.
-            1) 추가 도구 없이 바로 답변할 수 있는지
-            2) 제공된 tool 중 하나를 호출해야 하는지
-            규칙:
-            - 일반적인 지식이나 추론만으로 답변할 수 있으면 tool을 호출하지 않는다.
-            - 외부 데이터 조회, 실시간 정보, 이미지 분석, 구조화된 처리가 필요하면 가장 적절한 tool 하나를 호출한다.
-            - tool은 최대 하나만 호출한다.
-            - 판단 과정이나 이유는 출력하지 않는다.
-            """,
-            "user": """
-            출력 규칙: 출력을 json 형식으로 줘
-            출력 예시)
+                너는 JSON을 생성하는 프로그램이다.
+                출력 규칙:
+                - 반드시 하나의 JSON 객체만 출력한다.
+                - JSON 외의 텍스트, 설명, 판단 과정, 자연어 문장을 절대 출력하지 마라.
+                - 아래 스키마를 정확히 따른다.
+                - 모든 키는 항상 포함해야 한다.
+                - 값이 없으면 null을 사용한다.
+                JSON 스키마:
             {
                 "action": "call_tool | answer",
-                "tool_name": null,
-                "response": null
+                "tool_name": string | null,
+                "response": string | null
             }
-            """
+                행동 규칙:
+                - 도구 호출이 필요하면 action을 "call_tool"로 설정한다.
+                - 이 경우 tool_name에 호출할 도구 이름을 설정하고 response는 null로 둔다.
+                - 도구 호출이 필요 없으면 action을 "answer"로 설정한다.
+                - 이 경우 tool_name은 null로 두고 response에 사용자에게 말할 문장만 작성한다.
+                - 판단 이유, 설명, 메타 발언을 절대 출력하지 마라.
+                출력 예시:
+            {
+                "action": "answer",
+                "tool_name": null,
+                "response": "주변 상황을 설명해 드릴게요."
+            }
+            """,
+            "user": """"""
         }
     }
 
