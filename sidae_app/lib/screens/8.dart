@@ -14,6 +14,7 @@ import '../services/shared_event_channel.dart';
 import '../services/context_builder.dart';
 import '../services/navigation_service.dart';
 import '../widgets/sidae_overlay.dart';
+import '../widgets/vlm_result_overlay.dart';
 
 class BusOnlyScreen extends StatefulWidget {
   final double? returnMidLat;
@@ -342,8 +343,21 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                 );
               }
             }
+            // 형태 3: {"des": "..."} (새로운 VLM 모드)
+            else if (jsonResponse is Map && jsonResponse['des'] != null) {
+              description = jsonResponse['des'].toString();
+              developer.log(
+                '📝 [8.dart] description 추출 (des): $description',
+                name: 'VLM',
+              );
+            }
 
             if (description != null && description.isNotEmpty) {
+              if (mounted) {
+                setState(() {
+                  _lastResponse = description!;
+                });
+              }
               developer.log(
                 '🔊 [8.dart] TTS 호출 시작: "$description"',
                 name: 'VLM',
@@ -986,81 +1000,11 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                 left: 16,
                 right: 16,
                 top: _isListeningStt ? 120 : 12,
-                child: AspectRatio(
-                  aspectRatio: 3 / 4, // 카메라 비율 (일반적인 세로 모드)
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: const Color(0xFFFFD400),
-                        width: 2,
-                      ),
-                    ),
-                    padding: const EdgeInsets.all(8),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.memory(_lastImageBytes!, fit: BoxFit.cover),
-                          Positioned.fill(
-                            child: Align(
-                              alignment: Alignment.bottomCenter,
-                              child: Container(
-                                margin: const EdgeInsets.all(8),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.7),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  _lastResponse.isNotEmpty
-                                      ? _lastResponse
-                                      : 'No response',
-                                  textAlign: TextAlign.center,
-                                  maxLines: 4,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          // 응답 시간 표시 (우상단)
-                          if (_responseTimeMs != null)
-                            Positioned(
-                              top: 8,
-                              right: 8,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFD400),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  '응답 시간: ${_responseTimeMs}ms',
-                                  style: const TextStyle(
-                                    color: Colors.black,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
+                child: VlmResultOverlay(
+                  imageBytes: _lastImageBytes,
+                  response: _lastResponse,
+                  responseTimeMs: _responseTimeMs,
+                  onClose: () => setState(() => _lastImageBytes = null),
                 ),
               ),
             // STT 진행 중 오버레이 (맨 앞에 표시)

@@ -22,6 +22,7 @@ import '../widgets/progress_indicator_widget.dart';
 import '../widgets/bus_arrival_overlay.dart';
 import '../widgets/route_timeline_widget.dart';
 import '../widgets/sidae_overlay.dart';
+import '../widgets/vlm_result_overlay.dart';
 import '../utils/bus_utils.dart' as bus_utils;
 import '../utils/math_utils.dart' as math_utils;
 import '../constants.dart';
@@ -356,6 +357,9 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
 
     // NavigationService는 싱글톤 인스턴스로 dispose 하면 안 됨
     // _navService.dispose(); 제거
+
+    // 타이머 정리
+    _previewTimer?.cancel();
     super.dispose();
   }
 
@@ -654,6 +658,20 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
                     ),
                   ),
                 ),
+                // 이미지 오버레이 (캡처된 이미지 표시 - 메모리에서)
+                // STT 진행 중이면 오버레이 위치 조정 (STT 오버레이 아래로)
+                if (_lastImageBytes != null)
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    top: _isListeningStt ? 120 : 12,
+                    child: VlmResultOverlay(
+                      imageBytes: _lastImageBytes,
+                      response: _lastResponse,
+                      onClose: () => setState(() => _lastImageBytes = null),
+                    ),
+                  ),
+
                 // STT 진행 중 오버레이 (맨 앞에 표시)
                 SidaeOverlay(isListening: _isListeningStt, sttText: _sttText),
               ],
@@ -872,6 +890,15 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
                 normalized.isNotEmpty && normalized.toLowerCase() != 'null'
                 ? normalized
                 : 'No response';
+
+            // 3초 후 이미지 및 텍스트 닫기 타이머 시작 (응답 수신 시점부터)
+            _previewTimer?.cancel();
+            _previewTimer = Timer(const Duration(seconds: 3), () {
+              if (!mounted) return;
+              setState(() {
+                _lastImageBytes = null;
+              });
+            });
           });
         }
 
@@ -910,8 +937,22 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
                 );
               }
             }
+            // 형태 3: {"des": "..."} (새로운 VLM 모드)
+            else if (jsonResponse is Map && jsonResponse['des'] != null) {
+              description = jsonResponse['des'].toString();
+              print('📝 [5.dart] description 추출 (des): $description');
+              developer.log(
+                '📝 [5.dart] description 추출 (des): $description',
+                name: 'VLM',
+              );
+            }
 
             if (description != null && description.isNotEmpty) {
+              if (mounted) {
+                setState(() {
+                  _lastResponse = description!;
+                });
+              }
               print('🔊 [5.dart] TTS 호출 시작: "$description"');
               developer.log(
                 '🔊 [5.dart] TTS 호출 시작: "$description"',

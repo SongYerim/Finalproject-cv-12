@@ -23,6 +23,7 @@ import '../widgets/progress_indicator_widget.dart';
 import '../widgets/bus_arrival_overlay.dart';
 import '../widgets/route_timeline_widget.dart';
 import '../widgets/sidae_overlay.dart';
+import '../widgets/vlm_result_overlay.dart';
 import '../utils/bus_utils.dart' as bus_utils;
 import '../utils/math_utils.dart' as math_utils;
 import '../services/shared_event_channel.dart';
@@ -382,6 +383,9 @@ class _Screen4State extends State<Screen4> {
 
     // NavigationService는 싱글톤 인스턴스로 dispose 하면 안 됨
     // _navService.dispose(); 제거
+
+    // 타이머 정리
+    _previewTimer?.cancel();
     super.dispose();
   }
 
@@ -620,6 +624,15 @@ class _Screen4State extends State<Screen4> {
                 normalized.isNotEmpty && normalized.toLowerCase() != 'null'
                 ? normalized
                 : 'No response';
+
+            // 3초 후 이미지 및 텍스트 닫기 타이머 시작 (응답 수신 시점부터)
+            _previewTimer?.cancel();
+            _previewTimer = Timer(const Duration(seconds: 3), () {
+              if (!mounted) return;
+              setState(() {
+                _lastImageBytes = null;
+              });
+            });
           });
         }
 
@@ -658,8 +671,22 @@ class _Screen4State extends State<Screen4> {
                 );
               }
             }
+            // 형태 3: {"des": "..."} (새로운 VLM 모드)
+            else if (jsonResponse is Map && jsonResponse['des'] != null) {
+              description = jsonResponse['des'].toString();
+              print('📝 [4.dart] description 추출 (des): $description');
+              developer.log(
+                '📝 [4.dart] description 추출 (des): $description',
+                name: 'VLM',
+              );
+            }
 
             if (description != null && description.isNotEmpty) {
+              if (mounted) {
+                setState(() {
+                  _lastResponse = description!;
+                });
+              }
               print('🔊 [4.dart] TTS 호출 시작: "$description"');
               developer.log(
                 '🔊 [4.dart] TTS 호출 시작: "$description"',
@@ -1045,57 +1072,10 @@ class _Screen4State extends State<Screen4> {
               left: 16,
               right: 16,
               top: _isListeningStt ? 120 : 12,
-              child: AspectRatio(
-                aspectRatio: 3 / 4, // 카메라 비율 (일반적인 세로 모드)
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: const Color(0xFFFFD400),
-                      width: 2,
-                    ),
-                  ),
-                  padding: const EdgeInsets.all(8),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.memory(_lastImageBytes!, fit: BoxFit.cover),
-                        Positioned.fill(
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: Container(
-                              margin: const EdgeInsets.all(8),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.7),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                _lastResponse.isNotEmpty
-                                    ? _lastResponse
-                                    : 'No response',
-                                textAlign: TextAlign.center,
-                                maxLines: 4,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              child: VlmResultOverlay(
+                imageBytes: _lastImageBytes,
+                response: _lastResponse,
+                onClose: () => setState(() => _lastImageBytes = null),
               ),
             ),
           // STT 진행 중 오버레이 (맨 앞에 표시)

@@ -137,7 +137,7 @@ class PromptManager:
             "user": "" 
         },
         "vlm_assistant": {
-            "max_tokens": 400,
+            "max_tokens": 800,
             "system": """
 너는 시각장애인을 위한 대중교통 네비게이션 앱 '시대(Sidae)'의 AI 어시스턴트야.
 
