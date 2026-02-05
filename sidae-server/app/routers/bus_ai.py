@@ -28,7 +28,7 @@ async def identify_bus(file: UploadFile = File(...), mode: str = Form(...), vlm_
         logger.info(f"Vertex AI 요청 시작: 파일명={file.filename}, 크기={len(image_bytes)} bytes")
         
         if vlm_prompt and vlm_prompt.strip() and vlm_prompt.strip().lower() != "null":
-            vlm_prompt += vlm_prompt + '출력 형식 (반드시 이 형식을 따르세요):{"description": }'
+            vlm_prompt += '출력 형식 (반드시 이 형식을 따르세요):{"description": }'
             result_ = await request_vlm_prediction(
                 image_bytes=image_bytes, 
                 mime_type=file.content_type,

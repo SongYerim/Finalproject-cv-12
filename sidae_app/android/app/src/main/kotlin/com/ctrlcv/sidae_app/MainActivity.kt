@@ -498,8 +498,10 @@ class MainActivity : FlutterActivity(), CameraPreviewCallback {
             for ((key, value) in metadata) {
                 outputStream.writeBytes(twoHyphens + boundary + lineEnd)
                 outputStream.writeBytes("Content-Disposition: form-data; name=\"$key\"$lineEnd")
+                outputStream.writeBytes("Content-Type: text/plain; charset=UTF-8$lineEnd")
                 outputStream.writeBytes(lineEnd)
-                outputStream.writeBytes(value)
+                // 한글 텍스트를 UTF-8로 명시적 인코딩
+                outputStream.write(value.toByteArray(Charsets.UTF_8))
                 outputStream.writeBytes(lineEnd)
             }
 
