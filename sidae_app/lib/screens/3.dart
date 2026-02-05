@@ -103,7 +103,13 @@ class _MapResultScreenState extends State<MapResultScreen> {
     );
   }
 
+  bool _isNavigating = false;
+
   void _navigateToScreen4() {
+    if (_isNavigating) return;
+    _isNavigating = true;
+    _autoStartTimer?.cancel(); // 타이머 확실히 취소
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -112,7 +118,12 @@ class _MapResultScreenState extends State<MapResultScreen> {
           destinationName: widget.destinationName,
         ),
       ),
-    );
+    ).then((_) {
+      // 4.dart에서 뒤로가기로 돌아왔을 때 플래그 초기화
+      if (mounted) {
+        _isNavigating = false;
+      }
+    });
   }
 
   void _initLocationTracking() {
