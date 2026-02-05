@@ -10,6 +10,10 @@ import io
 import time
 import cv2
 import numpy as np
+import logging
+
+# 로거 설정
+logger = logging.getLogger("uvicorn")
 
 def resize_image_smart(
     image_bytes: bytes, 
@@ -259,7 +263,8 @@ async def request_vlm_prediction_with_tools(
             "messages": messages,
             "max_tokens": max_tokens
         }
-        if tools and i == 0:  # 첫 번째 호출에서만 tools 전달
+        # 모든 턴에서 tools 정보 전달 (OpenAI API 표준)
+        if tools:
             payload["tools"] = tools
         
         try:
@@ -282,20 +287,16 @@ async def request_vlm_prediction_with_tools(
             choices = result.get("choices", [])
             
             if not choices:
-                return ["응답을 생성할 수 없습니다.", resize_time, total_model_time]
+                return [{"choices": [{"message": {"content": "응답을 생성할 수 없습니다."}}]}, resize_time, total_model_time]
             
             choice = choices[0]
             finish_reason = choice.get("finish_reason", "")
             message = choice.get("message", {})
             
-            # 최종 응답인 경우
-            if finish_reason == "stop":
-                content = message.get("content", "")
-                return [{"choices": [{"message": {"content": content}}]}, resize_time, total_model_time]
-            
-            # Tool 호출인 경우
+            # Tool 호출인 경우 (finish_reason이 "tool_calls" 또는 tool_calls 필드가 있는 경우)
             tool_calls = message.get("tool_calls", [])
-            if tool_calls:
+            if tool_calls or finish_reason == "tool_calls":
+                logger.info(f"Tool 호출 감지: {len(tool_calls)}개 도구")
                 # Assistant 메시지 추가 (tool_calls 포함)
                 messages.append(message)
                 
@@ -305,8 +306,10 @@ async def request_vlm_prediction_with_tools(
                     tool_name = func.get("name", "")
                     tool_call_id = tool_call.get("id", "")
                     
+                    logger.info(f"Tool 실행: {tool_name}")
                     # Tool 실행
                     tool_result = execute_tool(tool_name, context or {})
+                    logger.info(f"Tool 결과: {tool_result}")
                     
                     # Tool 결과 메시지 추가
                     messages.append({
@@ -314,10 +317,16 @@ async def request_vlm_prediction_with_tools(
                         "tool_call_id": tool_call_id,
                         "content": json.dumps(tool_result, ensure_ascii=False)
                     })
-            else:
-                # Tool 호출도 아니고 stop도 아닌 경우 -> 현재 응답 반환
-                content = message.get("content", "응답을 생성할 수 없습니다.")
+                # 다음 루프에서 모델이 결과를 해석하도록 계속 진행
+                continue
+            
+            # 최종 응답인 경우 (stop 또는 tool 호출 없이 content만 있는 경우)
+            content = message.get("content", "")
+            if content or finish_reason == "stop":
                 return [{"choices": [{"message": {"content": content}}]}, resize_time, total_model_time]
+            
+            # 예상치 못한 상황 - 현재 응답 반환
+            return [{"choices": [{"message": {"content": content or "응답을 생성할 수 없습니다."}}]}, resize_time, total_model_time]
                 
         except HTTPException:
             raise
