@@ -213,7 +213,8 @@ async def request_vlm_prediction_with_tools(
     image_bytes: bytes,
     mime_type: str,
     user_prompt: str,
-    system_prompt: str = "",
+    system_prompt_tool_check: str, # 첫 호출용 (Tool 판단)
+    system_prompt_assistant: str,  # 이후 호출용 (답변 생성)
     tools: list = None,
     context: dict = None,
     max_tokens: int = 300,
@@ -223,15 +224,16 @@ async def request_vlm_prediction_with_tools(
     Tool calling을 지원하는 VLM 호출 (최적화 버전).
     
     흐름:
-    1. 첫 호출: 텍스트만 + tools (이미지 X) → Tool 필요 여부 체크
-    2-A. Tool 필요 → Tool 실행 → 두 번째 호출: 텍스트 + tool 결과 (이미지 X)
-    2-B. Tool 불필요 → 두 번째 호출: 텍스트 + 이미지 (직접 답변)
+    1. 첫 호출: 검정 이미지 + system_prompt_tool_check + tools → Tool 필요 여부 체크
+    2-A. Tool 필요 → Tool 실행 → 두 번째 호출: 검정 이미지(그대로 유지) + system_prompt_assistant + tool 결과
+    2-B. Tool 불필요 → 두 번째 호출: 실제 이미지 + system_prompt_assistant (직접 답변)
     
     Args:
         image_bytes: 이미지 바이트
         mime_type: 이미지 MIME 타입
         user_prompt: 사용자 질문
-        system_prompt: 시스템 프롬프트
+        system_prompt_tool_check: 도구 사용 판단용 짧은 시스템 프롬프트
+        system_prompt_assistant: 최종 답변용 상세 시스템 프롬프트
         tools: Tool 정의 목록
         context: 앱에서 전달받은 컨텍스트
         max_tokens: 최대 토큰 수
@@ -251,7 +253,7 @@ async def request_vlm_prediction_with_tools(
 
     url = f"https://{REGION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{REGION}/endpoints/{ENDPOINT_ID}:rawPredict"
     
-    # 이미지 리사이징 (나중에 필요할 때 사용)
+    # 이미지 리사이징 (실제 이미지가 필요할 때만 인코딩하면 좋겠지만, 미리 준비해둠)
     resize_s = time.time()
     optimized_image_bytes = resize_image_smart(image_bytes, min_pixels=147456, max_pixels=262144)
     resize_e = time.time()
@@ -259,10 +261,12 @@ async def request_vlm_prediction_with_tools(
     
     base64_image = base64.b64encode(optimized_image_bytes).decode("utf-8")
     
-    # 메시지 초기화 (첫 호출: 텍스트만, 이미지 X)
+    # 메시지 초기화
     messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
+    
+    # 첫 호출: Tool Check 프롬프트
+    if system_prompt_tool_check:
+        messages.append({"role": "system", "content": system_prompt_tool_check})
     
     # 첫 호출: 플레이스홀더 이미지 + 텍스트 (Tool 체크용, 토큰 절약)
     placeholder_b64 = get_placeholder_image_base64()
@@ -286,7 +290,8 @@ async def request_vlm_prediction_with_tools(
         # 첫 번째 호출에서만 tools 전달
         if tools and i == 0:
             payload["tools"] = tools
-        
+            # 첫 호출은 tool check용이므로 max_tokens 줄임 (선택사항, 일단 파라미터 따름)
+            
         try:
             token = get_access_token()
             headers = {
@@ -318,6 +323,11 @@ async def request_vlm_prediction_with_tools(
             if tool_calls or finish_reason == "tool_calls":
                 tool_was_used = True
                 logger.info(f"Tool 호출 감지: {len(tool_calls)}개 도구")
+                
+                # 시스템 프롬프트 교체 (Assistant 모드)
+                if i == 0:
+                     messages[0] = {"role": "system", "content": system_prompt_assistant}
+                
                 # Assistant 메시지 추가 (tool_calls 포함)
                 messages.append(message)
                 
@@ -337,13 +347,17 @@ async def request_vlm_prediction_with_tools(
                         "tool_call_id": tool_call_id,
                         "content": json.dumps(tool_result, ensure_ascii=False)
                     })
-                # 다음 루프에서 모델이 결과를 해석하도록 계속 진행 (이미지 없이)
+                # 다음 루프 진행 (이미지는 검정 이미지 그대로 유지 - 요청사항)
                 continue
             
-            # 첫 호출에서 Tool 사용 안 함 → 이미지 포함하여 재호출
+            # 첫 호출에서 Tool 사용 안 함 → 실제 이미지로 교체하여 재호출
             if i == 0 and not tool_was_used:
-                logger.info("Tool 미사용 → 이미지 포함하여 재호출")
-                # 기존 user 메시지를 이미지 포함 버전으로 교체
+                logger.info("Tool 미사용 → 실제 이미지로 교체하여 재호출")
+                
+                # 시스템 프롬프트 교체 (Assistant 모드)
+                messages[0] = {"role": "system", "content": system_prompt_assistant}
+                
+                # 기존 user 메시지를 실제 이미지 포함 버전으로 교체
                 messages[-1] = {
                     "role": "user",
                     "content": [

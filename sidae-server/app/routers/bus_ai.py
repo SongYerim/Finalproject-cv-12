@@ -40,18 +40,25 @@ async def identify_bus(
             # Tool calling 활성화된 경우 (context가 있을 때)
             if context:
                 logger.info(f"VLM with Tools 요청: context={context_dict}")
-                vlm_prompt_with_format = vlm_prompt # 도구 사용 시에는 Tool Call을 유도하기 위해 포맷 강제 제거
+                
+                # 2개의 시스템 프롬프트 로드
+                prompt_tool_check = PromptManager.get_prompt("vlm_tool_check")
+                prompt_assistant = PromptManager.get_prompt("vlm_assistant")
+                
+                vlm_prompt_with_format = vlm_prompt 
+                
                 result_ = await request_vlm_prediction_with_tools(
                     image_bytes=image_bytes, 
                     mime_type=file.content_type,
-                    system_prompt=system_instruction,
                     user_prompt=vlm_prompt_with_format,
+                    system_prompt_tool_check=prompt_tool_check.get("system", ""),
+                    system_prompt_assistant=prompt_assistant.get("system", ""),
                     tools=NAVIGATION_TOOLS,
                     context=context_dict,
                     max_tokens=token_limit
                 )
             else:
-                # 기존 방식 (context 없는 경우)
+                # 기존 방식 (context 없는 경우 - 예: 일반 VLM 질문)
                 vlm_prompt += ' 출력 형식 (반드시 이 형식을 따르세요):{"description": }'
                 result_ = await request_vlm_prediction(
                     image_bytes=image_bytes, 
