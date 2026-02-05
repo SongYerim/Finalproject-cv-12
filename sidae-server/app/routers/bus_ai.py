@@ -11,6 +11,36 @@ logger = logging.getLogger("uvicorn")
 
 router = APIRouter(tags=["Bus AI"])
 
+
+def _build_context_text(context_dict: dict) -> str:
+    """
+    앱 컨텍스트를 VLM 프롬프트에 주입할 텍스트로 변환
+    """
+    lines = ["[현재 상황]"]
+    
+    if context_dict.get("destination"):
+        lines.append(f"- 목적지: {context_dict['destination']}")
+    
+    if context_dict.get("progress"):
+        lines.append(f"- 진행률: {context_dict['progress']}%")
+    
+    if context_dict.get("current_step"):
+        lines.append(f"- 현재 단계: {context_dict['current_step']}")
+    
+    transport = context_dict.get("transport_type", "도보")
+    if context_dict.get("bus_number"):
+        if context_dict.get("is_on_bus"):
+            lines.append(f"- 현재 상태: {context_dict['bus_number']}번 버스 탑승 중")
+        else:
+            lines.append(f"- 대기 중인 버스: {context_dict['bus_number']}번")
+    else:
+        lines.append(f"- 이동 수단: {transport}")
+    
+    if context_dict.get("destination_stop"):
+        lines.append(f"- 하차 정류장: {context_dict['destination_stop']}")
+    
+    return "\n".join(lines)
+
 @router.post("/bus-recognition")
 async def identify_bus(
     file: UploadFile = File(...), 
@@ -34,6 +64,7 @@ async def identify_bus(
         logger.info(f"Vertex AI 요청 시작: 파일명={file.filename}, 크기={len(image_bytes)} bytes")
         
         if vlm_prompt and vlm_prompt.strip() and vlm_prompt.strip().lower() != "null":
+<<<<<<< HEAD
             # VLM 모드: Function Calling 사용
             context_dict = json.loads(context) if context else {}
             
@@ -60,6 +91,29 @@ async def identify_bus(
                     user_prompt=vlm_prompt,
                     max_tokens=token_limit
                 )
+=======
+            # VLM 모드: 프롬프트 주입 방식 (Option A)
+            # context가 있으면 프롬프트에 컨텍스트 정보 포함
+            if context:
+                context_dict = json.loads(context)
+                logger.info(f"VLM with Context 요청: context={context_dict}")
+                
+                # 컨텍스트를 사람이 읽기 쉬운 형태로 변환
+                context_text = _build_context_text(context_dict)
+                
+                # 컨텍스트 + 사용자 질문 + 출력 형식
+                vlm_prompt_with_context = f"{context_text}\n\n[사용자 질문]\n{vlm_prompt}\n\n출력 형식 (반드시 이 형식을 따르세요):{{\"description\": }}"
+            else:
+                vlm_prompt_with_context = vlm_prompt + ' 출력 형식 (반드시 이 형식을 따르세요):{"description": }'
+            
+            result_ = await request_vlm_prediction(
+                image_bytes=image_bytes, 
+                mime_type=file.content_type,
+                system_prompt=system_instruction,
+                user_prompt=vlm_prompt_with_context,
+                max_tokens=token_limit
+            )
+>>>>>>> 6b6fc463ca6f966dc40cf74e77f0d873ed06715f
 
         else:
             result_ = await request_vlm_prediction(

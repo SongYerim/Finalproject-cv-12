@@ -11,6 +11,7 @@ import '../services/route_tracker.dart';
 import '../services/tts_service.dart';
 import '../services/porcupine_service.dart';
 import '../services/shared_event_channel.dart';
+import '../services/context_builder.dart';
 import '../widgets/sidae_overlay.dart';
 
 class BusOnlyScreen extends StatefulWidget {
@@ -253,9 +254,20 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       final metadata = <String, String>{'source': 'vlm', 'mode': 'vlm'};
 
       metadata['vlm_prompt'] = sttResult;
+
+      // VLM 프롬프트 주입을 위한 앱 컨텍스트 추가 (버스 탑승 상태)
+      final tracker = RouteTracker.instance;
+      final currentSegment = tracker.getCurrentSegment();
+      final vlmContext = ContextBuilder.buildContextJson(
+        tracker: tracker,
+        busNumber: currentSegment?.transportName,
+        destinationStop: currentSegment?.endStation,
+      );
+      metadata['context'] = vlmContext;
+
       developer.log(
-        '📝 [8.dart] STT 결과를 vlm_prompt로 포함: $sttResult',
-        name: 'STT',
+        '📝 [8.dart] VLM 요청: prompt=$sttResult, context=$vlmContext',
+        name: 'VLM',
       );
 
       // 카메라 캡처 및 업로드 (vlm_prompt 포함)

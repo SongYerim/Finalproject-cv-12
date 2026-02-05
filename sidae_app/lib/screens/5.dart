@@ -25,6 +25,7 @@ import '../utils/bus_utils.dart' as bus_utils;
 import '../utils/math_utils.dart' as math_utils;
 import '../constants.dart';
 import '../services/shared_event_channel.dart';
+import '../services/context_builder.dart';
 import '6.dart';
 import '7.dart';
 import '9.dart';
@@ -816,10 +817,22 @@ class _RouteTrackingMapScreenState extends State<RouteTrackingMapScreen> {
       final metadata = <String, String>{'source': 'vlm', 'mode': 'vlm'};
 
       metadata['vlm_prompt'] = sttResult;
+
+      // VLM 프롬프트 주입을 위한 앱 컨텍스트 추가
+      final currentSegment = _tracker.getCurrentSegment();
+      final vlmContext = ContextBuilder.buildContextJson(
+        tracker: _tracker,
+        destinationName: widget.destinationName,
+        busNumber: currentSegment?.transportName,
+        destinationStop: currentSegment?.endStation,
+      );
+      metadata['context'] = vlmContext;
+
       print('📝 [5.dart] STT 결과를 vlm_prompt로 포함: $sttResult');
+      print('📝 [5.dart] Context: $vlmContext');
       developer.log(
-        '📝 [5.dart] STT 결과를 vlm_prompt로 포함: $sttResult',
-        name: 'STT',
+        '📝 [5.dart] VLM 요청: prompt=$sttResult, context=$vlmContext',
+        name: 'VLM',
       );
 
       // 카메라 캡처 및 업로드 (vlm_prompt 포함)
