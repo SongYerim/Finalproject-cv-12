@@ -11,6 +11,7 @@ import '../services/route_tracker.dart';
 import '../services/tts_service.dart';
 import '../services/porcupine_service.dart';
 import '../services/shared_event_channel.dart';
+import '../widgets/sidae_overlay.dart';
 
 class BusOnlyScreen extends StatefulWidget {
   final double? returnMidLat;
@@ -326,6 +327,14 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
         try {
           print('🔄 [8.dart] Porcupine 재시작 시작');
           developer.log('🔄 [8.dart] Porcupine 재시작 시작', name: 'Porcupine');
+          
+          // 콜백 재설정 (ensureRunning 전에)
+          _porcupineService.onKeywordDetected = (keyword) {
+            if (keyword == '시대야' && mounted) {
+              _captureAndUploadVLM(context);
+            }
+          };
+          
           await _porcupineService.ensureRunning();
           print('✅ [8.dart] Porcupine 재시작 완료');
           developer.log('✅ [8.dart] Porcupine 재시작 완료', name: 'Porcupine');
@@ -696,22 +705,18 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
       final initialized = await _porcupineService.initialize();
 
       if (initialized) {
-        print('✅ [8.dart] Porcupine 초기화 성공, start() 호출');
+        print('✅ [8.dart] Porcupine 초기화 성공, ensureRunning() 호출');
         developer.log(
-          '✅ [8.dart] Porcupine 초기화 성공, start() 호출',
+          '✅ [8.dart] Porcupine 초기화 성공, ensureRunning() 호출',
           name: 'Porcupine',
         );
-        final started = await _porcupineService.start();
-        if (started) {
-          print('✅ [8.dart] Porcupine 시작 완료 - 마이크 활성화됨');
-          developer.log(
-            '✅ [8.dart] Porcupine 시작 완료 - 마이크 활성화됨',
-            name: 'Porcupine',
-          );
-        } else {
-          print('❌ [8.dart] Porcupine 시작 실패');
-          developer.log('❌ [8.dart] Porcupine 시작 실패', name: 'Porcupine');
-        }
+        // ensureRunning()을 사용하여 이미 시작되어 있어도 재시작 보장
+        await _porcupineService.ensureRunning();
+        print('✅ [8.dart] Porcupine ensureRunning() 완료 - 마이크 활성화됨');
+        developer.log(
+          '✅ [8.dart] Porcupine ensureRunning() 완료 - 마이크 활성화됨',
+          name: 'Porcupine',
+        );
       } else {
         print('❌ [8.dart] Porcupine 초기화 실패');
         developer.log('❌ [8.dart] Porcupine 초기화 실패', name: 'Porcupine');
@@ -907,97 +912,6 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                 ),
               ),
             ),
-            // STT 진행 중 오버레이
-            if (_isListeningStt)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.9),
-                    border: Border(
-                      bottom: BorderSide(
-                        color: const Color(0xFFFFD400),
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '시대에게 어떤 질문을 하고 싶으신가요?',
-                        style: TextStyle(
-                          color: Color(0xFFFFD400),
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (_sttText.isNotEmpty)
-                        Container(
-                          constraints: const BoxConstraints(maxHeight: 150),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade900,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.grey.shade700,
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Icon(
-                                Icons.mic,
-                                color: Color(0xFFFFD400),
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  child: Text(
-                                    _sttText,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                    ),
-                                    softWrap: true,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.mic,
-                              color: Color(0xFFFFD400),
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '듣고 있어요...',
-                              style: TextStyle(
-                                color: Colors.grey.shade400,
-                                fontSize: 16,
-                                fontStyle: FontStyle.italic,
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
-              ),
             if (_lastImagePath != null)
               Positioned(
                 left: 16,
@@ -1080,6 +994,12 @@ class _BusOnlyScreenState extends State<BusOnlyScreen> {
                   ),
                 ),
               ),
+            // STT 진행 중 오버레이 (맨 앞에 표시)
+            SidaeOverlay(
+              isListening: _isListeningStt,
+              sttText: _sttText,
+              primaryColor: const Color(0xFFFFD400),
+            ),
           ],
         ),
       ),

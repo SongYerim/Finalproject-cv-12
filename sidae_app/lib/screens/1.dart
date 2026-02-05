@@ -96,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen>
       Permission.microphone,
       Permission.speech, // iOS 필수 권한
       Permission.location,
+      Permission.camera,
     ].request();
   }
 
