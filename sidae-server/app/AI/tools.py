@@ -14,7 +14,7 @@ NAVIGATION_TOOLS = [
             "name": "get_navigation_context",
             "description": (
                 "현재 네비게이션 진행 상태를 조회합니다. "
-                "사용자가 '지금 어디까지 왔어?', '다음 단계 뭐야?', '제대로 가고 있어?'처럼 "
+                "사용자가 '지금 어디까지 왔어', '다음 단계 뭐야', '제대로 가고 있어'처럼 "
                 "경로 진행/다음 안내가 필요한 질문을 하면 호출하세요. "
                 "반환 예: {destination, mode, current_step, progress, next_instruction}"
             ),
@@ -27,7 +27,7 @@ NAVIGATION_TOOLS = [
             "name": "get_target_bus_info",
             "description": (
                 "사용자가 탑승해야 할 버스 정보를 조회합니다. "
-                "사용자가 '몇 번 버스 타?', '어디서 내려?', '이 버스 맞아?'처럼 "
+                "사용자가 '몇 번 버스 타', '어디서 내려', '이 버스 맞아'처럼 "
                 "탑승/하차 버스 정보가 필요한 질문을 하면 호출하세요. "
                 "반환 예: {bus_number, boarding_stop, alighting_stop, direction}"
             ),
@@ -40,7 +40,7 @@ NAVIGATION_TOOLS = [
             "name": "get_current_location",
             "description": (
                 "현재 위치를 조회합니다. "
-                "사용자가 '지금 어디야?', '정류장 근처야?', '길을 잘못 든 것 같아'처럼 "
+                "사용자가 '지금 어디야', '정류장 근처야', '길을 잘못 든 것 같아'처럼 "
                 "현재 위치 확인이나 경로 이탈 판단이 필요하면 호출하세요. "
                 "반환 예: {lat, lon, address}"
             ),
@@ -53,7 +53,7 @@ NAVIGATION_TOOLS = [
             "name": "get_remaining_distance",
             "description": (
                 "목적지까지 남은 거리와 시간을 조회합니다. "
-                "사용자가 '얼마나 남았어?', '멀었어?', '도착까지 몇 분 걸려?'처럼 "
+                "사용자가 '얼마나 남았어', '멀었어', '도착까지 몇 분 걸려'처럼 "
                 "남은 거리나 소요 시간이 궁금할 때 호출하세요. "
                 "반환 예: {remaining_distance, remaining_time_seconds, current_destination}"
             ),

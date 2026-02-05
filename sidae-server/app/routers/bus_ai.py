@@ -119,10 +119,10 @@ async def identify_bus(
         try:
             # 1. 마크다운 코드블록 제거 (```json ... ```)
             clean_text = raw_text_content.replace("```json", "").replace("```", "").strip()
-            
+            debuglogger.info(f"clean_text: {clean_text}")   
             # 2. 문자열을 진짜 딕셔너리(객체)로 변환
             final_data = json.loads(clean_text)
-            
+            debuglogger.info(f"final_data: {final_data}")   
         except json.JSONDecodeError:
             # 파싱 실패 시 (AI가 이상한 텍스트를 줬을 때)
             logger.warning(f"JSON 파싱 실패. 원본 텍스트 반환. Raw: {raw_text_content}")
