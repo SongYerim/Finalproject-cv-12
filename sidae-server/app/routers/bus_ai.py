@@ -70,7 +70,7 @@ async def identify_bus(
             # Tool calling 활성화된 경우 (context가 있을 때)
             if context:
                 logger.info(f"VLM with Tools 요청: context={context_dict}")
-                vlm_prompt_with_format = vlm_prompt + ' 출력 형식 (반드시 이 형식을 따르세요):{"description": }'
+                vlm_prompt_with_format = vlm_prompt # 도구 사용 시에는 Tool Call을 유도하기 위해 포맷 강제 제거
                 result_ = await request_vlm_prediction_with_tools(
                     image_bytes=image_bytes, 
                     mime_type=file.content_type,
