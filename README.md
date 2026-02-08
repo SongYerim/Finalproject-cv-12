@@ -2,13 +2,13 @@
 
 ![SIDAE_LOGO](./assets/logo2.gif)
 
-### 1. 프로젝트 소개
+## 1. 프로젝트 소개
 
 시각장애인이 목적지까지 안전하게 이동할 수 있도록 음성 중심의 안내를 제공하는 대중교통 안내 서비스(시대)입니다. 시각장애인의 대중교통 이용이 어렵다는 설문 및 조사 그리고 한국시각장애인협회에 문의한 인터뷰 내용을 바탕으로 문제를 정의하고 해결하고자 했습니다.
 
 
 
-### 2. 기획 배경
+## 2. 기획 배경
 
 시각장애인의 대중교통 이용은 단순한 이동 문제가 아니라 안전과 정보 접근성이라는 두 가지 과제를 안고 있습니다. 경기 연구원의 조사에 따르면, 시각장애인이 가장 이용하기 불편하다고 느끼는 교통수단은 **버스(52.8%)**로 나타났습니다.
 
@@ -18,7 +18,7 @@
 
 
 
-### 3. 서비스 플로우
+## 3. 서비스 플로우
 
 ![서비스플로우](./assets/서비스플로우.png)
 
@@ -32,7 +32,7 @@
 
 
 
-### 4. 시스템 아키텍쳐
+## 4. 시스템 아키텍쳐
 
 ![시스템아키텍쳐](./assets/시스템아키텍쳐.png)
 
@@ -40,7 +40,7 @@
 
 
 
-### 5. 프로젝트 성과
+## 5. 프로젝트 성과
 
 시대가 해결한 문제와 기대할 수 있는 효과는 다음과 같습니다.
 
@@ -52,8 +52,17 @@
 
 
 
-### 팀원 소개
+## 6. Appendix
 
-| <img src="./assets/rock.png" alt="public" width="50" /><br />[김범진](https://github.com/kimbum1018)<br />APP개발&AI리드 | <img src="./assets/water.png" alt="public" width="50" /><br />[김준수](https://github.com/0129jonsu)<br />APP개발&AI서브 | <img src="./assets/normal.png" alt="public" width="50" /><br />[김한준](https://github.com/hanjun0126)<br />Backend&AI서브 | <img src="./assets/elec.png" alt="public" width="50" /><br />[남현지](https://github.com/yujh5537)<br />Backend&AI서브 | <img src="./assets/fire.png" alt="public" width="50" /><br />[송예림](https://github.com/SongYerim)<br /><br />APP개발&AI서브 |
+데모 영상 링크: https://youtu.be/AlW0Hb4Syug
+
+PPT링크:
+Wrap-up리포트 링크:
+
+
+
+## 팀원 소개
+
+| <img src="./assets/rock.png" alt="public" width="50" /><br />[김범진](https://github.com/kimbum1018)<br />APP개발&AI리드 | <img src="./assets/water.png" alt="public" width="50" /><br />[김준수](https://github.com/0129jonsu)<br />APP개발&AI서브 | <img src="./assets/normal.png" alt="public" width="50" /><br />[김한준](https://github.com/hanjun0126)<br />Backend&AI서브 | <img src="./assets/elec.png" alt="public" width="50" /><br />[남현지](https://github.com/yujh5537)<br />Backend&AI서브 | <img src="./assets/fire.png" alt="public" width="50" /><br />[송예림](https://github.com/SongYerim)<br />APP개발&AI서브 |
 | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
 
