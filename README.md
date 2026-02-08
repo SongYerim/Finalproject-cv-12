@@ -54,10 +54,6 @@
 
 ### 팀원 소개
 
-| 팀원                                                         | 역할            |
-| ------------------------------------------------------------ | --------------- |
-| [![public](https://github.com/hanjun0126/pro-cv-objectdetection-cv-12/raw/main/assets/rock.png)](https://github.com/hanjun0126/pro-cv-objectdetection-cv-12/blob/main/assets/rock.png) [김범진](https://github.com/kimbum1018) | AI리드&APP 개발 |
-| [![public](https://github.com/hanjun0126/pro-cv-objectdetection-cv-12/raw/main/assets/water.png)](https://github.com/hanjun0126/pro-cv-objectdetection-cv-12/blob/main/assets/water.png) [김준수](https://github.com/0129jonsu) | APP개발&AI서브  |
-| [![public](https://github.com/hanjun0126/pro-cv-objectdetection-cv-12/raw/main/assets/normal.png)](https://github.com/hanjun0126/pro-cv-objectdetection-cv-12/blob/main/assets/normal.png) [김한준](https://github.com/hanjun0126) | Backend&AI서브  |
-| [![public](https://github.com/hanjun0126/pro-cv-objectdetection-cv-12/raw/main/assets/elec.png)](https://github.com/hanjun0126/pro-cv-objectdetection-cv-12/blob/main/assets/elec.png) [남현지](https://github.com/yujh5537) | Backend&AI서브  |
-| [![public](https://github.com/hanjun0126/pro-cv-objectdetection-cv-12/raw/main/assets/fire.png)](https://github.com/hanjun0126/pro-cv-objectdetection-cv-12/blob/main/assets/fire.png) [송예림](https://github.com/SongYerim) | APP개발&AI서브  |
+| <img src="./assets/rock.png" alt="public" width="50" /><br />[김범진](https://github.com/kimbum1018)<br />APP개발&AI리드 | <img src="./assets/water.png" alt="public" width="50" /><br />[김준수](https://github.com/0129jonsu)<br />APP개발&AI서브 | <img src="./assets/normal.png" alt="public" width="50" /><br />[김한준](https://github.com/hanjun0126)<br />Backend&AI서브 | <img src="./assets/elec.png" alt="public" width="50" /><br />[남현지](https://github.com/yujh5537)<br />Backend&AI서브 | <img src="./assets/fire.png" alt="public" width="50" /><br />[송예림](https://github.com/SongYerim)<br /><br />APP개발&AI서브 |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+
