@@ -56,7 +56,6 @@
 
 데모 영상 링크: https://youtu.be/AlW0Hb4Syug
 
-PPT링크:
 Wrap-up리포트 링크: <a href="https://drive.google.com/file/d/1rEiMhh8yiBj4yZR8Q8a5GCDO163vyT1C/view?usp=sharing">Wrap-up 리포트</a>
 
 
